@@ -30,6 +30,8 @@
 
 #include "renderer_compositor_rd.h"
 
+#include "servers/rendering/renderer_rd/pipeline_compile_queue_rd.h"
+
 #include "core/config/engine.h"
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
@@ -129,6 +131,14 @@ void RendererCompositorRD::begin_frame(double frame_step) {
 
 	canvas->set_time(time);
 	scene->set_time(time, frame_step);
+
+	// Drivers that only accept calls on the device's thread queue their pipeline
+	// compilations instead of handing them to WorkerThreadPool; run a slice here.
+	// The renderer draws with the ubershader until each one lands, so the budget
+	// trades a little pop-in for a frame that does not stall.
+	if (RD::get_singleton()->gpu_calls_main_thread_only()) {
+		PipelineCompileQueueRD::process(2.0);
+	}
 }
 
 void RendererCompositorRD::end_frame(bool p_present) {

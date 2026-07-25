@@ -638,6 +638,17 @@ MonoMethod *_initialize_method;
 godot_plugins_initialize_fn initialize_monovm_and_godot_plugins(bool &r_runtime_initialized) {
 	mono_install_assembly_preload_hook(&load_assembly_from_pck, nullptr);
 
+	// Size the nursery before the collector starts. Collection is stop-the-world
+	// on wasm, so it is felt as stutter rather than as cost, and gameplay
+	// allocates a steady trickle however careful the hot paths are. The default
+	// nursery turns that trickle into a collection every few seconds; a larger one
+	// trades memory for proportionally fewer pauses, since a young-generation
+	// collection costs what survives it, not what the nursery holds.
+	// SGen reads this from the environment, not from runtimeconfig.json.
+	if (OS::get_singleton()->get_environment("MONO_GC_PARAMS").is_empty()) {
+		OS::get_singleton()->set_environment("MONO_GC_PARAMS", "nursery-size=32m");
+	}
+
 	mono_wasm_load_runtime(1);
 
 	r_runtime_initialized = true;

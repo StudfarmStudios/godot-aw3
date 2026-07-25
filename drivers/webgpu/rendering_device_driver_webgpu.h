@@ -65,6 +65,7 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 		uint32_t first_instance_draws = 0;
 		uint32_t ring_overflows = 0;
 		double last_log_time = 0;
+		double last_frame_time = 0;
 		uint32_t frames_since_log = 0;
 		void reset() {
 			draw_calls = 0;

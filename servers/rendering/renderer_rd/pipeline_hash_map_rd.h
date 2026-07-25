@@ -38,6 +38,7 @@
 #include "core/templates/rb_set.h"
 #include "core/templates/rid.h"
 #include "core/templates/vector.h"
+#include "servers/rendering/renderer_rd/pipeline_compile_queue_rd.h"
 #include "servers/rendering/rendering_device.h"
 #include "servers/rendering/rendering_server_enums.h"
 
@@ -99,6 +100,23 @@ private:
 		}
 	}
 
+	// A compilation waiting its turn on the device's thread.
+	class DeferredCompile : public PipelineCompileQueueRD::Task {
+		PipelineHashMapRD *map = nullptr;
+		Key key;
+		uint32_t hash = 0;
+
+	public:
+		DeferredCompile(PipelineHashMapRD *p_map, const Key &p_key, uint32_t p_hash) :
+				map(p_map), key(p_key), hash(p_hash) {}
+
+		virtual void compile() override {
+			(map->creation_object->*map->creation_function)(key);
+		}
+		virtual uint32_t key_hash() const override { return hash; }
+		virtual const void *owner() const override { return map; }
+	};
+
 public:
 	void add_compiled_pipeline(uint32_t p_hash, RID p_pipeline) {
 		compiled_queue_mutex.lock();
@@ -148,8 +166,16 @@ public:
 #endif
 
 		if (RD::get_singleton()->gpu_calls_main_thread_only()) {
-			// Driver is bound to the device's thread, so no background task.
-			(creation_object->*creation_function)(p_key);
+			// Driver is bound to the device's thread, so there is no background task
+			// to hand this to. Compiling here and now would stall the frame, which is
+			// exactly what the caller avoids by not asking to wait - it draws with the
+			// ubershader meanwhile. Queue it and let a bounded slice run each frame.
+			if (p_high_priority) {
+				// The caller is about to block on this one anyway.
+				(creation_object->*creation_function)(p_key);
+			} else {
+				PipelineCompileQueueRD::push(memnew(DeferredCompile(this, p_key, p_key_hash)));
+			}
 			return;
 		}
 
@@ -165,6 +191,13 @@ public:
 			MutexLock local_lock(local_mutex);
 			if (!compilation_set.has(p_key_hash)) {
 				// The pipeline was never submitted, we can't wait for it.
+				return;
+			}
+
+			if (RD::get_singleton()->gpu_calls_main_thread_only()) {
+				// It is sitting in the deferred queue: run it now, since the caller
+				// cannot continue without it.
+				PipelineCompileQueueRD::compile_now(p_key_hash);
 				return;
 			}
 
@@ -218,6 +251,7 @@ public:
 
 	// Delete all cached pipelines. Can stall if background compilation is in progress.
 	void clear_pipelines() {
+		PipelineCompileQueueRD::remove_owner(this);
 		_wait_for_all_pipelines();
 		_add_new_pipelines_to_map();
 

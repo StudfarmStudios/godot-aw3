@@ -177,6 +177,9 @@ static const char *_lookup_precompiled_wgsl(uint64_t p_spv_hash) {
 // layout can stop advertising them to a stage that can no longer reach them.
 static LocalVector<uint32_t> _last_unused_binding_keys;
 
+// Count of render pipelines built, so a slow frame can be tied to one.
+static uint32_t _pipelines_created_total = 0;
+
 // Collect (group << 16 | binding) of samplers that this WGSL uses to sample a
 // depth texture through a non-comparison call. WebGPU only allows comparison or
 // non-filtering samplers on depth textures, and Godot reads the shadow atlas
@@ -8053,6 +8056,7 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 		RenderPassID p_render_pass,
 		uint32_t p_render_subpass,
 		VectorView<PipelineSpecializationConstant> p_specialization_constants) {
+	_pipelines_created_total++;
 	WGShader *shader = (WGShader *)(p_shader.id);
 	ERR_FAIL_COND_V(!shader, PipelineID());
 	WGVertexFormat *vf = p_vertex_format.id ? (WGVertexFormat *)(p_vertex_format.id) : nullptr;
@@ -8930,6 +8934,17 @@ void RenderingDeviceDriverWebGPU::begin_segment(uint32_t p_frame_index, uint32_t
 	// Performance counter tracking (always-on, 1 log/sec is negligible overhead).
 	perf.frames_since_log++;
 	double now = EM_ASM_DOUBLE({ return performance.now(); });
+
+	// Report individual slow frames: the per-second average hides the stalls that
+	// are actually felt.
+	if (perf.last_frame_time > 0) {
+		double frame_ms = now - perf.last_frame_time;
+		if (frame_ms > 25.0) {
+			EM_ASM({ console.log('[SLOWFRAME] ' + $0.toFixed(1) + ' ms draws=' + $1 + ' setbg=' + $2 + ' pipelines=' + $3); },
+					frame_ms, (int)perf.draw_calls, (int)perf.set_bind_group_calls, (int)_pipelines_created_total);
+		}
+	}
+	perf.last_frame_time = now;
 	if (perf.last_log_time == 0) {
 		perf.last_log_time = now;
 	} else if (now - perf.last_log_time >= 1000.0) {
