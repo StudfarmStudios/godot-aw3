@@ -1,76 +1,52 @@
-# Godot Engine
+# Godot Engine — Assault Wing 3 fork
 
-<p align="center">
-  <a href="https://godotengine.org">
-    <img src="misc/logo/logo_outlined.svg" width="400" alt="Godot Engine logo">
-  </a>
-</p>
+Godot **4.7.1** with the two things AW3 needs on the web and the official engine
+does not have:
 
-## 2D and 3D cross-platform game engine
+- **C# ahead-of-time compiled to WebAssembly.** Godot cannot export C# to the
+  web at all; this can, and the gameplay code is compiled rather than
+  interpreted (~45-52 fps against ~28-30 for the interpreter in AW3).
+- **A WebGPU rendering backend**, so the web build is not limited to WebGL2 and
+  the Compatibility renderer.
 
-**[Godot Engine](https://godotengine.org) is a feature-packed, cross-platform
-game engine to create 2D and 3D games from a unified interface.** It provides a
-comprehensive set of [common tools](https://godotengine.org/features), so that
-users can focus on making games without having to reinvent the wheel. Games can
-be exported with one click to a number of platforms, including the major desktop
-platforms (Linux, macOS, Windows), mobile platforms (Android, iOS), as well as
-Web-based platforms and [consoles](https://godotengine.org/consoles).
+Upstream Godot is otherwise unchanged; see [`GODOT_README.md`](GODOT_README.md).
 
-## Free, open source and community-driven
+## Where the pieces come from
 
-Godot is completely free and open source under the very permissive [MIT license](https://godotengine.org/license).
-No strings attached, no royalties, nothing. The users' games are theirs, down
-to the last line of engine code. Godot's development is fully independent and
-community-driven, empowering users to help shape their engine to match their
-expectations. It is supported by the [Godot Foundation](https://godot.foundation/)
-not-for-profit.
+| Piece | Source |
+|---|---|
+| Static-linked Mono for web | [ComplexRobot/godot](https://github.com/ComplexRobot/godot) `dotnet/mono-static-linking` — upstream draft [godotengine/godot#106125](https://github.com/godotengine/godot/pull/106125) |
+| AW3's web/.NET fixes | this fork, commit "Web/.NET export fixes for AW3" |
+| WebGPU backend | [dwalter/godotwebgpu](https://github.com/dwalter/godotwebgpu) `webgpu-4.6.2` @ `f329e39`, imported onto 4.7.1 |
 
-Before being open sourced in [February 2014](https://github.com/godotengine/godot/commit/0b806ee0fc9097fa7bda7ac0109191c9c5e0a1ac),
-Godot had been developed by [Juan Linietsky](https://github.com/reduz) and
-[Ariel Manzur](https://github.com/punto-) for several years as an in-house
-engine, used to publish several work-for-hire titles.
+The WebGPU work was written against 4.6.2, and Godot's 4.6 release branch is not
+an ancestor of 4.7.1, so it is carried here as an import of that branch's diff
+rather than as a merge. To re-sync with dwalter upstream, diff their branch
+against its 4.6.2 base again and re-apply.
 
-![Screenshot of a 3D scene in the Godot Engine editor](https://raw.githubusercontent.com/godotengine/godot-design/master/screenshots/editor_tps_demo_1920x1080.jpg)
+## Branches
 
-## Getting the engine
+- `aw3/web-mono-aot` — 4.7.1 + mono static linking + AW3's web/.NET fixes. This
+  is the configuration AW3 ships today.
+- `aw3/webgpu` — the above plus the WebGPU backend.
 
-### Binary downloads
+## Building
 
-Official binaries for the Godot editor and the export templates can be found
-[on the Godot website](https://godotengine.org/download).
+```sh
+# Editor (macOS)
+scons platform=macos target=editor module_mono_enabled=yes \
+      accesskit=no angle=no vulkan_sdk_path=$(brew --prefix molten-vk)
+./bin/godot.macos.editor.arm64.mono --headless --generate-mono-glue modules/mono/glue
+python3 modules/mono/build_scripts/build_assemblies.py \
+      --godot-output-dir=./bin --push-nupkgs-local /tmp/godot-nuget
 
-### Compiling from source
+# Web template. mono_aot_dir points at a game's AOT objects (left behind by a
+# first export) and links them into the template - see the AW3 docs.
+scons platform=web target=template_release module_mono_enabled=yes webgpu=yes \
+      stack_size=32768 default_pthread_stack_size=32768 initial_memory=256 \
+      mono_aot_dir=<abs path>/gameclient/.godot/mono/temp/obj/ExportRelease/browser-wasm/wasm/for-publish
+```
 
-[See the official docs](https://docs.godotengine.org/en/latest/engine_details/development/compiling)
-for compilation instructions for every supported platform.
-
-## Community and contributing
-
-Godot is not only an engine but an ever-growing community of users and engine
-developers. The main community channels are listed [on the homepage](https://godotengine.org/community).
-
-The best way to get in touch with the core engine developers is to join the
-[Godot Contributors Chat](https://chat.godotengine.org).
-
-To get started contributing to the project, see the [contributing guide](CONTRIBUTING.md).
-This document also includes guidelines for reporting bugs.
-
-## Documentation and demos
-
-The official documentation is hosted on [Read the Docs](https://docs.godotengine.org).
-It is maintained by the Godot community in its own [GitHub repository](https://github.com/godotengine/godot-docs).
-
-The [class reference](https://docs.godotengine.org/en/latest/classes/)
-is also accessible from the Godot editor.
-
-We also maintain official demos in their own [GitHub repository](https://github.com/godotengine/godot-demo-projects)
-as well as a list of [awesome Godot community resources](https://github.com/godotengine/awesome-godot).
-
-There are also a number of other
-[learning resources](https://docs.godotengine.org/en/latest/community/tutorials.html)
-provided by the community, such as text and video tutorials, demos, etc.
-Consult the [community channels](https://godotengine.org/community)
-for more information.
-
-[![Code Triagers Badge](https://www.codetriage.com/godotengine/godot/badges/users.svg)](https://www.codetriage.com/godotengine/godot)
-[![Translate on Weblate](https://hosted.weblate.org/widgets/godot-engine/-/godot/svg-badge.svg)](https://hosted.weblate.org/engage/godot-engine/?utm_source=widget)
+The AOT pipeline, why each fix exists, and the browser-testing recipe are
+documented in the AW3 repository under `docs/gameclient/web-csharp-export.md`.
+The WebGPU driver has its own notes in [`drivers/webgpu/README.md`](drivers/webgpu/README.md).
