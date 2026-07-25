@@ -177,6 +177,123 @@ static const char *_lookup_precompiled_wgsl(uint64_t p_spv_hash) {
 // layout can stop advertising them to a stage that can no longer reach them.
 static LocalVector<uint32_t> _last_unused_binding_keys;
 
+// Collect (group << 16 | binding) of samplers that this WGSL uses to sample a
+// depth texture through a non-comparison call. WebGPU only allows comparison or
+// non-filtering samplers on depth textures, and Godot reads the shadow atlas
+// with an ordinary linear sampler, so those bindings have to be declared - and
+// bound - as non-filtering.
+// True when the shader's layout declares this sampler binding non-filtering, in
+// which case a filtering sampler cannot legally be bound to it.
+static bool _layout_wants_nonfiltering(const WGShader *p_shader, uint32_t p_set_index, uint32_t p_binding) {
+	if (!p_shader || p_set_index >= (uint32_t)p_shader->bind_group_infos.size()) {
+		return false;
+	}
+	for (const WGShader::BindGroupEntry &bge : p_shader->bind_group_infos[p_set_index].entries) {
+		if (bge.layout_entry.binding == p_binding) {
+			return bge.layout_entry.sampler.type == WGPUSamplerBindingType_NonFiltering;
+		}
+	}
+	return false;
+}
+
+static void _collect_depth_paired_samplers(const char *p_wgsl, HashSet<uint32_t> *r_sampler_keys) {
+	if (!p_wgsl || !r_sampler_keys) {
+		return;
+	}
+
+	// Declarations: "@group(G) @binding(B) var NAME : TYPE;"
+	HashMap<String, uint32_t> name_to_key;
+	HashSet<String> depth_textures;
+	{
+		const char *p = p_wgsl;
+		while ((p = strstr(p, "@group(")) != nullptr) {
+			unsigned int grp = 0, bnd = 0;
+			if (!parse_group_binding(p, grp, bnd)) {
+				p++;
+				continue;
+			}
+			const char *var_kw = strstr(p, " var");
+			const char *semi = strchr(p, ';');
+			if (!var_kw || !semi || var_kw > semi) {
+				p = semi ? semi : p + 1;
+				continue;
+			}
+			const char *name_start = var_kw + 4;
+			while (name_start < semi && (*name_start == ' ' || *name_start == '<')) {
+				// Skip an address space qualifier such as "var<storage, read>".
+				if (*name_start == '<') {
+					const char *close = strchr(name_start, '>');
+					if (!close || close > semi) {
+						break;
+					}
+					name_start = close + 1;
+				} else {
+					name_start++;
+				}
+			}
+			const char *colon = strchr(name_start, ':');
+			if (!colon || colon > semi) {
+				p = semi;
+				continue;
+			}
+			const char *name_end = colon;
+			while (name_end > name_start && (name_end[-1] == ' ')) {
+				name_end--;
+			}
+			String name = String::utf8(name_start, (int)(name_end - name_start));
+			name_to_key.insert(name, ((uint32_t)grp << 16) | (uint32_t)bnd);
+			if (strstr(colon, "texture_depth") != nullptr && strstr(colon, "texture_depth") < semi) {
+				depth_textures.insert(name);
+			}
+			p = semi;
+		}
+	}
+
+	if (depth_textures.is_empty()) {
+		return;
+	}
+
+	// Calls: "textureSample*(texture, sampler, ...)", excluding the Compare forms,
+	// which legitimately take a comparison sampler.
+	const char *p = p_wgsl;
+	while ((p = strstr(p, "textureSample")) != nullptr) {
+		const char *open = strchr(p, '(');
+		bool is_compare = strncmp(p, "textureSampleCompare", 20) == 0;
+		if (!open || is_compare) {
+			p += 13;
+			continue;
+		}
+		const char *arg = open + 1;
+		auto read_ident = [](const char *&c) -> String {
+			while (*c == ' ' || *c == '\n' || *c == '\t') {
+				c++;
+			}
+			const char *start = c;
+			while (*c && (isalnum((unsigned char)*c) || *c == '_')) {
+				c++;
+			}
+			return String::utf8(start, (int)(c - start));
+		};
+		String tex_name = read_ident(arg);
+		while (*arg == ' ') {
+			arg++;
+		}
+		if (*arg != ',') {
+			p += 13;
+			continue;
+		}
+		arg++;
+		String samp_name = read_ident(arg);
+		if (depth_textures.has(tex_name)) {
+			const uint32_t *key = name_to_key.getptr(samp_name);
+			if (key) {
+				r_sampler_keys->insert(*key);
+			}
+		}
+		p += 13;
+	}
+}
+
 static char *_translate_spirv_to_wgsl(const uint8_t *p_spv_ptr, int p_spv_size) {
 	if (p_spv_size < 20 || (p_spv_size % 4) != 0) {
 		return nullptr;
@@ -2573,6 +2690,12 @@ RDD::SamplerID RenderingDeviceDriverWebGPU::sampler_create(const SamplerState &p
 	WGPUSampler sampler = wgpuDeviceCreateSampler(device, &desc);
 	ERR_FAIL_COND_V(sampler == nullptr, SamplerID());
 
+	// Keep the descriptor: WebGPU forbids filtering samplers on depth textures, so
+	// a shader that reads a depth texture without comparison needs a non-filtering
+	// twin of whatever sampler Godot bound (see _nonfiltering_twin).
+	desc.label = {};
+	sampler_descriptors.insert(sampler, desc);
+
 	// Store the WGPUSampler handle directly as the ID (no wrapper struct needed).
 	return SamplerID((uint64_t)sampler);
 }
@@ -2580,8 +2703,41 @@ RDD::SamplerID RenderingDeviceDriverWebGPU::sampler_create(const SamplerState &p
 void RenderingDeviceDriverWebGPU::sampler_free(SamplerID p_sampler) {
 	WGPUSampler sampler = (WGPUSampler)(p_sampler.id);
 	if (sampler) {
+		if (WGPUSampler *twin = nonfiltering_twins.getptr(sampler)) {
+			wgpuSamplerRelease(*twin);
+			nonfiltering_twins.erase(sampler);
+		}
+		sampler_descriptors.erase(sampler);
 		wgpuSamplerRelease(sampler);
 	}
+}
+
+// A copy of p_sampler with filtering turned off, for binding into a slot the
+// layout declares non-filtering. Address modes and LOD clamps are preserved, so
+// only the interpolation changes - which is the most WebGPU permits when reading
+// a depth texture without a comparison sampler.
+WGPUSampler RenderingDeviceDriverWebGPU::_nonfiltering_twin(WGPUSampler p_sampler) {
+	if (p_sampler == nullptr) {
+		return nullptr;
+	}
+	if (WGPUSampler *existing = nonfiltering_twins.getptr(p_sampler)) {
+		return *existing;
+	}
+	const WGPUSamplerDescriptor *desc = sampler_descriptors.getptr(p_sampler);
+	if (desc == nullptr) {
+		return p_sampler;
+	}
+	WGPUSamplerDescriptor twin_desc = *desc;
+	twin_desc.magFilter = WGPUFilterMode_Nearest;
+	twin_desc.minFilter = WGPUFilterMode_Nearest;
+	twin_desc.mipmapFilter = WGPUMipmapFilterMode_Nearest;
+	twin_desc.maxAnisotropy = 1;
+	WGPUSampler twin = wgpuDeviceCreateSampler(device, &twin_desc);
+	if (twin == nullptr) {
+		return p_sampler;
+	}
+	nonfiltering_twins.insert(p_sampler, twin);
+	return twin;
 }
 
 bool RenderingDeviceDriverWebGPU::sampler_is_format_supported_for_filter(DataFormat p_format, SamplerFilter p_filter) {
@@ -3312,6 +3468,16 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 	// Bindings preprocessing removed from every stage of this shader.
 	HashSet<uint32_t> wgsl_unused_bindings;
 
+	// Samplers this shader uses to read a depth texture without comparison.
+	HashSet<uint32_t> wgsl_depth_paired_samplers;
+
+	// (set << 16 | binding) in Godot's numbering -> WGPUShaderStage mask of the
+	// stages that can reach it, from the pre-specialization SPIR-V analysis.
+	HashMap<uint32_t, uint32_t> godot_binding_stages;
+	// Image types per binding, also from the pre-specialization SPIR-V.
+	HashMap<uint32_t, spirv_preprocess::ImageBindingInfo> godot_binding_images;
+	bool any_stage_analyzed = false;
+
 	// Read-write storage texture splits: maps (set << 16 | write_binding) → shadow_read_binding.
 	// Populated when readonly-and-readwrite-storage-textures is unavailable.
 	HashMap<uint32_t, uint32_t> wgsl_rw_storage_splits;
@@ -3339,6 +3505,40 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 
 		// Store raw SPIR-V for potential re-conversion with specialization constants.
 		shader->stage_spirv[(int)s.shader_stage] = spv_bytes;
+
+		// Work out which bindings this stage can reach, before specialization
+		// constants are frozen so the answer holds for every specialized module
+		// built from this shader later. Anisotropic sampler aliasing is applied
+		// first because it is specialization-independent and removes bindings for
+		// good - that is what gets the fragment stage under WebGPU's sampler cap.
+		{
+			WGPUShaderStage this_stage = WGPUShaderStage_None;
+			if (s.shader_stage == RDD::SHADER_STAGE_VERTEX) {
+				this_stage = WGPUShaderStage_Vertex;
+			} else if (s.shader_stage == RDD::SHADER_STAGE_FRAGMENT) {
+				this_stage = WGPUShaderStage_Fragment;
+			} else if (s.shader_stage == RDD::SHADER_STAGE_COMPUTE) {
+				this_stage = WGPUShaderStage_Compute;
+			}
+
+			Vector<uint8_t> raw;
+			raw.resize(spv_bytes.size());
+			memcpy(raw.ptrw(), spv_bytes.ptr(), (size_t)spv_bytes.size());
+			raw = spirv_preprocess::alias_anisotropic_samplers(raw);
+
+			spirv_preprocess::binding_image_info(raw, &godot_binding_images);
+
+			HashSet<uint32_t> reachable;
+			spirv_preprocess::reachable_binding_keys(raw, &reachable);
+			for (uint32_t key : reachable) {
+				if (godot_binding_stages.has(key)) {
+					godot_binding_stages[key] |= (uint32_t)this_stage;
+				} else {
+					godot_binding_stages.insert(key, (uint32_t)this_stage);
+				}
+			}
+			any_stage_analyzed = true;
+		}
 
 		// emdawnwebgpu does NOT support WGPUShaderSourceSPIRV — it's a thin wrapper
 		// around the browser's WebGPU API which only accepts WGSL.
@@ -3850,6 +4050,8 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 				wgsl_unused_bindings.insert(unused_key);
 			}
 
+			_collect_depth_paired_samplers(wgsl_str, &wgsl_depth_paired_samplers);
+
 			WGPUShaderStage this_stage = WGPUShaderStage_None;
 			if (s.shader_stage == RDD::SHADER_STAGE_VERTEX) {
 				this_stage = WGPUShaderStage_Vertex;
@@ -4254,6 +4456,17 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 			// to reflection for anything not seen in the WGSL (e.g. bindings the
 			// driver injects itself).
 			auto vis_for = [&](uint32_t p_wgsl_binding) -> WGPUShaderStage {
+				// The SPIR-V analysis is in Godot's binding numbers; the WGSL ones
+				// are doubled by split_combined_samplers.
+				uint32_t godot_key = ((uint32_t)set << 16) | (p_wgsl_binding / 2);
+				if (any_stage_analyzed) {
+					const uint32_t *mask = godot_binding_stages.getptr(godot_key);
+					// Absent means no stage of any specialization mentions it, so it
+					// needs a layout entry but no visibility - which is what keeps
+					// the aliased samplers off the per-stage budget.
+					return mask ? (WGPUShaderStage)*mask : WGPUShaderStage_None;
+				}
+
 				uint32_t key = ((uint32_t)set << 16) | p_wgsl_binding;
 				if (wgsl_binding_stages.has(key)) {
 					return (WGPUShaderStage)wgsl_binding_stages[key];
@@ -4277,6 +4490,27 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 				}
 				return _stages_to_wgpu_visibility((uint32_t)u.stages);
 			};
+			// Prefer the SPIR-V image type over what the translated module declared:
+			// a binding the base module pruned has no declaration to read, and
+			// guessing 2D is how a 3D colour-correction LUT ended up rejected.
+			auto spirv_dim_for = [&](WGPUTextureViewDimension p_fallback, bool *r_multisampled) -> WGPUTextureViewDimension {
+				const spirv_preprocess::ImageBindingInfo *info =
+						godot_binding_images.getptr(((uint32_t)set << 16) | u.binding);
+				if (!info) {
+					return p_fallback;
+				}
+				if (r_multisampled && info->multisampled) {
+					*r_multisampled = true;
+				}
+				switch (info->dim) {
+					case 0: return WGPUTextureViewDimension_1D;
+					case 1: return info->arrayed ? WGPUTextureViewDimension_2DArray : WGPUTextureViewDimension_2D;
+					case 2: return WGPUTextureViewDimension_3D;
+					case 3: return info->arrayed ? WGPUTextureViewDimension_CubeArray : WGPUTextureViewDimension_Cube;
+					default: return p_fallback;
+				}
+			};
+
 			WGPUShaderStage vis = vis_for(u.binding * 2);
 
 			bge.godot_type = u.type;
@@ -4291,7 +4525,9 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 					// so layout entries are always non-array (no bindingArraySize).
 					{ uint32_t k = ((uint32_t)set << 16) | (u.binding * 2);
 					  entry.sampler.type = (wgsl_is_comparison_sampler.has(k) && wgsl_is_comparison_sampler[k])
-						  ? WGPUSamplerBindingType_Comparison : WGPUSamplerBindingType_Filtering; }
+						  ? WGPUSamplerBindingType_Comparison
+						  : (wgsl_depth_paired_samplers.has(k) ? WGPUSamplerBindingType_NonFiltering
+															   : WGPUSamplerBindingType_Filtering); }
 					bge.layout_entry = entry;
 					bge.array_length = 1;
 				} break;
@@ -4307,12 +4543,15 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 					{ uint32_t k = ((uint32_t)set << 16) | (u.binding * 2);
 					  bool is_ms = wgsl_is_multisampled_texture.has(k) && wgsl_is_multisampled_texture[k];
 					  bool is_depth = wgsl_is_depth_texture.has(k) && wgsl_is_depth_texture[k];
+					  // Resolve the dimension first: it can also discover that the
+					  // texture is multisampled, which changes the sample type below.
+					  entry.texture.viewDimension = spirv_dim_for(
+							  wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D, &is_ms);
 					  // Multisampled float textures must use UnfilterableFloat, not Float
 					  // (filtering is illegal for MSAA textures in WebGPU).
 					  entry.texture.sampleType = is_depth
 						  ? WGPUTextureSampleType_Depth
 						  : (is_ms ? WGPUTextureSampleType_UnfilterableFloat : WGPUTextureSampleType_Float);
-					  entry.texture.viewDimension = wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D;
 					  entry.texture.multisampled = is_ms; }
 					bge.layout_entry = entry;
 					bge.array_length = 1;
@@ -4327,7 +4566,9 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 					samp_entry.visibility = vis_for(u.binding * 2 + 0);
 					{ uint32_t k = ((uint32_t)set << 16) | (u.binding * 2 + 0);
 					  samp_entry.sampler.type = (wgsl_is_comparison_sampler.has(k) && wgsl_is_comparison_sampler[k])
-						  ? WGPUSamplerBindingType_Comparison : WGPUSamplerBindingType_Filtering; }
+						  ? WGPUSamplerBindingType_Comparison
+						  : (wgsl_depth_paired_samplers.has(k) ? WGPUSamplerBindingType_NonFiltering
+															   : WGPUSamplerBindingType_Filtering); }
 
 					WGPUBindGroupLayoutEntry &tex_entry = entries[e_idx++];
 					tex_entry = {};
@@ -4336,12 +4577,15 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 					{ uint32_t k = ((uint32_t)set << 16) | (u.binding * 2 + 1);
 					  bool is_ms = wgsl_is_multisampled_texture.has(k) && wgsl_is_multisampled_texture[k];
 					  bool is_depth = wgsl_is_depth_texture.has(k) && wgsl_is_depth_texture[k];
+					  // Dimension first: it can also reveal a multisampled texture,
+					  // which changes the sample type below.
+					  tex_entry.texture.viewDimension = spirv_dim_for(
+							  wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D, &is_ms);
 					  // Multisampled float textures must use UnfilterableFloat
 					  // (filtering is illegal for MSAA textures in WebGPU).
 					  tex_entry.texture.sampleType = is_depth
 						  ? WGPUTextureSampleType_Depth
 						  : (is_ms ? WGPUTextureSampleType_UnfilterableFloat : WGPUTextureSampleType_Float);
-					  tex_entry.texture.viewDimension = wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D;
 					  tex_entry.texture.multisampled = is_ms;
 					  // MSAA texture bindings with UnfilterableFloat require a NonFiltering sampler —
 					  // override the sampler for this combined binding.
@@ -4863,6 +5107,9 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 					WGPUBindGroupEntry entry = {};
 					entry.binding = uniform.binding * 2;
 					entry.sampler = (WGPUSampler)(uniform.ids[0].id);
+					if (_layout_wants_nonfiltering(shader, p_set_index, entry.binding)) {
+						entry.sampler = _nonfiltering_twin(entry.sampler);
+					}
 					entries.push_back(entry);
 				}
 			} break;
@@ -4976,7 +5223,9 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 					if (sampler) {
 						WGPUBindGroupEntry se = {};
 						se.binding = uniform.binding * 2 + j * 2 + 0;
-						se.sampler = sampler;
+						se.sampler = _layout_wants_nonfiltering(shader, p_set_index, se.binding)
+								? _nonfiltering_twin(sampler)
+								: sampler;
 						entries.push_back(se);
 					}
 					if (tex && tex->default_view) {

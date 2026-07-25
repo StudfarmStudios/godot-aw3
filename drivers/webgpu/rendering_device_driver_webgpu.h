@@ -107,6 +107,13 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 
 	RenderingShaderContainerFormatWebGPU *shader_container_format = nullptr;
 
+	// Sampler descriptors, and their non-filtering twins. WebGPU rejects a
+	// filtering sampler used with a depth texture, and Godot's shaders do exactly
+	// that when they read a shadow atlas without comparison.
+	HashMap<WGPUSampler, WGPUSamplerDescriptor> sampler_descriptors;
+	HashMap<WGPUSampler, WGPUSampler> nonfiltering_twins;
+	WGPUSampler _nonfiltering_twin(WGPUSampler p_sampler);
+
 	// --- Push Constant Emulation ---
 	// Ring buffer for push constant data. Each slot is 256-byte aligned.
 	WGPUBuffer push_constant_ring_buffer = nullptr;

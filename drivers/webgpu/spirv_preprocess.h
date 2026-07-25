@@ -30,6 +30,8 @@
 
 #pragma once
 
+#include "core/templates/hash_map.h"
+#include "core/templates/hash_set.h"
 #include "core/templates/vector.h"
 
 #include <cstdint>
@@ -54,6 +56,26 @@ struct DepthImageFixResult {
 // cannot drift apart - they used to keep separate copies of the list, and a pass
 // added to one silently did not apply to the other.
 // r_depth_images receives the depth=2 images fix_depth2_images rewrote, if wanted.
+// Image type of a descriptor binding, straight from OpTypeImage. Types do not
+// vary with specialization constants, so this is the answer for every
+// specialization - unlike reading it back from a translated module, where the
+// declaration may have been pruned as unused for the default constant values.
+struct ImageBindingInfo {
+	uint32_t dim = 0; // SPIR-V Dim: 0=1D, 1=2D, 2=3D, 3=Cube.
+	uint32_t depth = 0;
+	uint32_t arrayed = 0;
+	uint32_t multisampled = 0;
+};
+
+void binding_image_info(const Vector<uint8_t> &p_bytes, HashMap<uint32_t, ImageBindingInfo> *r_info);
+
+// Collect (set << 16 | binding) for every descriptor-decorated variable that any
+// function in the module mentions, in Godot's own binding numbering. Runs on the
+// module before specialization constants are frozen, so the result covers every
+// specialization that can be built from it - which is what a bind group layout,
+// built once per shader, has to remain valid for.
+void reachable_binding_keys(const Vector<uint8_t> &p_bytes, HashSet<uint32_t> *r_keys);
+
 // r_unused_binding_keys receives (set << 16 | binding) for resources the passes
 // made unreachable, which the caller needs so it can stop claiming they are
 // visible to a shader stage.

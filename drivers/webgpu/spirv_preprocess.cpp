@@ -2127,6 +2127,176 @@ Vector<uint8_t> eliminate_dead_code(const Vector<uint8_t> &p_bytes) {
 	return out;
 }
 
+// ---- reachable_binding_keys ----
+
+void reachable_binding_keys(const Vector<uint8_t> &p_bytes, HashSet<uint32_t> *r_keys) {
+	if (!r_keys) {
+		return;
+	}
+	const uint8_t *data = p_bytes.ptr();
+	const int64_t len = p_bytes.size();
+	if (len < 20 || (len % 4) != 0) {
+		return;
+	}
+	const uint32_t nwords = (uint32_t)(len / 4);
+
+	// Descriptor set / binding for every decorated variable.
+	HashMap<uint32_t, uint32_t> var_set;
+	HashMap<uint32_t, uint32_t> var_binding;
+	{
+		uint32_t pos = 5;
+		while (pos < nwords) {
+			uint32_t w0 = read_word(data, len, pos);
+			uint32_t wc = (w0 >> 16);
+			uint16_t op = (uint16_t)(w0 & 0xFFFF);
+			if (wc == 0 || pos + wc > nwords) {
+				break;
+			}
+			if (op == OP_DECORATE && wc >= 4) {
+				uint32_t target = read_word(data, len, pos + 1);
+				uint32_t deco = read_word(data, len, pos + 2);
+				uint32_t value = read_word(data, len, pos + 3);
+				if (deco == 34 /* DescriptorSet */) {
+					var_set.insert(target, value);
+				} else if (deco == 33 /* Binding */) {
+					var_binding.insert(target, value);
+				}
+			}
+			pos += wc;
+		}
+	}
+
+	if (var_binding.is_empty()) {
+		return;
+	}
+
+	// Which of them any function body mentions. Deliberately conservative - it
+	// does not follow the call graph, and it runs before specialization constants
+	// are frozen, so a binding used by any specialization of this module counts.
+	// That is the point: the bind group layout is built once and has to stay valid
+	// for every specialized module built from this shader later.
+	uint32_t pos = 5;
+	bool in_function = false;
+	while (pos < nwords) {
+		uint32_t w0 = read_word(data, len, pos);
+		uint32_t wc = (w0 >> 16);
+		uint16_t op = (uint16_t)(w0 & 0xFFFF);
+		if (wc == 0 || pos + wc > nwords) {
+			break;
+		}
+		if (op == 54 /* OpFunction */) {
+			in_function = true;
+		} else if (op == 56 /* OpFunctionEnd */) {
+			in_function = false;
+		} else if (in_function) {
+			for (uint32_t i = 1; i < wc; i++) {
+				uint32_t word = read_word(data, len, pos + i);
+				const uint32_t *binding = var_binding.getptr(word);
+				if (binding == nullptr) {
+					continue;
+				}
+				const uint32_t *set_index = var_set.getptr(word);
+				r_keys->insert(((set_index ? *set_index : 0u) << 16) | *binding);
+			}
+		}
+		pos += wc;
+	}
+}
+
+// ---- binding_image_info ----
+
+void binding_image_info(const Vector<uint8_t> &p_bytes, HashMap<uint32_t, ImageBindingInfo> *r_info) {
+	if (!r_info) {
+		return;
+	}
+	const uint8_t *data = p_bytes.ptr();
+	const int64_t len = p_bytes.size();
+	if (len < 20 || (len % 4) != 0) {
+		return;
+	}
+	const uint32_t nwords = (uint32_t)(len / 4);
+
+	HashMap<uint32_t, ImageBindingInfo> image_types; // OpTypeImage id -> info
+	HashMap<uint32_t, uint32_t> sampled_image_to_image;
+	HashMap<uint32_t, uint32_t> pointer_to_pointee;
+	HashMap<uint32_t, uint32_t> var_to_pointer;
+	HashMap<uint32_t, uint32_t> var_set;
+	HashMap<uint32_t, uint32_t> var_binding;
+
+	uint32_t pos = 5;
+	while (pos < nwords) {
+		uint32_t w0 = read_word(data, len, pos);
+		uint32_t wc = (w0 >> 16);
+		uint16_t op = (uint16_t)(w0 & 0xFFFF);
+		if (wc == 0 || pos + wc > nwords) {
+			break;
+		}
+		switch (op) {
+			case OP_TYPE_IMAGE: {
+				if (wc >= 9) {
+					ImageBindingInfo info;
+					info.dim = read_word(data, len, pos + 3);
+					info.depth = read_word(data, len, pos + 4);
+					info.arrayed = read_word(data, len, pos + 5);
+					info.multisampled = read_word(data, len, pos + 6);
+					image_types.insert(read_word(data, len, pos + 1), info);
+				}
+			} break;
+			case OP_TYPE_SAMPLED_IMAGE: {
+				if (wc >= 3) {
+					sampled_image_to_image.insert(read_word(data, len, pos + 1), read_word(data, len, pos + 2));
+				}
+			} break;
+			case OP_TYPE_POINTER: {
+				if (wc >= 4) {
+					pointer_to_pointee.insert(read_word(data, len, pos + 1), read_word(data, len, pos + 3));
+				}
+			} break;
+			case OP_VARIABLE: {
+				if (wc >= 4) {
+					var_to_pointer.insert(read_word(data, len, pos + 2), read_word(data, len, pos + 1));
+				}
+			} break;
+			case OP_DECORATE: {
+				if (wc >= 4) {
+					uint32_t target = read_word(data, len, pos + 1);
+					uint32_t deco = read_word(data, len, pos + 2);
+					uint32_t value = read_word(data, len, pos + 3);
+					if (deco == 34 /* DescriptorSet */) {
+						var_set.insert(target, value);
+					} else if (deco == 33 /* Binding */) {
+						var_binding.insert(target, value);
+					}
+				}
+			} break;
+			default:
+				break;
+		}
+		pos += wc;
+	}
+
+	for (const KeyValue<uint32_t, uint32_t> &kv : var_binding) {
+		const uint32_t *ptr = var_to_pointer.getptr(kv.key);
+		if (!ptr) {
+			continue;
+		}
+		const uint32_t *pointee = pointer_to_pointee.getptr(*ptr);
+		if (!pointee) {
+			continue;
+		}
+		uint32_t image_id = *pointee;
+		if (const uint32_t *unwrapped = sampled_image_to_image.getptr(image_id)) {
+			image_id = *unwrapped;
+		}
+		const ImageBindingInfo *info = image_types.getptr(image_id);
+		if (!info) {
+			continue;
+		}
+		const uint32_t *set_index = var_set.getptr(kv.key);
+		r_info->insert(((set_index ? *set_index : 0u) << 16) | kv.value, *info);
+	}
+}
+
 // ---- run_all ----
 
 Vector<uint8_t> run_all(const Vector<uint8_t> &p_bytes, Vector<DepthImageFixResult::DepthImageInfo> *r_depth_images, Vector<uint32_t> *r_unused_binding_keys) {
