@@ -55,6 +55,15 @@ static std::string convert_spirv_to_wgsl(const std::vector<uint8_t> &p_spv_bytes
 	// Preprocessing, shared with the runtime driver so the two cannot drift.
 	spv = spirv_preprocess::run_all(spv);
 
+	// Debug aid: AW3_DUMP_PREPROCESSED=<path> writes the module Tint is about to
+	// read, so preprocessing output can be disassembled and compared.
+	if (const char *dump_path = getenv("AW3_DUMP_PREPROCESSED")) {
+		if (FILE *df = fopen(dump_path, "wb")) {
+			fwrite(spv.ptr(), 1, (size_t)spv.size(), df);
+			fclose(df);
+		}
+	}
+
 	// Convert to uint32_t words for Tint.
 	size_t word_count = (size_t)spv.size() / 4;
 	const uint32_t *words = reinterpret_cast<const uint32_t *>(spv.ptr());

@@ -30,8 +30,11 @@
 
 #include "spirv_preprocess.h"
 
+#include "spirv-tools/libspirv.h"
 #include "spirv-tools/optimizer.hpp"
 
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "core/templates/hash_map.h"
@@ -40,6 +43,7 @@
 
 #include <cfloat>
 #include <cstdio>
+#include <cstdlib>
 #include <cmath>
 #include <cstring>
 
@@ -1959,33 +1963,220 @@ Vector<uint8_t> strip_restrict_decoration(const Vector<uint8_t> &p_bytes) {
 	return out;
 }
 
+static Vector<uint8_t> _remap_ids_by_grammar(const Vector<uint8_t> &p_bytes, const HashMap<uint32_t, uint32_t> &p_remap, bool p_uses_in_functions_only = false);
+
+// ---- alias_anisotropic_samplers ----
+
+Vector<uint8_t> alias_anisotropic_samplers(const Vector<uint8_t> &p_bytes, Vector<uint32_t> *r_removed_binding_keys) {
+	const uint8_t *data = p_bytes.ptr();
+	const int64_t len = p_bytes.size();
+	if (len < 20 || (len % 4) != 0) {
+		return p_bytes;
+	}
+	const uint32_t nwords = (uint32_t)(len / 4);
+
+	// Collect OpName for every id, so the engine's sampler names can be matched.
+	// std::string here, not Godot's String: this file is also compiled into the
+	// host tint_convert_cli against a minimal shim.
+	std::unordered_map<std::string, uint32_t> by_name;
+	{
+		uint32_t pos = 5;
+		while (pos < nwords) {
+			uint32_t w0 = read_word(data, len, pos);
+			uint32_t wc = (w0 >> 16);
+			uint16_t op = (uint16_t)(w0 & 0xFFFF);
+			if (wc == 0 || pos + wc > nwords) {
+				break;
+			}
+			if (op == OP_NAME && wc >= 3) {
+				uint32_t target = read_word(data, len, pos + 1);
+				const char *str = (const char *)(data + (pos + 2) * 4);
+				size_t max_len = (size_t)(wc - 2) * 4;
+				size_t str_len = strnlen(str, max_len);
+				by_name.emplace(std::string(str, str_len), target);
+			}
+			pos += wc;
+		}
+	}
+
+	if (by_name.empty()) {
+		return p_bytes;
+	}
+
+	// WebGPU caps samplers per shader stage (16 on Metal), and Godot's Forward
+	// Mobile fragment shader declares 18: two special ones plus the twelve static
+	// filter/repeat combinations, four of which differ only by anisotropy. Point
+	// those four at their trilinear equivalents; dead variable elimination then
+	// removes them and the stage fits. The cost is anisotropic filtering, which
+	// WebGPU can express but cannot spare a binding slot for here.
+	static const char *aniso_pairs[][2] = {
+		{ "SAMPLER_NEAREST_WITH_MIPMAPS_ANISOTROPIC_CLAMP", "SAMPLER_NEAREST_WITH_MIPMAPS_CLAMP" },
+		{ "SAMPLER_LINEAR_WITH_MIPMAPS_ANISOTROPIC_CLAMP", "SAMPLER_LINEAR_WITH_MIPMAPS_CLAMP" },
+		{ "SAMPLER_NEAREST_WITH_MIPMAPS_ANISOTROPIC_REPEAT", "SAMPLER_NEAREST_WITH_MIPMAPS_REPEAT" },
+		{ "SAMPLER_LINEAR_WITH_MIPMAPS_ANISOTROPIC_REPEAT", "SAMPLER_LINEAR_WITH_MIPMAPS_REPEAT" },
+	};
+
+	HashMap<uint32_t, uint32_t> remap;
+	for (const char *const *pair : aniso_pairs) {
+		auto from = by_name.find(pair[0]);
+		auto to = by_name.find(pair[1]);
+		if (from != by_name.end() && to != by_name.end() && from->second != to->second) {
+			remap.insert(from->second, to->second);
+		}
+	}
+
+	if (remap.is_empty()) {
+		return p_bytes;
+	}
+
+	// Report where the now-unused samplers lived, so the driver can drop them from
+	// the stages' visibility instead of guessing from reflection.
+	if (r_removed_binding_keys) {
+		HashMap<uint32_t, uint32_t> var_set;
+		HashMap<uint32_t, uint32_t> var_binding;
+		uint32_t pos = 5;
+		while (pos < nwords) {
+			uint32_t w0 = read_word(data, len, pos);
+			uint32_t wc = (w0 >> 16);
+			uint16_t op = (uint16_t)(w0 & 0xFFFF);
+			if (wc == 0 || pos + wc > nwords) {
+				break;
+			}
+			if (op == OP_DECORATE && wc >= 4) {
+				uint32_t target = read_word(data, len, pos + 1);
+				uint32_t deco = read_word(data, len, pos + 2);
+				uint32_t value = read_word(data, len, pos + 3);
+				if (deco == 34 /* DescriptorSet */) {
+					var_set.insert(target, value);
+				} else if (deco == 33 /* Binding */) {
+					var_binding.insert(target, value);
+				}
+			}
+			pos += wc;
+		}
+		for (const KeyValue<uint32_t, uint32_t> &kv : remap) {
+			const uint32_t *set_index = var_set.getptr(kv.key);
+			const uint32_t *binding = var_binding.getptr(kv.key);
+			if (set_index && binding) {
+				r_removed_binding_keys->push_back((*set_index << 16) | *binding);
+			}
+		}
+	}
+
+	return _remap_ids_by_grammar(p_bytes, remap, true /* uses inside functions only */);
+}
+
+// ---- eliminate_dead_code ----
+
+Vector<uint8_t> eliminate_dead_code(const Vector<uint8_t> &p_bytes) {
+	const int64_t len = p_bytes.size();
+	if (len < 20 || (len % 4) != 0) {
+		return p_bytes;
+	}
+
+	std::vector<uint32_t> input((size_t)(len / 4));
+	memcpy(input.data(), p_bytes.ptr(), (size_t)len);
+
+	spvtools::Optimizer optimizer(SPV_ENV_VULKAN_1_3);
+	bool failed = false;
+	optimizer.SetMessageConsumer([&failed](spv_message_level_t level, const char *, const spv_position_t &, const char *message) {
+		if (level == SPV_MSG_FATAL || level == SPV_MSG_INTERNAL_ERROR || level == SPV_MSG_ERROR) {
+			failed = true;
+			fprintf(stderr, "SPIR-V dead code elimination: %s\n", message ? message : "unknown error");
+		}
+	});
+	// Fold the constants first so branches on frozen specialization constants
+	// become statically false, then delete what that makes unreachable.
+	const char *chain = getenv("AW3_DCE_CHAIN");
+	if (chain == nullptr) {
+		// Deliberately no aggressive DCE: it decides the fragment output store is
+		// dead once preprocessing has rewritten the entry point's interface, and
+		// strips the shader to nothing. Constant folding, dead branches, dead
+		// functions and unreferenced globals are all safe, and the last of those
+		// is what actually drops the surplus sampler bindings.
+		chain = "fold,dbe,edf,dve";
+	}
+	auto uses = [chain](const char *p_key) -> bool { return strstr(chain, p_key) != nullptr; };
+	if (uses("fold")) {
+		optimizer.RegisterPass(spvtools::CreateFoldSpecConstantOpAndCompositePass());
+	}
+	if (uses("ccp")) {
+		optimizer.RegisterPass(spvtools::CreateCCPPass());
+	}
+	if (uses("dbe")) {
+		optimizer.RegisterPass(spvtools::CreateDeadBranchElimPass());
+	}
+	if (uses("adce")) {
+		optimizer.RegisterPass(spvtools::CreateAggressiveDCEPass(true /* preserve_interface */));
+	}
+	if (uses("edf")) {
+		optimizer.RegisterPass(spvtools::CreateEliminateDeadFunctionsPass());
+	}
+	if (uses("dve")) {
+		optimizer.RegisterPass(spvtools::CreateDeadVariableEliminationPass());
+	}
+
+	std::vector<uint32_t> output;
+	if (!optimizer.Run(input.data(), input.size(), &output) || failed || output.empty()) {
+		return p_bytes;
+	}
+
+	Vector<uint8_t> out;
+	out.resize((int)(output.size() * 4));
+	memcpy(out.ptrw(), output.data(), output.size() * 4);
+	return out;
+}
+
 // ---- run_all ----
 
-Vector<uint8_t> run_all(const Vector<uint8_t> &p_bytes, Vector<DepthImageFixResult::DepthImageInfo> *r_depth_images) {
+Vector<uint8_t> run_all(const Vector<uint8_t> &p_bytes, Vector<DepthImageFixResult::DepthImageInfo> *r_depth_images, Vector<uint32_t> *r_unused_binding_keys) {
 	Vector<uint8_t> spv = p_bytes;
+
+	// Debug aid: AW3_PASSES_UPTO=<n> stops after the n-th pass, so a module that
+	// comes out wrong can be bisected against the pass that did it.
+	int pass_limit = -1;
+	if (const char *limit_env = getenv("AW3_PASSES_UPTO")) {
+		pass_limit = atoi(limit_env);
+	}
+	int pass_index = 0;
+	auto want = [&](void) -> bool {
+		pass_index++;
+		return pass_limit < 0 || pass_index <= pass_limit;
+	};
 
 	// Opaque inlining goes first: every pass below rewrites variables, and none
 	// of them follow a texture or sampler across a function boundary.
-	spv = inline_opaque_functions(spv);
-	spv = freeze_spec_constant_ops(spv);
-	spv = rewrite_copy_logical(spv);
-	spv = rewrite_terminate_invocation(spv);
-	spv = convert_push_constants_to_uniforms(spv);
-	spv = split_combined_samplers(spv);
+	if (want()) { spv = inline_opaque_functions(spv); }
+	if (want()) { spv = freeze_spec_constant_ops(spv); }
+	if (want()) { spv = rewrite_copy_logical(spv); }
+	if (want()) { spv = rewrite_terminate_invocation(spv); }
+	if (want()) { spv = convert_push_constants_to_uniforms(spv); }
+	if (want()) { spv = split_combined_samplers(spv); }
 
-	DepthImageFixResult depth_result = fix_depth2_images(spv);
-	spv = depth_result.bytes;
-	if (r_depth_images) {
-		*r_depth_images = depth_result.depth_images;
+	if (want()) {
+		DepthImageFixResult depth_result = fix_depth2_images(spv);
+		spv = depth_result.bytes;
+		if (r_depth_images) {
+			*r_depth_images = depth_result.depth_images;
+		}
 	}
 
-	spv = negate_position_y(spv);
-	spv = strip_restrict_decoration(spv);
-	spv = strip_memory_barrier(spv);
-	spv = fix_nonfinite_literals(spv);
-	spv = flatten_binding_arrays(spv);
-	spv = infer_readonly_storage(spv);
-	spv = strip_nonreadable_storage_buffers(spv);
+	if (want()) { spv = negate_position_y(spv); }
+	if (want()) { spv = strip_restrict_decoration(spv); }
+	if (want()) { spv = strip_memory_barrier(spv); }
+	if (want()) { spv = fix_nonfinite_literals(spv); }
+	if (want()) { spv = flatten_binding_arrays(spv); }
+	if (want()) { spv = infer_readonly_storage(spv); }
+	if (want()) { spv = strip_nonreadable_storage_buffers(spv); }
+
+	// Last: freezing specialization constants above turns ubershader branches into
+	// statically dead code, but the samplers and textures they mention stay
+	// referenced, and WebGPU counts them against a hard per-stage limit (16
+	// samplers on Metal, which Godot's Forward Mobile vertex stage otherwise
+	// exceeds). Deleting the dead code drops those references.
+	// Before the dead code sweep, so the samplers this frees up get removed by it.
+	if (want()) { spv = alias_anisotropic_samplers(spv, r_unused_binding_keys); }
+	if (want()) { spv = eliminate_dead_code(spv); }
 
 	// The passes above emit constructs that need SPIR-V 1.3 (the StorageBuffer
 	// storage class), which the input may predate.
@@ -2346,6 +2537,96 @@ Vector<uint8_t> fix_nonfinite_literals(const Vector<uint8_t> &p_bytes) {
 // Literal values in OpConstant/OpSpecConstant/OpSwitch are excluded from
 // replacement to avoid false positives.
 
+// Remap SPIR-V result/reference IDs using SPIRV-Tools' grammar, so only true ID
+// operands are touched.
+//
+// Doing this by hand - walking every word of every instruction and substituting
+// anything that matches an ID being remapped - silently corrupts literals that
+// happen to share a value with a remapped ID. That is not hypothetical: it
+// rewrote "OpDecorate %x ArrayStride 240" to stride 22 and an OpExtInst
+// instruction number to 4558, which surfaced far away as Tint complaining that a
+// struct was smaller than its last member, and as invalid SPIR-V.
+static Vector<uint8_t> _remap_ids_by_grammar(const Vector<uint8_t> &p_bytes, const HashMap<uint32_t, uint32_t> &p_remap, bool p_uses_in_functions_only) {
+	if (p_remap.is_empty() || p_bytes.size() < 20 || (p_bytes.size() % 4) != 0) {
+		return p_bytes;
+	}
+
+	Vector<uint32_t> words;
+	words.resize((int)(p_bytes.size() / 4));
+	memcpy(words.ptrw(), p_bytes.ptr(), (size_t)p_bytes.size());
+
+	struct RemapState {
+		uint32_t *base;
+		size_t word_count;
+		const HashMap<uint32_t, uint32_t> *remap;
+		// Aliasing one variable onto another must rewrite only uses inside function
+		// bodies: rewriting the definition would produce a duplicate id, and
+		// rewriting OpName/OpDecorate targets would move the alias's binding
+		// decorations onto the variable it aliases.
+		bool uses_in_functions_only;
+		bool in_function;
+	} state{ words.ptrw(), (size_t)words.size(), &p_remap, p_uses_in_functions_only, false };
+
+	spv_context context = spvContextCreate(SPV_ENV_VULKAN_1_3);
+	auto parse_instruction = [](void *p_user, const spv_parsed_instruction_t *p_inst) -> spv_result_t {
+		RemapState *st = (RemapState *)p_user;
+		if (p_inst->opcode == 54 /* OpFunction */) {
+			st->in_function = true;
+		} else if (p_inst->opcode == 56 /* OpFunctionEnd */) {
+			st->in_function = false;
+		}
+		if (st->uses_in_functions_only && !st->in_function) {
+			return SPV_SUCCESS;
+		}
+		for (uint16_t i = 0; i < p_inst->num_operands; i++) {
+			const spv_parsed_operand_t &operand = p_inst->operands[i];
+			if (st->uses_in_functions_only && operand.type == SPV_OPERAND_TYPE_RESULT_ID) {
+				continue;
+			}
+			switch (operand.type) {
+				case SPV_OPERAND_TYPE_ID:
+				case SPV_OPERAND_TYPE_TYPE_ID:
+				case SPV_OPERAND_TYPE_RESULT_ID:
+				case SPV_OPERAND_TYPE_MEMORY_SEMANTICS_ID:
+				case SPV_OPERAND_TYPE_SCOPE_ID:
+				case SPV_OPERAND_TYPE_OPTIONAL_ID: {
+					// operand.offset is relative to the instruction; p_inst->words
+					// points into the buffer being rewritten.
+					size_t index = (size_t)(p_inst->words - st->base) + operand.offset;
+					if (index >= st->word_count) {
+						break;
+					}
+					const uint32_t *replacement = st->remap->getptr(st->base[index]);
+					if (replacement) {
+						st->base[index] = *replacement;
+					}
+				} break;
+				default:
+					break;
+			}
+		}
+		return SPV_SUCCESS;
+	};
+
+	spv_diagnostic diagnostic = nullptr;
+	spv_result_t result = spvBinaryParse(context, &state, words.ptr(), (size_t)words.size(),
+			nullptr, parse_instruction, &diagnostic);
+	if (diagnostic) {
+		spvDiagnosticDestroy(diagnostic);
+	}
+	spvContextDestroy(context);
+
+	if (result != SPV_SUCCESS) {
+		// Leave the module alone rather than half-rewrite it.
+		return p_bytes;
+	}
+
+	Vector<uint8_t> out;
+	out.resize((int)(words.size() * 4));
+	memcpy(out.ptrw(), words.ptr(), (size_t)words.size() * 4);
+	return out;
+}
+
 Vector<uint8_t> flatten_binding_arrays(const Vector<uint8_t> &p_bytes) {
 	const uint8_t *data = p_bytes.ptr();
 	const int64_t len = p_bytes.size();
@@ -2545,81 +2826,22 @@ Vector<uint8_t> flatten_binding_arrays(const Vector<uint8_t> &p_bytes) {
 			}
 		}
 
-		// Determine which word positions hold literal values (not IDs)
-		// and should be excluded from replacement.
-		// OpConstant/OpSpecConstant: words 3+ are literal values.
-		// OpConstantComposite/OpSpecConstantComposite: words 3+ are constituent IDs (DO replace).
-		// OpSwitch: alternating case literals starting at word 3 (word 3=literal, 4=label, 5=literal...).
-		bool has_literals = false;
-		uint32_t literal_start = 0;
-		bool switch_alternating = false;
-
-		if (op == OP_CONSTANT || op == OP_SPEC_CONSTANT) {
-			has_literals = true;
-			literal_start = 3;
-		} else if (op == 251 /* OpSwitch */) {
-			switch_alternating = true;
-		}
-
-		// Check if this instruction has any word that needs replacement.
-		bool needs_rewrite = false;
-		for (uint32_t i = 1; i < wc; i++) {
-			if (has_literals && i >= literal_start) {
-				continue;
-			}
-			if (switch_alternating && i >= 2 && ((i - 2) % 2 == 0)) {
-				continue; // Case literal positions in OpSwitch.
-			}
-			uint32_t word = read_word(data, len, pos + i);
-			if (array_to_elem.has(word) || ac_to_var.has(word) || ptr_remap.has(word)) {
-				needs_rewrite = true;
-				break;
-			}
-		}
-
-		if (needs_rewrite) {
-			for (uint32_t i = 0; i < wc; i++) {
-				uint32_t word = read_word(data, len, pos + i);
-				if (i == 0) {
-					push_word(out, word);
-					continue;
-				}
-				if (has_literals && i >= literal_start) {
-					push_word(out, word);
-					continue;
-				}
-				if (switch_alternating && i >= 2 && ((i - 2) % 2 == 0)) {
-					push_word(out, word);
-					continue;
-				}
-				// Replace array type ID → element type ID.
-				const uint32_t *elem = array_to_elem.getptr(word);
-				if (elem) {
-					push_word(out, *elem);
-					continue;
-				}
-				// Replace access chain result → variable ID.
-				const uint32_t *var = ac_to_var.getptr(word);
-				if (var) {
-					push_word(out, *var);
-					continue;
-				}
-				// Replace duplicate pointer type ID → canonical ID.
-				const uint32_t *canonical = ptr_remap.getptr(word);
-				if (canonical) {
-					push_word(out, *canonical);
-					continue;
-				}
-				push_word(out, word);
-			}
-		} else {
-			append_bytes(out, data, pos * 4, wc * 4);
-		}
-
+		append_bytes(out, data, pos * 4, wc * 4);
 		pos += wc;
 	}
 
-	return out;
+	// Substitute the IDs only where the grammar says an ID lives.
+	HashMap<uint32_t, uint32_t> remap;
+	for (const KeyValue<uint32_t, uint32_t> &kv : array_to_elem) {
+		remap.insert(kv.key, kv.value);
+	}
+	for (const KeyValue<uint32_t, uint32_t> &kv : ac_to_var) {
+		remap.insert(kv.key, kv.value);
+	}
+	for (const KeyValue<uint32_t, uint32_t> &kv : ptr_remap) {
+		remap.insert(kv.key, kv.value);
+	}
+	return _remap_ids_by_grammar(out, remap);
 }
 
 // ---- infer_readonly_storage ----

@@ -54,7 +54,10 @@ struct DepthImageFixResult {
 // cannot drift apart - they used to keep separate copies of the list, and a pass
 // added to one silently did not apply to the other.
 // r_depth_images receives the depth=2 images fix_depth2_images rewrote, if wanted.
-Vector<uint8_t> run_all(const Vector<uint8_t> &p_bytes, Vector<DepthImageFixResult::DepthImageInfo> *r_depth_images = nullptr);
+// r_unused_binding_keys receives (set << 16 | binding) for resources the passes
+// made unreachable, which the caller needs so it can stop claiming they are
+// visible to a shader stage.
+Vector<uint8_t> run_all(const Vector<uint8_t> &p_bytes, Vector<DepthImageFixResult::DepthImageInfo> *r_depth_images = nullptr, Vector<uint32_t> *r_unused_binding_keys = nullptr);
 
 // Evaluate OpSpecConstantOp instructions with default values and replace
 // them with regular OpConstant instructions. Also converts OpSpecConstant*
@@ -136,5 +139,16 @@ Vector<uint8_t> strip_nonreadable_storage_buffers(const Vector<uint8_t> &p_bytes
 // exactly that (fetch_ltc_lod(..., texture2D area_light_atlas, sampler)).
 // No-op for modules that never pass opaque types to functions.
 Vector<uint8_t> inline_opaque_functions(const Vector<uint8_t> &p_bytes);
+
+// Constant-fold and delete unreachable code (SPIRV-Tools). Run after the
+// specialization constants have been frozen, so ubershader branches that can no
+// longer be taken - and the resources only they referenced - disappear.
+Vector<uint8_t> eliminate_dead_code(const Vector<uint8_t> &p_bytes);
+
+// Point Godot's four anisotropic static samplers at their trilinear equivalents.
+// WebGPU allows 16 samplers per shader stage on Metal and the Forward Mobile
+// fragment shader wants 18; anisotropy is the cheapest of those to give up.
+// Matches on the engine's sampler names, so it no-ops on anything else.
+Vector<uint8_t> alias_anisotropic_samplers(const Vector<uint8_t> &p_bytes, Vector<uint32_t> *r_removed_binding_keys = nullptr);
 
 } // namespace spirv_preprocess

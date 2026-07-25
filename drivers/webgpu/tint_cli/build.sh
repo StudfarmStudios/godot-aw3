@@ -119,6 +119,13 @@ esac
 # ─────────────────────────────────────────────────────────────────────────────
 # Compile function: skip if .o is newer than source.
 # ─────────────────────────────────────────────────────────────────────────────
+# Newest header in drivers/webgpu: objects older than this are stale even when
+# their .cpp has not changed, which otherwise shows up as a link error about a
+# signature that no longer exists.
+# `|| true`: this script runs under `set -o pipefail`, and head exiting early
+# makes ls fail with SIGPIPE.
+NEWEST_HEADER=$( { ls -t "$SHIM_DIR"/../*.h "$SHIM_DIR"/*.h 2>/dev/null || true; } | head -1 || true)
+
 compile_one() {
     local src="$1"
     local obj="$2"
@@ -127,7 +134,9 @@ compile_one() {
     local flags=("$@")
 
     if [[ -f "$obj" && "$obj" -nt "$src" ]]; then
-        return 0
+        if [[ -z "$NEWEST_HEADER" || "$obj" -nt "$NEWEST_HEADER" ]]; then
+            return 0
+        fi
     fi
 
     mkdir -p "$(dirname "$obj")"

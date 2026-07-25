@@ -36,6 +36,7 @@
 #include "pixel_formats_webgpu.h"
 #include "spirv_preprocess.h"
 
+#include "core/crypto/crypto_core.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/hashfuncs.h"
 
@@ -170,6 +171,12 @@ static const char *_lookup_precompiled_wgsl(uint64_t p_spv_hash) {
 
 // Run SPIR-V preprocessing passes and translate to WGSL via Tint.
 // Returns a malloc'd null-terminated WGSL string, or nullptr on failure.
+// (set << 16 | binding) for resources the preprocessing passes made unreachable in
+// the module translated most recently - the anisotropic samplers it aliases away.
+// shader_create_from_container reads this after each stage so the bind group
+// layout can stop advertising them to a stage that can no longer reach them.
+static LocalVector<uint32_t> _last_unused_binding_keys;
+
 static char *_translate_spirv_to_wgsl(const uint8_t *p_spv_ptr, int p_spv_size) {
 	if (p_spv_size < 20 || (p_spv_size % 4) != 0) {
 		return nullptr;
@@ -181,7 +188,12 @@ static char *_translate_spirv_to_wgsl(const uint8_t *p_spv_ptr, int p_spv_size) 
 	memcpy(spv.ptrw(), p_spv_ptr, p_spv_size);
 
 	// SPIR-V preprocessing (shared with the build-time tint_convert_cli).
-	spv = spirv_preprocess::run_all(spv);
+	_last_unused_binding_keys.clear();
+	Vector<uint32_t> unused_binding_keys;
+	spv = spirv_preprocess::run_all(spv, nullptr, &unused_binding_keys);
+	for (uint32_t key : unused_binding_keys) {
+		_last_unused_binding_keys.push_back(key);
+	}
 
 	// Convert to uint32_t words for Tint.
 	int word_count = spv.size() / 4;
@@ -203,6 +215,23 @@ static char *_translate_spirv_to_wgsl(const uint8_t *p_spv_ptr, int p_spv_size) 
 			}
 			ERR_PRINT(vformat("Tint SPIR-V→WGSL failed: %s", err_str));
 			free(error_msg);
+			// Hand the exact module Tint rejected to the page, so a failure in the
+			// browser can be reproduced against the host tint_convert_cli instead of
+			// guessed at from a truncated message. Only populated on failure.
+			{
+				Vector<uint8_t> failed_bytes;
+				failed_bytes.resize((int)p_spv_size);
+				memcpy(failed_bytes.ptrw(), p_spv_ptr, (size_t)p_spv_size);
+				String b64 = CryptoCore::b64_encode_str(failed_bytes.ptr(), failed_bytes.size());
+				CharString b64_cs = b64.utf8();
+				EM_ASM({
+					globalThis.__webgpu_failed_spirv = globalThis.__webgpu_failed_spirv || [];
+					if (globalThis.__webgpu_failed_spirv.length < 8) {
+						globalThis.__webgpu_failed_spirv.push(UTF8ToString($0));
+					}
+				},
+						b64_cs.get_data());
+			}
 		} else {
 			ERR_PRINT("Tint SPIR-V→WGSL failed (unknown error)");
 		}
@@ -3272,6 +3301,17 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 	// Firefox/wgpu enforces Metal's limit of 8 storage buffers per shader stage.
 	HashMap<uint32_t, uint32_t> wgsl_buffer_stages;
 
+	// Maps (set_index << 16 | wgsl_binding) → WGPUShaderStage bitmask of the stages
+	// whose WGSL actually declares that binding. Tint prunes bindings an entry point
+	// cannot reach, so this is the true per-stage usage - reflection over-reports it.
+	// Needed for WebGPU's per-stage resource limits: Godot's Forward Mobile scene
+	// shader has 18 samplers, over the 16-per-stage cap, but the vertex stage uses
+	// almost none of them.
+	HashMap<uint32_t, uint32_t> wgsl_binding_stages;
+
+	// Bindings preprocessing removed from every stage of this shader.
+	HashSet<uint32_t> wgsl_unused_bindings;
+
 	// Read-write storage texture splits: maps (set << 16 | write_binding) → shadow_read_binding.
 	// Populated when readonly-and-readwrite-storage-textures is unavailable.
 	HashMap<uint32_t, uint32_t> wgsl_rw_storage_splits;
@@ -3801,14 +3841,33 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 		WGPUShaderModule mod = wgpuDeviceCreateShaderModule(device, &mod_desc);
 
 
+
 		// Scan WGSL for texture dimension declarations so the BGL uses the right viewDimension.
 		// Tint format: "@group(G) @binding(B) var NAME: texture_TYPE<...>;"
 		// Also detects sampler / sampler_comparison types.
 		{
+			for (uint32_t unused_key : _last_unused_binding_keys) {
+				wgsl_unused_bindings.insert(unused_key);
+			}
+
+			WGPUShaderStage this_stage = WGPUShaderStage_None;
+			if (s.shader_stage == RDD::SHADER_STAGE_VERTEX) {
+				this_stage = WGPUShaderStage_Vertex;
+			} else if (s.shader_stage == RDD::SHADER_STAGE_FRAGMENT) {
+				this_stage = WGPUShaderStage_Fragment;
+			} else if (s.shader_stage == RDD::SHADER_STAGE_COMPUTE) {
+				this_stage = WGPUShaderStage_Compute;
+			}
+
 			const char *p = wgsl_str;
 			while ((p = strstr(p, "@group(")) != nullptr) {
 				unsigned int grp = 0, bnd = 0;
 				if (parse_group_binding(p, grp, bnd)) {
+					// This stage declares this binding, so it is reachable from its
+					// entry point; anything Tint pruned is genuinely unused here.
+					uint32_t stage_key = ((uint32_t)grp << 16) | (uint32_t)bnd;
+					wgsl_binding_stages[stage_key] = (wgsl_binding_stages.has(stage_key) ? wgsl_binding_stages[stage_key] : 0u) | (uint32_t)this_stage;
+
 					// Find the ':' that separates the variable name from the type.
 					// This avoids matching "sampler" in variable names like "shadow_sampler".
 					const char *colon = strchr(p, ':');
@@ -4188,7 +4247,37 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 		for (int u_idx = 0; u_idx < set_uniforms.size(); u_idx++) {
 			const RenderingDeviceCommons::ShaderUniform &u = set_uniforms[u_idx];
 			WGShader::BindGroupEntry &bge = bgi.entries[u_idx];
-			WGPUShaderStage vis = _stages_to_wgpu_visibility((uint32_t)u.stages);
+			// Reflection says which stages *mention* a uniform; the WGSL says which
+			// stages can actually reach it. Prefer the latter: WebGPU enforces
+			// per-stage resource limits (16 samplers), and marking every binding
+			// visible to both stages busts them on Godot's scene shader. Falls back
+			// to reflection for anything not seen in the WGSL (e.g. bindings the
+			// driver injects itself).
+			auto vis_for = [&](uint32_t p_wgsl_binding) -> WGPUShaderStage {
+				uint32_t key = ((uint32_t)set << 16) | p_wgsl_binding;
+				if (wgsl_binding_stages.has(key)) {
+					return (WGPUShaderStage)wgsl_binding_stages[key];
+				}
+				if (wgsl_unused_bindings.has(key)) {
+					// Preprocessing aliased this one away, so no stage can reach it.
+					return WGPUShaderStage_None;
+				}
+				// Absent from every stage's WGSL. That usually means unused, but a
+				// specialised module built later can declare bindings the base module
+				// did not, so hiding it is only safe where it buys something: WebGPU's
+				// tight per-stage budgets are samplers (16) and storage buffers (10),
+				// both of which Godot's scene shader busts. Textures and uniform
+				// buffers have room to spare (48 and 12), so those keep reflection's
+				// answer and stay compatible with specialised modules.
+				const bool tight_budget = u.type == RDD::UNIFORM_TYPE_SAMPLER ||
+						u.type == RDD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE ||
+						u.type == RDD::UNIFORM_TYPE_STORAGE_BUFFER;
+				if (tight_budget) {
+					return WGPUShaderStage_None;
+				}
+				return _stages_to_wgpu_visibility((uint32_t)u.stages);
+			};
+			WGPUShaderStage vis = vis_for(u.binding * 2);
 
 			bge.godot_type = u.type;
 
@@ -4235,7 +4324,7 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 					WGPUBindGroupLayoutEntry &samp_entry = entries[e_idx++];
 					samp_entry = {};
 					samp_entry.binding = u.binding * 2 + 0;
-					samp_entry.visibility = vis;
+					samp_entry.visibility = vis_for(u.binding * 2 + 0);
 					{ uint32_t k = ((uint32_t)set << 16) | (u.binding * 2 + 0);
 					  samp_entry.sampler.type = (wgsl_is_comparison_sampler.has(k) && wgsl_is_comparison_sampler[k])
 						  ? WGPUSamplerBindingType_Comparison : WGPUSamplerBindingType_Filtering; }
@@ -4243,7 +4332,7 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 					WGPUBindGroupLayoutEntry &tex_entry = entries[e_idx++];
 					tex_entry = {};
 					tex_entry.binding = u.binding * 2 + 1;
-					tex_entry.visibility = vis;
+					tex_entry.visibility = vis_for(u.binding * 2 + 1);
 					{ uint32_t k = ((uint32_t)set << 16) | (u.binding * 2 + 1);
 					  bool is_ms = wgsl_is_multisampled_texture.has(k) && wgsl_is_multisampled_texture[k];
 					  bool is_depth = wgsl_is_depth_texture.has(k) && wgsl_is_depth_texture[k];
