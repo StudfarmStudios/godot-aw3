@@ -1178,6 +1178,7 @@ Error RenderingDevice::buffer_update(RID p_buffer, uint32_t p_offset, uint32_t p
 	ERR_FAIL_COND_V_MSG(p_offset + p_size > buffer->size, ERR_INVALID_PARAMETER, "Attempted to write buffer (" + itos((p_offset + p_size) - buffer->size) + " bytes) past the end.");
 
 	return _buffer_update(buffer, p_buffer, p_offset, p_size, p_data);
+}
 
 void RenderingDevice::buffer_update_direct(RID p_buffer, uint32_t p_offset, uint32_t p_size, const void *p_data) {
 	Buffer *buffer = _get_buffer_from_owner(p_buffer);
@@ -2439,7 +2440,7 @@ Error RenderingDevice::_texture_initialize_layered(RID p_texture, const Vector<V
 		tb.subresources.mipmap_count = texture->mipmaps;
 		tb.subresources.base_layer = 0;
 		tb.subresources.layer_count = layer_count;
-		driver->command_pipeline_barrier(transfer_worker->command_buffer, RDD::PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, RDD::PIPELINE_STAGE_COPY_BIT, {}, {}, tb);
+		driver->command_pipeline_barrier(transfer_worker->command_buffer, RDD::PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, RDD::PIPELINE_STAGE_COPY_BIT, {}, {}, tb, {});
 	}
 
 	// Pack each layer into the shared staging buffer at its own stride.

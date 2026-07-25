@@ -39,6 +39,14 @@ mkdir -p "$BUILD_DIR/spirv_tools" "$BUILD_DIR/tint" "$BUILD_DIR/cli"
 WARNINGS="-w"  # Suppress warnings from thirdparty code.
 COMMON_FLAGS="-O2 $WARNINGS"
 
+# On macOS, pin the SDK. Clang searches /usr/local/include ahead of the SDK's
+# libc++, so a stale copy of the C headers there (a common Command Line Tools
+# leftover) shadows <stddef.h> and every C++ header fails to compile. -isysroot
+# moves that search inside the SDK, which is also what Godot's own build does.
+if [[ "$(uname -s)" == "Darwin" ]]; then
+    COMMON_FLAGS="$COMMON_FLAGS -isysroot $(xcrun --show-sdk-path)"
+fi
+
 # Include paths for SPIRV-Tools.
 SPIRV_TOOLS_INCLUDES=(
     -I"$SPIRV_TOOLS_DIR"
