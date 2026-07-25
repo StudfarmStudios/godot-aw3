@@ -112,4 +112,13 @@ Vector<uint8_t> flatten_binding_arrays(const Vector<uint8_t> &p_bytes);
 // Tint to emit var<storage, read> instead of var<storage, read_write>.
 Vector<uint8_t> infer_readonly_storage(const Vector<uint8_t> &p_bytes);
 
+// Drop NonReadable (write-only) from storage *buffers*. GLSL allows writeonly
+// buffers, WGSL has only read and read_write, and Tint rejects the write-only
+// access it would otherwise emit ("vars in the 'storage' address space must
+// have access 'read' or 'read-write'"). Read-write is a safe superset: the
+// shader never reads. Storage textures are left alone - write-only is both
+// legal and the norm for those in WGSL, and making them read_write would
+// require the readonly_and_readwrite_storage_textures feature.
+Vector<uint8_t> strip_nonreadable_storage_buffers(const Vector<uint8_t> &p_bytes);
+
 } // namespace spirv_preprocess

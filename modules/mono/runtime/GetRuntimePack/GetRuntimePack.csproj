@@ -21,7 +21,9 @@
 
   <!-- Configuration for the Mono WASM runtime. Must match the features supported by the Godot build. -->
   <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'browser-wasm'">
-    <WasmEnableThreads>true</WasmEnableThreads>
+    <!-- Passed in by mono_configure.py from the engine's `threads` option: a
+         threaded runtime pack cannot be linked into a non-threaded engine. -->
+    <WasmEnableThreads Condition="'$(WasmEnableThreads)' == ''">true</WasmEnableThreads>
     <WasmEnableExceptionHandling>true</WasmEnableExceptionHandling>
     <WasmEnableSIMD>true</WasmEnableSIMD>
   </PropertyGroup>

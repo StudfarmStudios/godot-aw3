@@ -1948,6 +1948,116 @@ Vector<uint8_t> strip_restrict_decoration(const Vector<uint8_t> &p_bytes) {
 	return out;
 }
 
+// ---- strip_nonreadable_storage_buffers ----
+
+Vector<uint8_t> strip_nonreadable_storage_buffers(const Vector<uint8_t> &p_bytes) {
+	const uint8_t *data = p_bytes.ptr();
+	const int64_t len = p_bytes.size();
+	if (len < 20 || (len % 4) != 0) {
+		return p_bytes;
+	}
+	const uint32_t nwords = (uint32_t)(len / 4);
+
+	static constexpr uint32_t DECO_NON_READABLE = 25;
+
+	// Collect storage-buffer variables and the struct types they point at.
+	// Storage *textures* may legitimately be write-only in WGSL, so only
+	// buffers are considered here.
+	HashSet<uint32_t> storage_vars;
+	HashSet<uint32_t> storage_structs;
+	HashMap<uint32_t, uint32_t> pointer_to_pointee;
+	{
+		uint32_t pos = 5;
+		while (pos < nwords) {
+			uint32_t word0 = read_word(data, len, pos);
+			uint32_t wc = (word0 >> 16) & 0xFFFF;
+			uint16_t op = word0 & 0xFFFF;
+			if (wc == 0 || pos + wc > nwords) {
+				break;
+			}
+			if (op == OP_TYPE_POINTER && wc >= 4) {
+				uint32_t result_id = read_word(data, len, pos + 1);
+				uint32_t storage_class = read_word(data, len, pos + 2);
+				uint32_t pointee = read_word(data, len, pos + 3);
+				if (storage_class == SC_STORAGE_BUFFER) {
+					pointer_to_pointee.insert(result_id, pointee);
+					storage_structs.insert(pointee);
+				}
+			} else if (op == OP_VARIABLE && wc >= 4) {
+				uint32_t result_id = read_word(data, len, pos + 2);
+				uint32_t storage_class = read_word(data, len, pos + 3);
+				if (storage_class == SC_STORAGE_BUFFER) {
+					storage_vars.insert(result_id);
+				}
+			}
+			pos += wc;
+		}
+	}
+
+	if (storage_vars.is_empty() && storage_structs.is_empty()) {
+		return p_bytes;
+	}
+
+	// Quick scan: is there anything to strip?
+	bool found = false;
+	{
+		uint32_t pos = 5;
+		while (pos < nwords) {
+			uint32_t word0 = read_word(data, len, pos);
+			uint32_t wc = (word0 >> 16) & 0xFFFF;
+			uint16_t op = word0 & 0xFFFF;
+			if (wc == 0 || pos + wc > nwords) {
+				break;
+			}
+			if (op == OP_DECORATE && wc >= 3 && read_word(data, len, pos + 2) == DECO_NON_READABLE &&
+					storage_vars.has(read_word(data, len, pos + 1))) {
+				found = true;
+				break;
+			}
+			if (op == OP_MEMBER_DECORATE && wc >= 4 && read_word(data, len, pos + 3) == DECO_NON_READABLE &&
+					storage_structs.has(read_word(data, len, pos + 1))) {
+				found = true;
+				break;
+			}
+			pos += wc;
+		}
+	}
+
+	if (!found) {
+		return p_bytes;
+	}
+
+	Vector<uint8_t> out;
+	append_bytes(out, data, 0, 20);
+
+	uint32_t pos = 5;
+	while (pos < nwords) {
+		uint32_t word0 = read_word(data, len, pos);
+		uint32_t wc = (word0 >> 16) & 0xFFFF;
+		uint16_t op = word0 & 0xFFFF;
+		if (wc == 0 || pos + wc > nwords) {
+			break;
+		}
+
+		bool skip = false;
+		if (op == OP_DECORATE && wc >= 3 && read_word(data, len, pos + 2) == DECO_NON_READABLE &&
+				storage_vars.has(read_word(data, len, pos + 1))) {
+			skip = true;
+		}
+		if (op == OP_MEMBER_DECORATE && wc >= 4 && read_word(data, len, pos + 3) == DECO_NON_READABLE &&
+				storage_structs.has(read_word(data, len, pos + 1))) {
+			skip = true;
+		}
+
+		if (!skip) {
+			append_bytes(out, data, pos * 4, wc * 4);
+		}
+		pos += wc;
+	}
+
+	return out;
+}
+
 // ---- strip_memory_barrier ----
 
 Vector<uint8_t> strip_memory_barrier(const Vector<uint8_t> &p_bytes) {

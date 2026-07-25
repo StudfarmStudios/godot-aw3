@@ -43,6 +43,7 @@
 
 #include <webgpu/webgpu.h>
 #include <emscripten/emscripten.h>
+#include <cstdio> // snprintf; only reached transitively in threaded builds.
 #include <cstdlib>
 #include <cstring>
 #include <vector>
@@ -193,6 +194,7 @@ static char *_translate_spirv_to_wgsl(const uint8_t *p_spv_ptr, int p_spv_size) 
 	spv = spirv_preprocess::fix_nonfinite_literals(spv);
 	spv = spirv_preprocess::flatten_binding_arrays(spv);
 	spv = spirv_preprocess::infer_readonly_storage(spv);
+	spv = spirv_preprocess::strip_nonreadable_storage_buffers(spv);
 
 	// Convert to uint32_t words for Tint.
 	int word_count = spv.size() / 4;

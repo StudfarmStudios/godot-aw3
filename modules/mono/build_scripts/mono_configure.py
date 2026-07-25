@@ -37,6 +37,9 @@ def configure(env, env_mono):
             pass
 
         import subprocess
+        # The runtime pack has to be built with the same wasm features as the
+        # engine, or the two disagree about pthreads at link time. The game's
+        # own publish must match as well (WasmEnableThreads in its .csproj).
         exit_code = subprocess.call(
             [
                 "dotnet", "publish",
@@ -44,6 +47,7 @@ def configure(env, env_mono):
                 "-r", "browser-wasm",
                 "--self-contained",
                 "-c", "Release",
+                "-p:WasmEnableThreads=" + ("true" if env["threads"] else "false"),
             ]
         )
         if exit_code != 0:
