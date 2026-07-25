@@ -2297,6 +2297,90 @@ void binding_image_info(const Vector<uint8_t> &p_bytes, HashMap<uint32_t, ImageB
 	}
 }
 
+// ---- spec_constants_used_in_types ----
+
+// True when any specialization constant reaches a type declaration - in practice
+// an array length. WGSL cannot express those as overrides outside workgroup
+// memory, so such a module has to be frozen to constants and re-translated per
+// specialization. Everything else keeps its constants as WGSL overrides, which
+// lets one module serve every pipeline specialization.
+static bool _spec_constants_used_in_types(const Vector<uint8_t> &p_bytes) {
+	const uint8_t *data = p_bytes.ptr();
+	const int64_t len = p_bytes.size();
+	if (len < 20 || (len % 4) != 0) {
+		return false;
+	}
+	const uint32_t nwords = (uint32_t)(len / 4);
+
+	HashSet<uint32_t> spec_ids;
+	HashMap<uint32_t, std::vector<uint32_t>> derived_from; // result -> operands
+	std::vector<uint32_t> type_length_ids;
+
+	uint32_t pos = 5;
+	while (pos < nwords) {
+		uint32_t w0 = read_word(data, len, pos);
+		uint32_t wc = (w0 >> 16);
+		uint16_t op = (uint16_t)(w0 & 0xFFFF);
+		if (wc == 0 || pos + wc > nwords) {
+			break;
+		}
+		switch (op) {
+			case OP_SPEC_CONSTANT_TRUE:
+			case OP_SPEC_CONSTANT_FALSE:
+			case OP_SPEC_CONSTANT: {
+				if (wc >= 3) {
+					spec_ids.insert(read_word(data, len, pos + 2));
+				}
+			} break;
+			case OP_SPEC_CONSTANT_COMPOSITE:
+			case OP_SPEC_CONSTANT_OP: {
+				if (wc >= 3) {
+					uint32_t result = read_word(data, len, pos + 2);
+					spec_ids.insert(result);
+					std::vector<uint32_t> operands;
+					for (uint32_t i = 3; i < wc; i++) {
+						operands.push_back(read_word(data, len, pos + i));
+					}
+					derived_from.insert(result, operands);
+				}
+			} break;
+			case OP_TYPE_ARRAY: {
+				if (wc >= 4) {
+					type_length_ids.push_back(read_word(data, len, pos + 3));
+				}
+			} break;
+			default:
+				break;
+		}
+		pos += wc;
+	}
+
+	if (spec_ids.is_empty() || type_length_ids.empty()) {
+		return false;
+	}
+
+	// Walk each array length back through any specialization arithmetic.
+	HashSet<uint32_t> visited;
+	std::vector<uint32_t> worklist = type_length_ids;
+	while (!worklist.empty()) {
+		uint32_t id = worklist.back();
+		worklist.pop_back();
+		if (visited.has(id)) {
+			continue;
+		}
+		visited.insert(id);
+		if (spec_ids.has(id)) {
+			return true;
+		}
+		if (const std::vector<uint32_t> *operands = derived_from.getptr(id)) {
+			for (uint32_t operand : *operands) {
+				worklist.push_back(operand);
+			}
+		}
+	}
+	return false;
+}
+
 // ---- run_all ----
 
 Vector<uint8_t> run_all(const Vector<uint8_t> &p_bytes, Vector<DepthImageFixResult::DepthImageInfo> *r_depth_images, Vector<uint32_t> *r_unused_binding_keys) {
@@ -2317,7 +2401,13 @@ Vector<uint8_t> run_all(const Vector<uint8_t> &p_bytes, Vector<DepthImageFixResu
 	// Opaque inlining goes first: every pass below rewrites variables, and none
 	// of them follow a texture or sampler across a function boundary.
 	if (want()) { spv = inline_opaque_functions(spv); }
-	if (want()) { spv = freeze_spec_constant_ops(spv); }
+	// Freezing specialization constants costs a full re-translation per pipeline
+	// specialization (~200 ms for the scene shader) because it strips the SpecId
+	// decorations Tint turns into WGSL overrides. Only do it when the module
+	// actually needs it. AW3_SKIP_FREEZE=1 forces it off for experiments.
+	if (want() && getenv("AW3_SKIP_FREEZE") == nullptr && _spec_constants_used_in_types(spv)) {
+		spv = freeze_spec_constant_ops(spv);
+	}
 	if (want()) { spv = rewrite_copy_logical(spv); }
 	if (want()) { spv = rewrite_terminate_invocation(spv); }
 	if (want()) { spv = convert_push_constants_to_uniforms(spv); }
