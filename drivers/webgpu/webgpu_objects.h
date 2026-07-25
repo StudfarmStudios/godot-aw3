@@ -243,6 +243,14 @@ struct WGPipelineWrapper {
 		WGPUComputePipeline compute_handle;
 	};
 	WGShader *shader = nullptr;
+	// False while an asynchronous creation is still in flight. The handle above is
+	// null until the callback lands, so nothing may bind this pipeline before then
+	// - RenderingDevice::pipeline_is_ready() is what callers check.
+	bool ready = true;
+	// Set if the asynchronous creation failed; the pipeline stays unusable.
+	bool failed = false;
+	// A strip pipeline needs a second (Uint16) variant, so readiness waits for both.
+	uint32_t pending_creations = 0;
 	// Specialized shader modules created with pipeline-specific specialization constants.
 	// If non-null, these are owned by this pipeline and must be released.
 	WGPUShaderModule specialized_modules[6] = {};

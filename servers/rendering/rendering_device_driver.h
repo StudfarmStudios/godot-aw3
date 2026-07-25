@@ -670,6 +670,13 @@ public:
 
 	virtual void pipeline_free(PipelineID p_pipeline) = 0;
 
+	// Drivers that can build pipelines off the calling thread opt in here: while
+	// enabled, render_pipeline_create returns as soon as the work is started and
+	// the pipeline only becomes usable once pipeline_is_ready() says so. Callers
+	// that cannot wait leave it off and get the pipeline built in place.
+	virtual void pipeline_set_async_creation(bool p_enabled) {}
+	virtual bool pipeline_is_ready(PipelineID p_pipeline) { return true; }
+
 	// ----- BINDING -----
 
 	virtual void command_bind_push_constants(CommandBufferID p_cmd_buffer, ShaderID p_shader, uint32_t p_first_index, VectorView<uint32_t> p_data) = 0;

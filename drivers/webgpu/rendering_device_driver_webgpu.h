@@ -108,6 +108,9 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 
 	RenderingShaderContainerFormatWebGPU *shader_container_format = nullptr;
 
+	// While set, render pipelines are created asynchronously (see render_pipeline_create).
+	bool pipeline_create_async = false;
+
 	// Sampler descriptors, and their non-filtering twins. WebGPU rejects a
 	// filtering sampler used with a depth texture, and Godot's shaders do exactly
 	// that when they read a shadow atlas without comparison.
@@ -528,6 +531,8 @@ public:
 
 	/// Release a render or compute pipeline.
 	virtual void pipeline_free(PipelineID p_pipeline) override final;
+	virtual void pipeline_set_async_creation(bool p_enabled) override final;
+	virtual bool pipeline_is_ready(PipelineID p_pipeline) override final;
 	/// Write push constant data. Emulated via a ring buffer (WebGPU has no push constants).
 	virtual void command_bind_push_constants(CommandBufferID p_cmd_buffer, ShaderID p_shader, uint32_t p_first_index, VectorView<uint32_t> p_data) override final;
 	/// Stub — WebGPU has no pipeline cache. Returns true.

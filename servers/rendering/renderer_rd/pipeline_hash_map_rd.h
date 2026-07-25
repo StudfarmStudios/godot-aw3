@@ -64,12 +64,21 @@ private:
 
 		{
 			MutexLock lock(compiled_queue_mutex);
-			for (const Pair<uint32_t, RID> &pair : compiled_queue) {
+			// A pipeline built asynchronously is not usable the moment it is handed
+			// over - binding it before the driver has it would draw nothing. Leave
+			// those queued and pick them up on a later pass; the ubershader covers
+			// the gap in the meantime.
+			uint32_t kept = 0;
+			for (uint32_t i = 0; i < compiled_queue.size(); i++) {
+				const Pair<uint32_t, RID> &pair = compiled_queue[i];
+				if (!RD::get_singleton()->pipeline_is_ready(pair.second)) {
+					compiled_queue[kept++] = pair;
+					continue;
+				}
 				hash_map[pair.first] = pair.second;
 				hashes_added.push_back(pair.first);
 			}
-
-			compiled_queue.clear();
+			compiled_queue.resize(kept);
 		}
 
 		{
@@ -111,7 +120,12 @@ private:
 				map(p_map), key(p_key), hash(p_hash) {}
 
 		virtual void compile() override {
+			// Asynchronous where the driver supports it: the compile then happens off
+			// this thread entirely and the pipeline appears once it is ready. Nothing
+			// waits on it - the renderer is already drawing with the ubershader.
+			RD::get_singleton()->pipeline_set_async_creation(true);
 			(map->creation_object->*map->creation_function)(key);
+			RD::get_singleton()->pipeline_set_async_creation(false);
 		}
 		virtual uint32_t key_hash() const override { return hash; }
 		virtual const void *owner() const override { return map; }

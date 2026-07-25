@@ -64,6 +64,38 @@
 // Forward declaration for timestamp readback callback (defined below command_timestamp_query_pool_reset).
 static void _timestamp_readback_callback(WGPUMapAsyncStatus p_status, WGPUStringView p_message, void *p_userdata1, void *p_userdata2);
 
+// Asynchronous render pipeline creation lands here, once per requested variant
+// (a strip pipeline asks for two). The wrapper only becomes usable when every
+// variant has arrived.
+static void _render_pipeline_async_callback(WGPUCreatePipelineAsyncStatus p_status, WGPURenderPipeline p_pipeline,
+		WGPUStringView p_message, void *p_userdata1, void *p_userdata2) {
+	WGPipelineWrapper *pw = (WGPipelineWrapper *)p_userdata1;
+	if (pw == nullptr) {
+		return;
+	}
+	bool is_strip_variant = (uintptr_t)p_userdata2 == 1;
+
+	if (p_status == WGPUCreatePipelineAsyncStatus_Success && p_pipeline != nullptr) {
+		if (is_strip_variant) {
+			pw->render_handle_u16 = p_pipeline;
+		} else {
+			pw->render_handle = p_pipeline;
+		}
+	} else if (!is_strip_variant) {
+		// The Uint16 strip variant is optional; the main pipeline is not.
+		pw->failed = true;
+		ERR_PRINT(vformat("WebGPU: asynchronous render pipeline creation failed: %s",
+				p_message.data ? String::utf8(p_message.data, (int)p_message.length) : String("unknown")));
+	}
+
+	if (pw->pending_creations > 0) {
+		pw->pending_creations--;
+	}
+	if (pw->pending_creations == 0) {
+		pw->ready = !pw->failed && pw->render_handle != nullptr;
+	}
+}
+
 // Fence work-done callback: fires when wgpuQueueSubmit work completes on GPU.
 // The message parameter arrived in Emscripten 4.0.13's webgpu.h; earlier
 // headers declared this callback without it.
@@ -2636,6 +2668,15 @@ WGPUVertexFormat RenderingDeviceDriverWebGPU::_data_format_to_wgpu_vertex(DataFo
 // =============================================================================
 // SAMPLERS
 // =============================================================================
+
+void RenderingDeviceDriverWebGPU::pipeline_set_async_creation(bool p_enabled) {
+	pipeline_create_async = p_enabled;
+}
+
+bool RenderingDeviceDriverWebGPU::pipeline_is_ready(PipelineID p_pipeline) {
+	WGPipelineWrapper *pw = (WGPipelineWrapper *)(p_pipeline.id);
+	return pw == nullptr || pw->ready;
+}
 
 RDD::SamplerID RenderingDeviceDriverWebGPU::sampler_create(const SamplerState &p_state) {
 	WGPUSamplerDescriptor desc = {};
@@ -8469,6 +8510,41 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 	String _pipeline_label_str = "pipe#" + itos(_pid) + ":" + shader->name;
 	CharString _pipeline_label_cs = _pipeline_label_str.utf8();
 	desc.label = { _pipeline_label_cs.get_data(), WGPU_STRLEN };
+
+	// Asynchronous creation keeps the compile off the frame: Dawn does the work on
+	// its own threads and calls back, and the renderer draws with the ubershader
+	// until pipeline_is_ready() says otherwise. Only used where the caller is not
+	// about to block on the result.
+	if (pipeline_create_async) {
+		WGPipelineWrapper *pw = new WGPipelineWrapper();
+		pw->type = WGPipelineWrapper::RENDER;
+		pw->render_handle = nullptr;
+		pw->shader = shader;
+		pw->specialized_modules[SHADER_STAGE_VERTEX] = specialized_vertex;
+		pw->specialized_modules[SHADER_STAGE_FRAGMENT] = specialized_fragment;
+		pw->stencil_reference = p_depth_stencil_state.front_op.reference;
+		pw->is_strip = is_strip;
+		pw->ready = false;
+		pw->pending_creations = is_strip ? 2 : 1;
+
+		WGPUCreateRenderPipelineAsyncCallbackInfo cb = {};
+		cb.mode = WGPUCallbackMode_AllowSpontaneous;
+		cb.callback = _render_pipeline_async_callback;
+		cb.userdata1 = pw;
+		cb.userdata2 = (void *)(uintptr_t)0; // 0 = main variant.
+		wgpuDeviceCreateRenderPipelineAsync(device, &desc, cb);
+
+		if (is_strip) {
+			desc.primitive.stripIndexFormat = WGPUIndexFormat_Uint16;
+			WGPUCreateRenderPipelineAsyncCallbackInfo cb16 = {};
+			cb16.mode = WGPUCallbackMode_AllowSpontaneous;
+			cb16.callback = _render_pipeline_async_callback;
+			cb16.userdata1 = pw;
+			cb16.userdata2 = (void *)(uintptr_t)1; // 1 = Uint16 strip variant.
+			wgpuDeviceCreateRenderPipelineAsync(device, &desc, cb16);
+		}
+		return PipelineID(pw);
+	}
 
 	WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(device, &desc);
 	if (!pipeline) {

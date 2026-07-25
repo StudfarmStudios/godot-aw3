@@ -1186,6 +1186,23 @@ void RenderingDevice::buffer_update_direct(RID p_buffer, uint32_t p_offset, uint
 	driver->buffer_write_direct(buffer->driver_id, p_offset, p_size, p_data);
 }
 
+void RenderingDevice::pipeline_set_async_creation(bool p_enabled) {
+	driver->pipeline_set_async_creation(p_enabled);
+}
+
+bool RenderingDevice::pipeline_is_ready(RID p_pipeline) {
+	RenderPipeline *pipeline = render_pipeline_owner.get_or_null(p_pipeline);
+	if (pipeline != nullptr) {
+		return driver->pipeline_is_ready(pipeline->driver_id);
+	}
+	ComputePipeline *compute = compute_pipeline_owner.get_or_null(p_pipeline);
+	if (compute != nullptr) {
+		return driver->pipeline_is_ready(compute->driver_id);
+	}
+	// Not a pipeline we know about: nothing to wait for.
+	return true;
+}
+
 bool RenderingDevice::gpu_calls_main_thread_only() {
 	return driver->api_trait_get(RDD::API_TRAIT_GPU_CALLS_MAIN_THREAD_ONLY) != 0;
 }
