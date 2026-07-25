@@ -237,8 +237,23 @@ Error CallQueue::flush() {
 
 	flushing = true;
 
-	uint32_t i = 0;
-	uint32_t offset = 0;
+	// The messages below run arbitrary user code. On builds where that code can
+	// throw across the C++ frames (e.g. the web/.NET build, which compiles with
+	// -fwasm-exceptions so managed exceptions unwind through here), an escaping
+	// exception would otherwise leave `flushing` stuck true forever, making every
+	// later flush() bail out with ERR_BUSY — deferred calls, and with them all
+	// CanvasItem redraws, silently stop for the rest of the process.
+	struct FlushingReset {
+		bool *flag;
+		~FlushingReset() { *flag = false; }
+	} flushing_reset{ &flushing };
+
+	// Resume where an aborted flush stopped, if there was one. Restarting from
+	// zero would re-read already-destructed messages.
+	uint32_t i = resume_page;
+	uint32_t offset = resume_offset;
+	resume_page = 0;
+	resume_offset = 0;
 
 	while (i < pages_used && offset < page_bytes[i]) {
 		Page *page = pages[i];
@@ -254,6 +269,15 @@ Error CallQueue::flush() {
 
 		//pre-advance so this function is reentrant
 		offset += advance;
+
+		// Remember where to continue if the dispatch below never returns to us
+		// (a managed exception can unwind straight through these frames).
+		resume_page = i;
+		resume_offset = offset;
+		if (resume_offset == page_bytes[i]) {
+			resume_page = i + 1;
+			resume_offset = 0;
+		}
 
 		Object *target = message->callable.get_object();
 
@@ -298,7 +322,7 @@ Error CallQueue::flush() {
 	page_bytes[0] = 0;
 	pages_used = 1;
 
-	flushing = false;
+	// `flushing` is cleared by flushing_reset above.
 	UNLOCK_MUTEX;
 	return OK;
 }
@@ -441,6 +465,18 @@ void CallQueue::statistics() {
 
 bool CallQueue::is_flushing() const {
 	return flushing;
+}
+
+void CallQueue::clear_stale_flushing() {
+	if (flushing) {
+		WARN_PRINT_ONCE("Message queue was left in a flushing state by a call that did not return normally; recovering. Deferred calls made before this point were lost.");
+		// The aborted flush stopped part-way through the pages, so the read
+		// bookkeeping no longer matches their contents: dispatching what is left
+		// would call through half-destructed messages. Drop the backlog instead.
+		flushing = false;
+		// Do not clear(): the messages after the abort point are still intact and
+		// flush() resumes from resume_page/resume_offset.
+	}
 }
 
 bool CallQueue::has_messages() const {

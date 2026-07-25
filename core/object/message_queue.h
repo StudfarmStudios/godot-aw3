@@ -75,6 +75,8 @@ private:
 	uint32_t max_pages = 0;
 	uint32_t pages_used = 0;
 	bool flushing = false;
+	uint32_t resume_page = 0; // Where an aborted flush stopped, so the next one can continue.
+	uint32_t resume_offset = 0;
 
 #ifdef DEV_ENABLED
 	bool is_current_thread_override = false;
@@ -141,6 +143,14 @@ public:
 	bool has_messages() const;
 
 	bool is_flushing() const;
+
+	// Clears a `flushing` flag left behind by a flush() that never returned
+	// normally (a managed exception unwinding through it skips the reset, and
+	// with -fno-exceptions C++ frames have no cleanup landing pads). Only call
+	// from a point where no flush can legitimately be in progress, i.e. the top
+	// of a main loop iteration; otherwise it would break legitimate re-entrancy.
+	void clear_stale_flushing();
+
 	int get_max_buffer_usage() const;
 
 	CallQueue(Allocator *p_custom_allocator = nullptr, uint32_t p_max_pages = 8192, const String &p_error_text = String());

@@ -16,6 +16,12 @@ namespace GodotTools.Build
             // In the future, this method may do more than just search in PATH. We could look in
             // known locations or use Godot's linked nethost to search from the hostfxr location.
 
+            string? overrideExe = Environment.GetEnvironmentVariable("GODOT_DOTNET_EXE");
+            if (!string.IsNullOrEmpty(overrideExe) && File.Exists(overrideExe))
+            {
+                return overrideExe;
+            }
+
             if (OS.IsMacOS)
             {
                 if (RuntimeInformation.OSArchitecture == Architecture.X64)

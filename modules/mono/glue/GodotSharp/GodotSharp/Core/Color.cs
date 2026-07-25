@@ -200,7 +200,12 @@ namespace Godot
         {
             readonly get
             {
-                return NativeFuncs.godotsharp_color_get_ok_hsl_h(this);
+                unsafe
+                {
+                    float value;
+                    NativeFuncs.godotsharp_color_get_ok_hsl_h(this, &value);
+                    return value;
+                }
             }
             set
             {
@@ -215,7 +220,12 @@ namespace Godot
         {
             readonly get
             {
-                return NativeFuncs.godotsharp_color_get_ok_hsl_s(this);
+                unsafe
+                {
+                    float value;
+                    NativeFuncs.godotsharp_color_get_ok_hsl_s(this, &value);
+                    return value;
+                }
             }
             set
             {
@@ -230,7 +240,12 @@ namespace Godot
         {
             readonly get
             {
-                return NativeFuncs.godotsharp_color_get_ok_hsl_l(this);
+                unsafe
+                {
+                    float value;
+                    NativeFuncs.godotsharp_color_get_ok_hsl_l(this, &value);
+                    return value;
+                }
             }
             set
             {
@@ -972,7 +987,11 @@ namespace Godot
         /// <returns>The constructed color.</returns>
         public static Color FromOkHsl(float hue, float saturation, float lightness, float alpha = 1.0f)
         {
-            return NativeFuncs.godotsharp_color_from_ok_hsl(hue, saturation, lightness, alpha);
+            unsafe
+            {
+                float* hsla = stackalloc float[4] { hue, saturation, lightness, alpha };
+                return NativeFuncs.godotsharp_color_from_ok_hsl(hsla);
+            }
         }
 
         /// <summary>

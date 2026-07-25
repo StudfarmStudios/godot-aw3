@@ -390,14 +390,17 @@ namespace Godot.NativeInterop
                 NativeFuncs.godotsharp_variant_as_int(p_var));
 
         public static float ConvertToFloat32(in godot_variant p_var)
-            => (float)(p_var.Type == Variant.Type.Float ?
-                p_var.Float :
-                NativeFuncs.godotsharp_variant_as_float(p_var));
+            => (float)ConvertToFloat64(p_var);
 
-        public static double ConvertToFloat64(in godot_variant p_var)
-            => p_var.Type == Variant.Type.Float ?
-                p_var.Float :
-                NativeFuncs.godotsharp_variant_as_float(p_var);
+        public static unsafe double ConvertToFloat64(in godot_variant p_var)
+        {
+            if (p_var.Type == Variant.Type.Float)
+                return p_var.Float;
+
+            double value;
+            NativeFuncs.godotsharp_variant_as_float(p_var, &value);
+            return value;
+        }
 
         public static Vector2 ConvertToVector2(in godot_variant p_var)
             => p_var.Type == Variant.Type.Vector2 ?

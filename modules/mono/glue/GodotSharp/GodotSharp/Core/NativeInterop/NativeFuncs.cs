@@ -53,7 +53,12 @@ namespace Godot.NativeInterop
         public static partial IntPtr godotsharp_engine_get_singleton(in godot_string p_name);
 
 
-        internal static partial Error godotsharp_stack_info_vector_resize(
+        // Returns int32: the native function returns int32_t, while `Error`'s
+        // underlying type is long. Marshalling it as Error reads 64 bits of a
+        // 32-bit return - harmless by luck on x86-64/arm64, garbage on wasm32,
+        // which made the exception logger itself throw and hid every real
+        // exception behind a secondary failure.
+        internal static partial int godotsharp_stack_info_vector_resize(
             ref DebuggingUtils.godot_stack_info_vector p_stack_info_vector, int p_size);
 
         internal static partial void godotsharp_stack_info_vector_destroy(
@@ -165,13 +170,13 @@ namespace Godot.NativeInterop
         internal static partial void godotsharp_callable_call_deferred(in godot_callable p_callable,
             godot_variant** p_args, int p_arg_count);
 
-        internal static partial Color godotsharp_color_from_ok_hsl(float p_h, float p_s, float p_l, float p_alpha);
+        internal static partial Color godotsharp_color_from_ok_hsl(float* p_hsla);
 
-        internal static partial float godotsharp_color_get_ok_hsl_h(in Color p_self);
+        internal static partial void godotsharp_color_get_ok_hsl_h(in Color p_self, float* r_dest);
 
-        internal static partial float godotsharp_color_get_ok_hsl_s(in Color p_self);
+        internal static partial void godotsharp_color_get_ok_hsl_s(in Color p_self, float* r_dest);
 
-        internal static partial float godotsharp_color_get_ok_hsl_l(in Color p_self);
+        internal static partial void godotsharp_color_get_ok_hsl_l(in Color p_self, float* r_dest);
 
         // GDNative functions
 
@@ -243,7 +248,7 @@ namespace Godot.NativeInterop
 
         public static partial Int64 godotsharp_variant_as_int(scoped in godot_variant p_self);
 
-        public static partial double godotsharp_variant_as_float(scoped in godot_variant p_self);
+        public static partial void godotsharp_variant_as_float(scoped in godot_variant p_self, double* r_dest);
 
         public static partial godot_string godotsharp_variant_as_string(scoped in godot_variant p_self);
 
@@ -576,15 +581,15 @@ namespace Godot.NativeInterop
 
         internal static partial void godotsharp_printt(in godot_string p_what);
 
-        internal static partial float godotsharp_randf();
+        internal static partial void godotsharp_randf(float* r_dest);
 
         internal static partial uint godotsharp_randi();
 
         internal static partial void godotsharp_randomize();
 
-        internal static partial double godotsharp_randf_range(double from, double to);
+        internal static partial void godotsharp_randf_range(double* from, double* to, double* r_dest);
 
-        internal static partial double godotsharp_randfn(double mean, double deviation);
+        internal static partial void godotsharp_randfn(double* mean, double* deviation, double* r_dest);
 
         internal static partial int godotsharp_randi_range(int from, int to);
 

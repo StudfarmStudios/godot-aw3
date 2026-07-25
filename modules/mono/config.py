@@ -1,3 +1,18 @@
+def get_opts(platform):
+    from SCons.Variables import PathVariable
+
+    return [
+        PathVariable(
+            "mono_aot_dir",
+            "Path to a .NET wasm AOT publish output (the 'wasm/for-publish' directory of a project "
+            "published with RunAOTCompilation=true). Links that project's AOT-compiled code into the "
+            "template instead of interpreting it. Web only.",
+            "",
+            PathVariable.PathAccept,
+        ),
+    ]
+
+
 def can_build(env, platform):
     if env.editor_build:
         env.module_add_dependencies("mono", ["regex"])

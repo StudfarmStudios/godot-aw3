@@ -421,7 +421,12 @@ namespace Godot
         /// <returns>A random <see langword="float"/> number.</returns>
         public static float Randf()
         {
-            return NativeFuncs.godotsharp_randf();
+            unsafe
+            {
+                float value;
+                NativeFuncs.godotsharp_randf(&value);
+                return value;
+            }
         }
 
         /// <summary>
@@ -433,7 +438,12 @@ namespace Godot
         /// <returns>A random normally-distributed <see langword="float"/> number.</returns>
         public static double Randfn(double mean, double deviation)
         {
-            return NativeFuncs.godotsharp_randfn(mean, deviation);
+            unsafe
+            {
+                double value;
+                NativeFuncs.godotsharp_randfn(&mean, &deviation, &value);
+                return value;
+            }
         }
 
         /// <summary>
@@ -481,7 +491,12 @@ namespace Godot
         /// <returns>A random <see langword="double"/> number inside the given range.</returns>
         public static double RandRange(double from, double to)
         {
-            return NativeFuncs.godotsharp_randf_range(from, to);
+            unsafe
+            {
+                double value;
+                NativeFuncs.godotsharp_randf_range(&from, &to, &value);
+                return value;
+            }
         }
 
         /// <summary>

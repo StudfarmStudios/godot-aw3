@@ -4919,6 +4919,12 @@ bool Main::iteration() {
 	GodotProfileZoneGroupedFirst(_profile_zone, "prepare");
 	iterating++;
 
+	// No flush can legitimately be in progress here, so a still-set flag means an
+	// earlier flush never returned normally (a managed exception unwinding through
+	// it skips the reset). Left set, every later flush() bails out with ERR_BUSY
+	// and deferred calls — including every CanvasItem redraw — stop happening.
+	MessageQueue::get_main_singleton()->clear_stale_flushing();
+
 	const uint64_t ticks = OS::get_singleton()->get_ticks_usec();
 	Engine::get_singleton()->_frame_ticks = ticks;
 	main_timer_sync.set_cpu_ticks_usec(ticks);

@@ -559,23 +559,27 @@ void godotsharp_callable_call_deferred(Callable *p_callable, const Variant **p_a
 	p_callable->call_deferredp(p_args, p_arg_count);
 }
 
-godot_color godotsharp_color_from_ok_hsl(float p_h, float p_s, float p_l, float p_alpha) {
+godot_color godotsharp_color_from_ok_hsl(const float *p_hsla) {
 	godot_color ret;
 	Color *dest = (Color *)&ret;
-	memnew_placement(dest, Color(Color::from_ok_hsl(p_h, p_s, p_l, p_alpha)));
+	memnew_placement(dest, Color(Color::from_ok_hsl(p_hsla[0], p_hsla[1], p_hsla[2], p_hsla[3])));
 	return ret;
 }
 
-float godotsharp_color_get_ok_hsl_h(const Color *p_self) {
-	return p_self->get_ok_hsl_h();
+// These return their result through a pointer rather than by value: Mono's wasm
+// AOT compiler mis-handles floating point return values in P/Invoke wrappers,
+// which corrupts the runtime (a float return faults on call, a double return
+// breaks startup outright). Integer and pointer returns are fine.
+void godotsharp_color_get_ok_hsl_h(const Color *p_self, float *r_dest) {
+	*r_dest = p_self->get_ok_hsl_h();
 }
 
-float godotsharp_color_get_ok_hsl_s(const Color *p_self) {
-	return p_self->get_ok_hsl_s();
+void godotsharp_color_get_ok_hsl_s(const Color *p_self, float *r_dest) {
+	*r_dest = p_self->get_ok_hsl_s();
 }
 
-float godotsharp_color_get_ok_hsl_l(const Color *p_self) {
-	return p_self->get_ok_hsl_l();
+void godotsharp_color_get_ok_hsl_l(const Color *p_self, float *r_dest) {
+	*r_dest = p_self->get_ok_hsl_l();
 }
 
 // GDNative functions
@@ -691,8 +695,8 @@ int64_t godotsharp_variant_as_int(const Variant *p_self) {
 	return p_self->operator int64_t();
 }
 
-double godotsharp_variant_as_float(const Variant *p_self) {
-	return p_self->operator double();
+void godotsharp_variant_as_float(const Variant *p_self, double *r_dest) {
+	*r_dest = p_self->operator double();
 }
 
 godot_string godotsharp_variant_as_string(const Variant *p_self) {
@@ -1405,20 +1409,20 @@ uint32_t godotsharp_randi() {
 	return Math::rand();
 }
 
-float godotsharp_randf() {
-	return Math::randf();
+void godotsharp_randf(float *r_dest) {
+	*r_dest = Math::randf();
 }
 
 int32_t godotsharp_randi_range(int32_t p_from, int32_t p_to) {
 	return Math::random(p_from, p_to);
 }
 
-double godotsharp_randf_range(double p_from, double p_to) {
-	return Math::random(p_from, p_to);
+void godotsharp_randf_range(const double *p_from, const double *p_to, double *r_dest) {
+	*r_dest = Math::random(*p_from, *p_to);
 }
 
-double godotsharp_randfn(double p_mean, double p_deviation) {
-	return Math::randfn(p_mean, p_deviation);
+void godotsharp_randfn(const double *p_mean, const double *p_deviation, double *r_dest) {
+	*r_dest = Math::randfn(*p_mean, *p_deviation);
 }
 
 void godotsharp_seed(uint64_t p_seed) {
