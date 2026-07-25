@@ -27,6 +27,8 @@
 
 #include "src/tint/lang/spirv/reader/lower/texture.h"
 
+#include <iostream>
+
 #include <tuple>
 #include <utility>
 
@@ -598,11 +600,38 @@ struct State {
         TINT_UNREACHABLE();
     }
 
+    /// Texture value most recently passed to ProcessCoords (diagnostics only).
+    core::ir::Value* diag_value_ = nullptr;
+
     void ProcessCoords(const core::type::Type* type,
                        bool is_proj,
                        core::ir::Value* coords,
                        Vector<core::ir::Value*, 5>& new_args) {
         auto* tex_ty = type->As<core::type::Texture>();
+        if (!tex_ty) {
+            // AW3 debug aid: name what actually arrived instead of a texture,
+            // and where it came from.
+            std::cerr << "[tint-diag] ProcessCoords got non-texture type: "
+                      << type->FriendlyName() << std::endl;
+            if (diag_value_) {
+                auto name = ir.NameOf(diag_value_);
+                std::cerr << "[tint-diag]   value name: "
+                          << (name.IsValid() ? name.Name() : std::string("<unnamed>"))
+                          << std::endl;
+                if (auto* res = diag_value_->As<core::ir::InstructionResult>()) {
+                    if (auto* inst = res->Instruction()) {
+                        std::cerr << "[tint-diag]   produced by: " << inst->FriendlyName() << std::endl;
+                        for (auto* op : inst->Operands()) {
+                            if (!op) { continue; }
+                            auto opname = ir.NameOf(op);
+                            std::cerr << "[tint-diag]     operand: " << op->Type()->FriendlyName()
+                                      << " name=" << (opname.IsValid() ? opname.Name() : std::string("<unnamed>"))
+                                      << std::endl;
+                        }
+                    }
+                }
+            }
+        }
         TINT_ASSERT(tex_ty);
 
         auto coords_received = Length(coords->Type());
@@ -725,6 +754,7 @@ struct State {
             uint32_t operand_mask = GetOperandMask(args[2]);
 
             Vector<core::ir::Value*, 5> new_args = {tex};
+            diag_value_ = tex;
             ProcessCoords(tex->Type(), false, coords, new_args);
 
             uint32_t idx = 3;
@@ -800,6 +830,7 @@ struct State {
             new_args.Push(tex);
             new_args.Push(sampler);
 
+            diag_value_ = tex;
             ProcessCoords(tex->Type(), false, coords, new_args);
             new_args.Push(dref);
 
@@ -833,6 +864,7 @@ struct State {
             new_args.Push(tex);
             new_args.Push(sampler);
 
+            diag_value_ = tex;
             ProcessCoords(tex->Type(), false, coords, new_args);
 
             if (HasConstOffset(operand_mask)) {
@@ -881,6 +913,7 @@ struct State {
             new_args.Push(tex);
             new_args.Push(sampler);
 
+            diag_value_ = tex;
             ProcessCoords(tex_ty, is_proj, coords, new_args);
             new_args.Push(depth);
 
@@ -925,6 +958,7 @@ struct State {
             new_args.Push(tex);
             new_args.Push(sampler);
 
+            diag_value_ = tex;
             ProcessCoords(tex_ty, is_proj, coords, new_args);
 
             core::BuiltinFn fn = core::BuiltinFn::kTextureSample;
@@ -985,6 +1019,7 @@ struct State {
             Vector<core::ir::Value*, 5> new_args;
             new_args.Push(tex);
 
+            diag_value_ = tex;
             ProcessCoords(tex->Type(), false, coords, new_args);
 
             new_args.Push(texel);

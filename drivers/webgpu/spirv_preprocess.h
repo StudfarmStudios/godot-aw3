@@ -49,6 +49,13 @@ struct DepthImageFixResult {
 	Vector<DepthImageInfo> depth_images;
 };
 
+// Run every preprocessing pass, in the order the WebGPU backend needs. Both the
+// runtime driver and the build-time tint_convert_cli go through this, so the two
+// cannot drift apart - they used to keep separate copies of the list, and a pass
+// added to one silently did not apply to the other.
+// r_depth_images receives the depth=2 images fix_depth2_images rewrote, if wanted.
+Vector<uint8_t> run_all(const Vector<uint8_t> &p_bytes, Vector<DepthImageFixResult::DepthImageInfo> *r_depth_images = nullptr);
+
 // Evaluate OpSpecConstantOp instructions with default values and replace
 // them with regular OpConstant instructions. Also converts OpSpecConstant*
 // to their non-specialization equivalents and strips SpecId decorations.
@@ -120,5 +127,14 @@ Vector<uint8_t> infer_readonly_storage(const Vector<uint8_t> &p_bytes);
 // legal and the norm for those in WGSL, and making them read_write would
 // require the readonly_and_readwrite_storage_textures feature.
 Vector<uint8_t> strip_nonreadable_storage_buffers(const Vector<uint8_t> &p_bytes);
+
+// Inline every call that passes a texture, sampler or sampled image across a
+// function boundary (SPIRV-Tools' InlineOpaquePass). Tint's SPIR-V reader only
+// rewrites image-typed function parameters along its depth-texture path, so an
+// ordinary texture passed to a helper reaches texture lowering still typed as
+// spirv.image and trips an internal assert. Godot 4.7's area-light shaders do
+// exactly that (fetch_ltc_lod(..., texture2D area_light_atlas, sampler)).
+// No-op for modules that never pass opaque types to functions.
+Vector<uint8_t> inline_opaque_functions(const Vector<uint8_t> &p_bytes);
 
 } // namespace spirv_preprocess

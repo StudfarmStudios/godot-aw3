@@ -17,6 +17,7 @@ SPIR-V → WGSL conversion for ubershaders on every page load.
 
 import json
 import os
+import shutil
 import struct
 import subprocess
 import sys
@@ -817,6 +818,7 @@ def precompile_wgsl(repo_root, output_path, glslang_path="glslangValidator"):
             wgsl = wgsl_results.get(key)
             if wgsl is None:
                 failed_convert += 1
+                print(f"  TINT FAIL: {key}")
             else:
                 spv_hash = compute_spv_hash(spv_data[key])
                 # Avoid duplicate hashes (same SPIR-V from different variants).
@@ -872,7 +874,21 @@ def build_wgsl_precompiled(target, source, env):
         sys.exit(1)
 
     glslang = env.get("GLSLANG", "glslangValidator")
-    precompile_wgsl(repo_root, output, glslang)
+    if shutil.which(glslang) is None:
+        print(
+            "[WGSL Precompile] ERROR: '" + glslang + "' not found. Without it every "
+            "shader falls back to runtime Tint conversion, which is slow and hits "
+            "translation bugs that precompilation would have caught at build time. "
+            "Install glslang (brew install glslang / apt install glslang-tools) or "
+            "point scons at it with GLSLANG=<path>.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    count = precompile_wgsl(repo_root, output, glslang)
+    if count == 0:
+        print("[WGSL Precompile] ERROR: no shaders were precompiled.", file=sys.stderr)
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------------------

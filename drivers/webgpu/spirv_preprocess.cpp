@@ -30,11 +30,16 @@
 
 #include "spirv_preprocess.h"
 
+#include "spirv-tools/optimizer.hpp"
+
+#include <vector>
+
 #include "core/templates/hash_map.h"
 #include "core/templates/hash_set.h"
 #include "core/templates/vector.h"
 
 #include <cfloat>
+#include <cstdio>
 #include <cmath>
 #include <cstring>
 
@@ -1886,11 +1891,17 @@ Vector<uint8_t> strip_restrict_decoration(const Vector<uint8_t> &p_bytes) {
 
 	const uint8_t *data = p_bytes.ptr();
 	static constexpr uint32_t DECO_RESTRICT = 19;
+	static constexpr uint32_t DECO_VOLATILE = 21;
+	static constexpr uint32_t DECO_COHERENT = 23;
 	static constexpr uint32_t DECO_INPUT_ATTACHMENT_INDEX = 43;
 
 	// Helper: is this a decoration we need to strip?
+	// Volatile and Coherent are memory-ordering hints with no WGSL equivalent -
+	// Tint's SPIR-V parser hits TINT_UNIMPLEMENTED on them rather than ignoring
+	// them, and dropping them is safe for a single-queue backend.
 	auto is_stripped_deco = [](uint32_t d) {
-		return d == DECO_RESTRICT || d == DECO_INPUT_ATTACHMENT_INDEX;
+		return d == DECO_RESTRICT || d == DECO_VOLATILE || d == DECO_COHERENT ||
+				d == DECO_INPUT_ATTACHMENT_INDEX;
 	};
 
 	// Quick scan: any stripped decoration present?
@@ -1945,6 +1956,86 @@ Vector<uint8_t> strip_restrict_decoration(const Vector<uint8_t> &p_bytes) {
 		pos += wc;
 	}
 
+	return out;
+}
+
+// ---- run_all ----
+
+Vector<uint8_t> run_all(const Vector<uint8_t> &p_bytes, Vector<DepthImageFixResult::DepthImageInfo> *r_depth_images) {
+	Vector<uint8_t> spv = p_bytes;
+
+	// Opaque inlining goes first: every pass below rewrites variables, and none
+	// of them follow a texture or sampler across a function boundary.
+	spv = inline_opaque_functions(spv);
+	spv = freeze_spec_constant_ops(spv);
+	spv = rewrite_copy_logical(spv);
+	spv = rewrite_terminate_invocation(spv);
+	spv = convert_push_constants_to_uniforms(spv);
+	spv = split_combined_samplers(spv);
+
+	DepthImageFixResult depth_result = fix_depth2_images(spv);
+	spv = depth_result.bytes;
+	if (r_depth_images) {
+		*r_depth_images = depth_result.depth_images;
+	}
+
+	spv = negate_position_y(spv);
+	spv = strip_restrict_decoration(spv);
+	spv = strip_memory_barrier(spv);
+	spv = fix_nonfinite_literals(spv);
+	spv = flatten_binding_arrays(spv);
+	spv = infer_readonly_storage(spv);
+	spv = strip_nonreadable_storage_buffers(spv);
+
+	// The passes above emit constructs that need SPIR-V 1.3 (the StorageBuffer
+	// storage class), which the input may predate.
+	if (spv.size() >= 20) {
+		uint32_t version;
+		memcpy(&version, spv.ptr() + 4, 4);
+		if (version < 0x00010300) {
+			version = 0x00010300;
+			memcpy(spv.ptrw() + 4, &version, 4);
+		}
+	}
+
+	return spv;
+}
+
+// ---- inline_opaque_functions ----
+
+Vector<uint8_t> inline_opaque_functions(const Vector<uint8_t> &p_bytes) {
+	const int64_t len = p_bytes.size();
+	if (len < 20 || (len % 4) != 0) {
+		return p_bytes;
+	}
+
+	std::vector<uint32_t> input((size_t)(len / 4));
+	memcpy(input.data(), p_bytes.ptr(), (size_t)len);
+
+	// SPIR-V 1.6 is what glslang emits for Godot's shaders; the inliner itself
+	// is version-agnostic, this only picks the grammar tables.
+	spvtools::Optimizer optimizer(SPV_ENV_VULKAN_1_3);
+	bool failed = false;
+	// This file is also compiled into the host tint_convert_cli against a minimal
+	// shim, so no Godot error macros here.
+	optimizer.SetMessageConsumer([&failed](spv_message_level_t level, const char *, const spv_position_t &, const char *message) {
+		if (level == SPV_MSG_FATAL || level == SPV_MSG_INTERNAL_ERROR || level == SPV_MSG_ERROR) {
+			failed = true;
+			fprintf(stderr, "SPIR-V opaque inlining: %s\n", message ? message : "unknown error");
+		}
+	});
+	optimizer.RegisterPass(spvtools::CreateInlineOpaquePass());
+
+	std::vector<uint32_t> output;
+	if (!optimizer.Run(input.data(), input.size(), &output) || failed || output.empty()) {
+		// Leave the module untouched; the caller will report whatever Tint makes
+		// of it, which is more useful than failing here.
+		return p_bytes;
+	}
+
+	Vector<uint8_t> out;
+	out.resize((int)(output.size() * 4));
+	memcpy(out.ptrw(), output.data(), output.size() * 4);
 	return out;
 }
 
