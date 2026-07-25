@@ -98,6 +98,10 @@ private:
 	};
 
 	// Vector will have the size of SHADER_STAGE_MAX and unused stages will have empty strings.
+	// Stands in for a group task id when the variants were compiled inline,
+	// because the driver only accepts calls on the thread that owns the device.
+	static constexpr WorkerThreadPool::GroupID COMPILED_INLINE = -1;
+
 	void _compile_variant(uint32_t p_variant, CompileData p_data);
 
 	void _initialize_version(Version *p_version);

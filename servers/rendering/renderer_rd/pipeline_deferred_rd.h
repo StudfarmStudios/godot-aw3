@@ -66,6 +66,11 @@ protected:
 
 	void _start(const CreationParameters &c) {
 		free();
+		if (RD::get_singleton()->gpu_calls_main_thread_only()) {
+			// Driver is bound to the device's thread, so no background task.
+			_create(c);
+			return;
+		}
 		task = WorkerThreadPool::get_singleton()->add_template_task(this, &PipelineDeferredRD::_create, c, true, "PipelineCompilation");
 	}
 

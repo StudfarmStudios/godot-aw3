@@ -8859,6 +8859,7 @@ uint64_t RenderingDeviceDriverWebGPU::api_trait_get(ApiTrait p_trait) {
 		// updates; overflow stalls briefly and reuses blocks.
 		case API_TRAIT_STAGING_BUFFER_MAX_SIZE_MB: return 16;
 		case API_TRAIT_SKELETON_BUFFER_DIRECT_WRITE: return 1;
+		case API_TRAIT_GPU_CALLS_MAIN_THREAD_ONLY: return 1;
 		// Force dual-paraboloid shadows for omni lights. Cubemap shadows
 		// require 6 render pass encoder cycles + 2 copy-to-atlas ops per
 		// light; dual-paraboloid uses 2 passes directly into the atlas,

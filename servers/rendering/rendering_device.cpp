@@ -1186,6 +1186,10 @@ void RenderingDevice::buffer_update_direct(RID p_buffer, uint32_t p_offset, uint
 	driver->buffer_write_direct(buffer->driver_id, p_offset, p_size, p_data);
 }
 
+bool RenderingDevice::gpu_calls_main_thread_only() {
+	return driver->api_trait_get(RDD::API_TRAIT_GPU_CALLS_MAIN_THREAD_ONLY) != 0;
+}
+
 bool RenderingDevice::supports_buffer_direct_write() {
 	return driver->api_trait_get(RDD::API_TRAIT_SKELETON_BUFFER_DIRECT_WRITE) != 0;
 }

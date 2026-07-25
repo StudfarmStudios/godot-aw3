@@ -266,6 +266,10 @@ public:
 	Error buffer_update(RID p_buffer, uint32_t p_offset, uint32_t p_size, const void *p_data, bool p_skip_check = false);
 	void buffer_update_direct(RID p_buffer, uint32_t p_offset, uint32_t p_size, const void *p_data);
 	bool supports_buffer_direct_write();
+	// True when the driver may only be called from the thread that created the
+	// device, so the renderer must compile shaders and pipelines inline instead of
+	// dispatching them to WorkerThreadPool.
+	bool gpu_calls_main_thread_only();
 	bool force_omni_dual_paraboloid_shadows();
 	bool supports_batch_instance_draws();
 	bool supports_first_instance_index();

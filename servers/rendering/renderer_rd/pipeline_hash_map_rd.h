@@ -147,6 +147,12 @@ public:
 		print_line("HASH:", p_key_hash, "SOURCE:", source_name);
 #endif
 
+		if (RD::get_singleton()->gpu_calls_main_thread_only()) {
+			// Driver is bound to the device's thread, so no background task.
+			(creation_object->*creation_function)(p_key);
+			return;
+		}
+
 		// Queue a background compilation task.
 		WorkerThreadPool::TaskID task_id = WorkerThreadPool::get_singleton()->add_template_task(creation_object, creation_function, p_key, p_high_priority, "PipelineCompilation");
 		compilation_tasks.insert(p_key_hash, task_id);

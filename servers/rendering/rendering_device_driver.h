@@ -1025,6 +1025,11 @@ public:
 		// like WebGPU where each API call crosses a WASM→JS boundary. Safe
 		// because skeleton data is fully updated before any draw commands.
 		API_TRAIT_SKELETON_BUFFER_DIRECT_WRITE,
+		// If non-zero, every call into this driver must happen on the thread that
+		// created the device. WebGPU in the browser is like this: the JavaScript
+		// objects backing the device live in one thread's context, so shader and
+		// pipeline compilation cannot be handed to WorkerThreadPool.
+		API_TRAIT_GPU_CALLS_MAIN_THREAD_ONLY,
 		// If non-zero, omni light shadows are forced to dual-paraboloid mode
 		// regardless of the configured shadow mode. This avoids expensive
 		// cubemap rendering (6 render pass encoder cycles + 2 copy operations
