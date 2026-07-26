@@ -605,6 +605,22 @@ Error RenderingDeviceDriverWebGPU::initialize(uint32_t p_device_index, uint32_t 
 
 	frame_count = p_frame_count;
 
+	// Frame counters are opt-in, because their cost lands in the worst possible
+	// place: the slow-frame report does its work only on frames that are already
+	// slow, and reading the clock crosses into JS on every frame. Resolved once
+	// here rather than per frame, so a shipped build pays a single bool test.
+	// Enable with ?aw3_perf in the URL, or by setting globalThis.__aw3_perf
+	// before the engine starts — deliberately available in release builds, since
+	// the release artifact is the one worth measuring.
+	perf.enabled = EM_ASM_INT({
+		try {
+			return (globalThis.__aw3_perf ||
+					(globalThis.location && location.search.indexOf('aw3_perf') >= 0)) ? 1 : 0;
+		} catch (e) {
+			return 0;
+		}
+	}) != 0;
+
 	// Query device limits.
 	_check_capabilities();
 
@@ -9007,42 +9023,52 @@ void RenderingDeviceDriverWebGPU::begin_segment(uint32_t p_frame_index, uint32_t
 	frame_index = p_frame_index;
 	frames_drawn = p_frames_drawn;
 
-	// Performance counter tracking (always-on, 1 log/sec is negligible overhead).
-	perf.frames_since_log++;
-	double now = EM_ASM_DOUBLE({ return performance.now(); });
+	// Performance counter tracking. Opt-in (?aw3_perf) — skipping it here also
+	// skips the per-frame trip into JS for the clock.
+	if (perf.enabled) {
+		perf.frames_since_log++;
+		double now = EM_ASM_DOUBLE({ return performance.now(); });
 
-	// Report individual slow frames: the per-second average hides the stalls that
-	// are actually felt.
-	if (perf.last_frame_time > 0) {
-		double frame_ms = now - perf.last_frame_time;
-		if (frame_ms > 25.0) {
-			EM_ASM({ console.log('[SLOWFRAME] ' + $0.toFixed(1) + ' ms draws=' + $1 + ' setbg=' + $2 + ' pipelines=' + $3); },
-					frame_ms, (int)perf.draw_calls, (int)perf.set_bind_group_calls, (int)_pipelines_created_total);
+		// Report individual slow frames: the per-second average hides the stalls
+		// that are actually felt.
+		if (perf.last_frame_time > 0) {
+			double frame_ms = now - perf.last_frame_time;
+			if (frame_ms > 25.0) {
+				EM_ASM({ console.log('[SLOWFRAME] ' + $0.toFixed(1) + ' ms draws=' + $1 + ' setbg=' + $2 + ' pipelines=' + $3); },
+						frame_ms,
+						(int)(perf.draw_calls - perf.draw_calls_at_last_frame),
+						(int)(perf.set_bind_group_calls - perf.set_bind_group_calls_at_last_frame),
+						(int)_pipelines_created_total);
+			}
 		}
-	}
-	perf.last_frame_time = now;
-	if (perf.last_log_time == 0) {
-		perf.last_log_time = now;
-	} else if (now - perf.last_log_time >= 1000.0) {
-		double elapsed = (now - perf.last_log_time) / 1000.0;
-		uint32_t fps = (uint32_t)(perf.frames_since_log / elapsed);
-		uint32_t f = perf.frames_since_log > 0 ? perf.frames_since_log : 1;
-		EM_ASM({
-			console.log('[PERF] fps=' + $0 +
-				' draws/f=' + $1 +
-				' SetBG/f=' + $2 +
-				' PC/f=' + $3 +
-				' RP/f=' + $4 +
-				' SetVB/f=' + $5 +
-				' FI/f=' + $6 +
-				' RingOF/f=' + $7);
-		}, fps, perf.draw_calls / f, perf.set_bind_group_calls / f,
-				perf.push_constant_writes / f, perf.render_passes / f,
-				perf.set_vertex_buffer_calls / f, perf.first_instance_draws / f,
-				perf.ring_overflows / f);
-		perf.reset();
-		perf.frames_since_log = 0;
-		perf.last_log_time = now;
+		perf.last_frame_time = now;
+		if (perf.last_log_time == 0) {
+			perf.last_log_time = now;
+		} else if (now - perf.last_log_time >= 1000.0) {
+			double elapsed = (now - perf.last_log_time) / 1000.0;
+			uint32_t fps = (uint32_t)(perf.frames_since_log / elapsed);
+			uint32_t f = perf.frames_since_log > 0 ? perf.frames_since_log : 1;
+			EM_ASM({
+				console.log('[PERF] fps=' + $0 +
+					' draws/f=' + $1 +
+					' SetBG/f=' + $2 +
+					' PC/f=' + $3 +
+					' RP/f=' + $4 +
+					' SetVB/f=' + $5 +
+					' FI/f=' + $6 +
+					' RingOF/f=' + $7);
+			}, fps, perf.draw_calls / f, perf.set_bind_group_calls / f,
+					perf.push_constant_writes / f, perf.render_passes / f,
+					perf.set_vertex_buffer_calls / f, perf.first_instance_draws / f,
+					perf.ring_overflows / f);
+			perf.reset();
+			perf.frames_since_log = 0;
+			perf.last_log_time = now;
+		}
+
+		// After any reset, so the next frame's delta starts from the right base.
+		perf.draw_calls_at_last_frame = perf.draw_calls;
+		perf.set_bind_group_calls_at_last_frame = perf.set_bind_group_calls;
 	}
 
 	// Reset push constant ring buffer offset and shadow buffer tracking at the start of each segment.

@@ -52,7 +52,9 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 	uint32_t frames_drawn = 0;
 
 	// Per-frame performance counters (logged once per second via EM_ASM).
+	// Opt-in: see initialize() for how `enabled` is resolved.
 	struct PerfCounters {
+		bool enabled = false;
 		uint32_t draw_calls = 0;
 		uint32_t set_bind_group_calls = 0;
 		uint32_t push_constant_writes = 0;
@@ -67,6 +69,10 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 		double last_log_time = 0;
 		double last_frame_time = 0;
 		uint32_t frames_since_log = 0;
+		// Counter values as of the previous frame, so the slow-frame report can
+		// state what that frame cost rather than the run of the current second.
+		uint32_t draw_calls_at_last_frame = 0;
+		uint32_t set_bind_group_calls_at_last_frame = 0;
 		void reset() {
 			draw_calls = 0;
 			set_bind_group_calls = 0;
@@ -79,6 +85,9 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 			gap_bind_group_calls = 0;
 			first_instance_draws = 0;
 			ring_overflows = 0;
+			// Kept in step, or the next per-frame delta underflows.
+			draw_calls_at_last_frame = 0;
+			set_bind_group_calls_at_last_frame = 0;
 		}
 	} perf;
 
