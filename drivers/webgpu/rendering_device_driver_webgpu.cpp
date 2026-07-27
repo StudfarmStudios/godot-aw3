@@ -438,7 +438,16 @@ static String _wgsl_disk_cache_dir() {
 }
 
 static String _wgsl_disk_cache_file() {
-	return _wgsl_disk_cache_dir().path_join(String(GODOT_VERSION_HASH).left(12) + ".bin");
+	// v2: adds per-record checksums. The format tag is part of the name so that
+	// caches written by other builds/formats are purged rather than parsed.
+	return _wgsl_disk_cache_dir().path_join(String(GODOT_VERSION_HASH).left(12) + "-v2.bin");
+}
+
+static void _wgsl_disk_cache_nuke() {
+	Ref<DirAccess> da = DirAccess::create_for_path("user://");
+	if (da.is_valid()) {
+		da->remove(_wgsl_disk_cache_file());
+	}
 }
 
 static void _wgsl_disk_cache_load() {
@@ -470,28 +479,55 @@ static void _wgsl_disk_cache_load() {
 	}
 	uint64_t len = f->get_length();
 	uint32_t loaded = 0;
+	bool corrupt = false;
 	Vector<uint8_t> comp;
 	Vector<uint8_t> raw;
-	while (f->get_position() + 16 <= len) {
+	LocalVector<uint64_t> pending_hashes;
+	LocalVector<String> pending_wgsl;
+	while (f->get_position() + 20 <= len) {
 		uint64_t hash = f->get_64();
 		uint32_t comp_size = f->get_32();
 		uint32_t raw_size = f->get_32();
-		if (comp_size == 0 || raw_size == 0 || f->get_position() + comp_size > len) {
-			break; // Truncated tail (interrupted flush) - keep what we have.
+		uint32_t checksum = f->get_32();
+		// Interrupted flushes truncate; interleaved tab writes corrupt. Either way
+		// nothing after this point can be trusted - and a partial record means the
+		// file tail may be garbage, so discard the whole file below.
+		if (comp_size == 0 || raw_size == 0 || raw_size > 16 * 1024 * 1024 || f->get_position() + comp_size > len) {
+			corrupt = true;
+			break;
 		}
 		comp.resize(comp_size);
 		if (f->get_buffer(comp.ptrw(), comp_size) != comp_size) {
+			corrupt = true;
+			break;
+		}
+		if (hash_murmur3_buffer(comp.ptr(), comp_size) != checksum) {
+			corrupt = true;
 			break;
 		}
 		raw.resize(raw_size + 1);
 		int r = Compression::decompress(raw.ptrw(), raw_size, comp.ptr(), comp_size, Compression::MODE_ZSTD);
 		if (r != (int)raw_size) {
-			continue;
+			corrupt = true;
+			break;
 		}
 		raw.write[raw_size] = 0;
-		_spv_to_wgsl_cache[hash] = String::utf8((const char *)raw.ptr());
-		_wgsl_disk_cache_persisted.insert(hash);
+		pending_hashes.push_back(hash);
+		pending_wgsl.push_back(String::utf8((const char *)raw.ptr()));
 		loaded++;
+	}
+	if (corrupt) {
+		// One bad byte poisons unknown shaders (they fail module creation and the
+		// scene renders error-magenta) - self-heal by refusing all of it. The next
+		// boot repopulates from Tint.
+		f.unref();
+		_wgsl_disk_cache_nuke();
+		EM_ASM({ console.warn('[WGSLCACHE] corrupt cache discarded (' + $0 + ' entries dropped)'); }, (int)loaded);
+		return;
+	}
+	for (uint32_t i = 0; i < pending_hashes.size(); i++) {
+		_spv_to_wgsl_cache[pending_hashes[i]] = pending_wgsl[i];
+		_wgsl_disk_cache_persisted.insert(pending_hashes[i]);
 	}
 	if (loaded > 0) {
 		EM_ASM({ console.log('[WGSLCACHE] loaded ' + $0 + ' entries'); }, (int)loaded);
@@ -526,6 +562,7 @@ static void _wgsl_disk_cache_flush() {
 		f->store_64(kv.key);
 		f->store_32((uint32_t)comp_size);
 		f->store_32((uint32_t)raw_size);
+		f->store_32(hash_murmur3_buffer(comp.ptr(), comp_size));
 		f->store_buffer(comp.ptr(), comp_size);
 		_wgsl_disk_cache_persisted.insert(kv.key);
 		written++;
