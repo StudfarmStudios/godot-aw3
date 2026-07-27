@@ -402,6 +402,16 @@ namespace GodotTools.Export
                                         }
                                     }
 
+                                    if (path.EndsWith(".a"))
+                                    {
+                                        // Static archives are link-time inputs (the wasm/AOT template
+                                        // build consumes them from the on-disk publish dir); at runtime
+                                        // the code is already inside the engine binary. Embedding them
+                                        // bloats the pck (~30 MB for wasm32) AND gets copied to the
+                                        // cache dir at every boot by godotsharp_dirs' extraction step.
+                                        return;
+                                    }
+
                                     string filePath = SanitizeSlashes(Path.GetRelativePath(publishOutputDir, path));
                                     byte[] fileData = File.ReadAllBytes(path);
                                     string hash = Convert.ToBase64String(SHA512.HashData(fileData));
