@@ -5852,7 +5852,32 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 	bg_desc.entryCount = entries.size();
 	bg_desc.entries = entries.size() > 0 ? entries.ptr() : nullptr;
 
+	// Dawn answers a failed creation with a non-null INVALID object; without an
+	// error scope the failure only surfaces frames later as an anonymous
+	// per-frame "[Invalid BindGroup]" storm. Catch it here and name the culprit.
+	wgpuDevicePushErrorScope(device, WGPUErrorFilter_Validation);
 	WGPUBindGroup bg = wgpuDeviceCreateBindGroup(device, &bg_desc);
+	{
+		struct BGScopeCtx {
+			CharString shader_name;
+			uint32_t set_index;
+		};
+		BGScopeCtx *ctx = memnew(BGScopeCtx);
+		ctx->shader_name = shader->name.utf8();
+		ctx->set_index = p_set_index;
+		WGPUPopErrorScopeCallbackInfo cb = {};
+		cb.mode = WGPUCallbackMode_AllowSpontaneous;
+		cb.callback = [](WGPUPopErrorScopeStatus p_status, WGPUErrorType p_type, WGPUStringView p_message, void *p_userdata1, void *p_userdata2) {
+			BGScopeCtx *c = (BGScopeCtx *)p_userdata1;
+			if (p_type != WGPUErrorType_NoError) {
+				EM_ASM({ console.error('[BINDGROUP-FAIL] shader=' + UTF8ToString($0) + ' set=' + $1 + ' : ' + UTF8ToString($2, $3)); },
+						c->shader_name.get_data(), (int)c->set_index, p_message.data, (int)p_message.length);
+			}
+			memdelete(c);
+		};
+		cb.userdata1 = ctx;
+		wgpuDevicePopErrorScope(device, cb);
+	}
 	if (bg == nullptr) {
 		delete us;
 		ERR_FAIL_V_MSG(UniformSetID(), "WebGPU: wgpuDeviceCreateBindGroup failed.");
