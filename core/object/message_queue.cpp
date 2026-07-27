@@ -249,11 +249,18 @@ Error CallQueue::flush() {
 	} flushing_reset{ &flushing };
 
 	// Resume where an aborted flush stopped, if there was one. Restarting from
-	// zero would re-read already-destructed messages.
+	// zero would re-read already-destructed messages. The page advance has to
+	// happen here (against the current page_bytes) rather than when the resume
+	// point was saved: messages pushed after the save grow page_bytes[i], and a
+	// pre-advanced resume point would skip them.
 	uint32_t i = resume_page;
 	uint32_t offset = resume_offset;
 	resume_page = 0;
 	resume_offset = 0;
+	if (i < pages_used && offset > 0 && offset >= page_bytes[i]) {
+		i++;
+		offset = 0;
+	}
 
 	while (i < pages_used && offset < page_bytes[i]) {
 		Page *page = pages[i];
@@ -274,10 +281,6 @@ Error CallQueue::flush() {
 		// (a managed exception can unwind straight through these frames).
 		resume_page = i;
 		resume_offset = offset;
-		if (resume_offset == page_bytes[i]) {
-			resume_page = i + 1;
-			resume_offset = 0;
-		}
 
 		Object *target = message->callable.get_object();
 
@@ -318,6 +321,12 @@ Error CallQueue::flush() {
 			offset = 0;
 		}
 	}
+
+	// The loop ran to completion, so the resume point saved per-message above is
+	// stale — clear it. Leaving it set would make the next flush start past the
+	// end and discard everything queued in between without running it.
+	resume_page = 0;
+	resume_offset = 0;
 
 	page_bytes[0] = 0;
 	pages_used = 1;
