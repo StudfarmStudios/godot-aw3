@@ -6,6 +6,10 @@ Import("env_modules")
 
 env_enet = env_modules.Clone()
 
+if env["platform"] == "web":
+    # JS transport that carries ENet datagrams over a WebRTC data channel.
+    env.AddJSLibraries(["library_godot_enet.js"])
+
 # Thirdparty source files
 
 thirdparty_obj = []
