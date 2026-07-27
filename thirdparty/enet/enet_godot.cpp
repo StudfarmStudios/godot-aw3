@@ -38,7 +38,9 @@
 #include "core/io/net_socket.h"
 #include "core/io/packet_peer_dtls.h"
 #include "core/io/udp_server.h"
+#include "core/os/mutex.h"
 #include "core/os/os.h"
+#include "core/templates/list.h"
 
 // This must be last for windows to compile (tested with MinGW)
 #include "enet/enet.h"
@@ -164,6 +166,113 @@ public:
 		local_address.clear();
 	}
 };
+
+#ifdef WEB_ENABLED
+
+extern "C" {
+typedef void (*ENetWebOnDatagram)(void *p_obj, const uint8_t *p_data, int p_len);
+extern int godot_js_enet_socket_create(void *p_obj, ENetWebOnDatagram p_on_datagram);
+extern int godot_js_enet_socket_send(int p_id, const uint8_t *p_data, int p_len);
+extern void godot_js_enet_socket_destroy(int p_id);
+}
+
+/// Web client transport: the JS side (library_godot_enet.js) carries our
+/// datagrams over a WebRTC data channel it negotiates with the game server's
+/// bridge. Client-only — bind() fails, so hosting reports a clean error.
+///
+/// ENet's Godot ENetAddress is already an opaque 16-byte host + port, so the
+/// destination handed to sendto() is treated as pure identity: whatever the
+/// game connected to is echoed back as the datagram source, and routing is
+/// the data channel's business.
+class ENetWebRTCSocket : public ENetGodotSocket {
+	enum {
+		MAX_QUEUED_PACKETS = 256,
+	};
+
+	int js_id = -1;
+	// The datagram callback arrives on the browser main thread while the game
+	// may service ENet from a pthread (threads builds), so the queue is locked.
+	Mutex queue_mutex;
+	List<Vector<uint8_t>> in_queue;
+	IPAddress dest_ip;
+	uint16_t dest_port = 0;
+	bool has_dest = false;
+
+	static void _on_datagram(void *p_obj, const uint8_t *p_data, int p_len) {
+		ENetWebRTCSocket *sock = static_cast<ENetWebRTCSocket *>(p_obj);
+		MutexLock lock(sock->queue_mutex);
+		if (sock->in_queue.size() >= MAX_QUEUED_PACKETS) {
+			return; // Drop, like a full UDP receive buffer.
+		}
+		Vector<uint8_t> pkt;
+		pkt.resize(p_len);
+		memcpy(pkt.ptrw(), p_data, p_len);
+		sock->in_queue.push_back(pkt);
+	}
+
+public:
+	ENetWebRTCSocket() {
+		js_id = godot_js_enet_socket_create(this, &_on_datagram);
+	}
+
+	~ENetWebRTCSocket() {
+		close();
+	}
+
+	Error bind(IPAddress p_ip, uint16_t p_port) override {
+		return ERR_UNAVAILABLE; // Browsers cannot host.
+	}
+
+	Error get_socket_address(IPAddress *r_ip, uint16_t *r_port) override {
+		// Synthetic: there is no local socket, but callers only log this.
+		*r_ip = IPAddress("127.0.0.1");
+		*r_port = 0;
+		return OK;
+	}
+
+	Error sendto(const uint8_t *p_buffer, int p_len, int &r_sent, IPAddress p_ip, uint16_t p_port) override {
+		dest_ip = p_ip;
+		dest_port = p_port;
+		has_dest = true;
+		// A closed channel drops the packet exactly like a lossy link; ENet's
+		// retransmission covers the window while WebRTC negotiates.
+		godot_js_enet_socket_send(js_id, p_buffer, p_len);
+		r_sent = p_len;
+		return OK;
+	}
+
+	Error recvfrom(uint8_t *p_buffer, int p_len, int &r_read, IPAddress &r_ip, uint16_t &r_port) override {
+		MutexLock lock(queue_mutex);
+		if (!has_dest || in_queue.is_empty()) {
+			return ERR_BUSY;
+		}
+		Vector<uint8_t> pkt = in_queue.front()->get();
+		in_queue.pop_front();
+		if (pkt.size() > p_len) {
+			return ERR_OUT_OF_MEMORY; // Reported as an above-MTU packet.
+		}
+		memcpy(p_buffer, pkt.ptr(), pkt.size());
+		r_read = pkt.size();
+		r_ip = dest_ip;
+		r_port = dest_port;
+		return OK;
+	}
+
+	int set_option(ENetSocketOption p_option, int p_value) override {
+		return 0; // No real socket; every option is a harmless no-op.
+	}
+
+	void close() override {
+		if (js_id != -1) {
+			godot_js_enet_socket_destroy(js_id);
+			js_id = -1;
+		}
+		MutexLock lock(queue_mutex);
+		in_queue.clear();
+	}
+};
+
+#endif // WEB_ENABLED
 
 /// DTLS Client ENet interface
 class ENetDTLSClient : public ENetGodotSocket {
@@ -506,9 +615,14 @@ int enet_address_get_host(const ENetAddress *address, char *name, size_t nameLen
 }
 
 ENetSocket enet_socket_create(ENetSocketType type) {
+#ifdef WEB_ENABLED
+	// No UDP in browsers: datagrams ride a WebRTC data channel instead.
+	return memnew(ENetWebRTCSocket);
+#else
 	ENetUDP *socket = memnew(ENetUDP);
 
 	return socket;
+#endif
 }
 
 void enet_peer_socket_bind(ENetPeer *p_peer) {
