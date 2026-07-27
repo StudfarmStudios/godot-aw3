@@ -450,11 +450,66 @@ static void _wgsl_disk_cache_nuke() {
 	}
 }
 
+// Parses one cache file; returns entry count, -1 on corruption. Entries land in
+// the in-memory cache and are marked persisted (never rewritten to disk).
+static int _wgsl_cache_parse_file(const String &p_path) {
+	Ref<FileAccess> f = FileAccess::open(p_path, FileAccess::READ);
+	if (f.is_null()) {
+		return 0;
+	}
+	uint64_t len = f->get_length();
+	int loaded = 0;
+	Vector<uint8_t> comp;
+	Vector<uint8_t> raw;
+	LocalVector<uint64_t> pending_hashes;
+	LocalVector<String> pending_wgsl;
+	while (f->get_position() + 20 <= len) {
+		uint64_t hash = f->get_64();
+		uint32_t comp_size = f->get_32();
+		uint32_t raw_size = f->get_32();
+		uint32_t checksum = f->get_32();
+		if (comp_size == 0 || raw_size == 0 || raw_size > 16 * 1024 * 1024 || f->get_position() + comp_size > len) {
+			return -1;
+		}
+		comp.resize(comp_size);
+		if (f->get_buffer(comp.ptrw(), comp_size) != comp_size) {
+			return -1;
+		}
+		if (hash_murmur3_buffer(comp.ptr(), comp_size) != checksum) {
+			return -1;
+		}
+		raw.resize(raw_size + 1);
+		int r = Compression::decompress(raw.ptrw(), raw_size, comp.ptr(), comp_size, Compression::MODE_ZSTD);
+		if (r != (int)raw_size) {
+			return -1;
+		}
+		raw.write[raw_size] = 0;
+		pending_hashes.push_back(hash);
+		pending_wgsl.push_back(String::utf8((const char *)raw.ptr()));
+		loaded++;
+	}
+	for (uint32_t i = 0; i < pending_hashes.size(); i++) {
+		_spv_to_wgsl_cache[pending_hashes[i]] = pending_wgsl[i];
+		_wgsl_disk_cache_persisted.insert(pending_hashes[i]);
+	}
+	return loaded;
+}
+
 static void _wgsl_disk_cache_load() {
 	if (_wgsl_disk_cache_loaded) {
 		return;
 	}
 	_wgsl_disk_cache_loaded = true;
+
+	// Deploy-time seed: shipped as a plain HTTP asset and copied into MEMFS by
+	// the shell page before start. Lives outside the IndexedDB-persisted mount
+	// on purpose - entries it covers are never written to IndexedDB, keeping
+	// the boot-time IDBFS restore small. Corruption cannot happen mid-write
+	// here (the file is read-only), so a bad seed is just ignored.
+	int seeded = _wgsl_cache_parse_file("/tmp/wgsl_seed.bin");
+	if (seeded > 0) {
+		EM_ASM({ console.log('[WGSLCACHE] seeded ' + $0 + ' entries from bundled cache'); }, (int)seeded);
+	}
 
 	Ref<DirAccess> da = DirAccess::create_for_path("user://");
 	if (da.is_valid()) {
@@ -473,61 +528,14 @@ static void _wgsl_disk_cache_load() {
 		}
 	}
 
-	Ref<FileAccess> f = FileAccess::open(_wgsl_disk_cache_file(), FileAccess::READ);
-	if (f.is_null()) {
-		return;
-	}
-	uint64_t len = f->get_length();
-	uint32_t loaded = 0;
-	bool corrupt = false;
-	Vector<uint8_t> comp;
-	Vector<uint8_t> raw;
-	LocalVector<uint64_t> pending_hashes;
-	LocalVector<String> pending_wgsl;
-	while (f->get_position() + 20 <= len) {
-		uint64_t hash = f->get_64();
-		uint32_t comp_size = f->get_32();
-		uint32_t raw_size = f->get_32();
-		uint32_t checksum = f->get_32();
-		// Interrupted flushes truncate; interleaved tab writes corrupt. Either way
-		// nothing after this point can be trusted - and a partial record means the
-		// file tail may be garbage, so discard the whole file below.
-		if (comp_size == 0 || raw_size == 0 || raw_size > 16 * 1024 * 1024 || f->get_position() + comp_size > len) {
-			corrupt = true;
-			break;
-		}
-		comp.resize(comp_size);
-		if (f->get_buffer(comp.ptrw(), comp_size) != comp_size) {
-			corrupt = true;
-			break;
-		}
-		if (hash_murmur3_buffer(comp.ptr(), comp_size) != checksum) {
-			corrupt = true;
-			break;
-		}
-		raw.resize(raw_size + 1);
-		int r = Compression::decompress(raw.ptrw(), raw_size, comp.ptr(), comp_size, Compression::MODE_ZSTD);
-		if (r != (int)raw_size) {
-			corrupt = true;
-			break;
-		}
-		raw.write[raw_size] = 0;
-		pending_hashes.push_back(hash);
-		pending_wgsl.push_back(String::utf8((const char *)raw.ptr()));
-		loaded++;
-	}
-	if (corrupt) {
+	int loaded = _wgsl_cache_parse_file(_wgsl_disk_cache_file());
+	if (loaded < 0) {
 		// One bad byte poisons unknown shaders (they fail module creation and the
 		// scene renders error-magenta) - self-heal by refusing all of it. The next
-		// boot repopulates from Tint.
-		f.unref();
+		// boot repopulates from Tint (or the seed).
 		_wgsl_disk_cache_nuke();
-		EM_ASM({ console.warn('[WGSLCACHE] corrupt cache discarded (' + $0 + ' entries dropped)'); }, (int)loaded);
+		EM_ASM({ console.warn('[WGSLCACHE] corrupt cache discarded'); });
 		return;
-	}
-	for (uint32_t i = 0; i < pending_hashes.size(); i++) {
-		_spv_to_wgsl_cache[pending_hashes[i]] = pending_wgsl[i];
-		_wgsl_disk_cache_persisted.insert(pending_hashes[i]);
 	}
 	if (loaded > 0) {
 		EM_ASM({ console.log('[WGSLCACHE] loaded ' + $0 + ' entries'); }, (int)loaded);
