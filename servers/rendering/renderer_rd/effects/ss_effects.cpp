@@ -311,34 +311,39 @@ SSEffects::SSEffects() {
 			}
 		}
 
-		{
-			Vector<String> ssr_modes;
-			ssr_modes.push_back("\n");
+		// WGSL cannot express the filter shader's format-less storage image
+		// writes, so on WebGPU the SSR pipelines can only fail to build - skip
+		// them (and their startup error spam); SSR is unusable there either way.
+		if (RD::get_singleton()->get_device_api_name() != "WebGPU") {
+			{
+				Vector<String> ssr_modes;
+				ssr_modes.push_back("\n");
 
-			ssr.ssr_shader.initialize(ssr_modes);
-			ssr.ssr_shader_version = ssr.ssr_shader.version_create();
+				ssr.ssr_shader.initialize(ssr_modes);
+				ssr.ssr_shader_version = ssr.ssr_shader.version_create();
 
-			ssr.ssr_pipeline.create_compute_pipeline(ssr.ssr_shader.version_get_shader(ssr.ssr_shader_version, 0));
-		}
+				ssr.ssr_pipeline.create_compute_pipeline(ssr.ssr_shader.version_get_shader(ssr.ssr_shader_version, 0));
+			}
 
-		{
-			Vector<String> ssr_filter_modes;
-			ssr_filter_modes.push_back("\n");
+			{
+				Vector<String> ssr_filter_modes;
+				ssr_filter_modes.push_back("\n");
 
-			ssr.filter_shader.initialize(ssr_filter_modes);
-			ssr.filter_shader_version = ssr.filter_shader.version_create();
+				ssr.filter_shader.initialize(ssr_filter_modes);
+				ssr.filter_shader_version = ssr.filter_shader.version_create();
 
-			ssr.filter_pipeline.create_compute_pipeline(ssr.filter_shader.version_get_shader(ssr.filter_shader_version, 0));
-		}
+				ssr.filter_pipeline.create_compute_pipeline(ssr.filter_shader.version_get_shader(ssr.filter_shader_version, 0));
+			}
 
-		{
-			Vector<String> ssr_resolve_modes;
-			ssr_resolve_modes.push_back("\n");
+			{
+				Vector<String> ssr_resolve_modes;
+				ssr_resolve_modes.push_back("\n");
 
-			ssr.resolve_shader.initialize(ssr_resolve_modes);
-			ssr.resolve_shader_version = ssr.resolve_shader.version_create();
+				ssr.resolve_shader.initialize(ssr_resolve_modes);
+				ssr.resolve_shader_version = ssr.resolve_shader.version_create();
 
-			ssr.resolve_pipeline.create_compute_pipeline(ssr.resolve_shader.version_get_shader(ssr.resolve_shader_version, 0));
+				ssr.resolve_pipeline.create_compute_pipeline(ssr.resolve_shader.version_get_shader(ssr.resolve_shader_version, 0));
+			}
 		}
 	}
 

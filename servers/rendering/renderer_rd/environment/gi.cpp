@@ -3642,9 +3642,14 @@ void GI::init(SkyRD *p_sky) {
 		preprocess_modes.push_back("\n#define MODE_STORE\n");
 		String defines = "\n#define OCCLUSION_SIZE " + itos(SDFGI::CASCADE_SIZE / SDFGI::PROBE_DIVISOR) + "\n";
 		sdfgi_shader.preprocess.initialize(preprocess_modes, defines);
-		sdfgi_shader.preprocess_shader = sdfgi_shader.preprocess.version_create();
-		for (int i = 0; i < SDFGIShader::PRE_PROCESS_MAX; i++) {
-			sdfgi_shader.preprocess_pipeline[i].create_compute_pipeline(sdfgi_shader.preprocess.version_get_shader(sdfgi_shader.preprocess_shader, i));
+		// Several preprocess modes fail WGSL translation (storage formats /
+		// sample types WGSL cannot express); SDFGI is unusable on WebGPU, so
+		// skip compiling it rather than spamming startup errors.
+		if (RD::get_singleton()->get_device_api_name() != "WebGPU") {
+			sdfgi_shader.preprocess_shader = sdfgi_shader.preprocess.version_create();
+			for (int i = 0; i < SDFGIShader::PRE_PROCESS_MAX; i++) {
+				sdfgi_shader.preprocess_pipeline[i].create_compute_pipeline(sdfgi_shader.preprocess.version_get_shader(sdfgi_shader.preprocess_shader, i));
+			}
 		}
 	}
 

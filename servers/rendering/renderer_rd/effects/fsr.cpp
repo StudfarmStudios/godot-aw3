@@ -46,6 +46,9 @@ FSR::FSR() {
 		variant = FSR_SHADER_VARIANT_NORMAL;
 	} else {
 		variant = FSR_SHADER_VARIANT_FALLBACK;
+		// The normal variant uses 16-bit types the driver cannot run (WGSL has
+		// no i16/u16) - do not compile what can only fail.
+		fsr_shader.set_variant_enabled(FSR_SHADER_VARIANT_NORMAL, false);
 	}
 
 	shader_version = fsr_shader.version_create();
