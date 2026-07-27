@@ -250,7 +250,7 @@ namespace Godot.NativeInterop
 
         public static partial void godotsharp_variant_as_float(scoped in godot_variant p_self, double* r_dest);
 
-        public static partial godot_string godotsharp_variant_as_string(scoped in godot_variant p_self);
+        public static partial void godotsharp_variant_as_string(scoped in godot_variant p_self, godot_string* r_dest);
 
         public static partial Vector2 godotsharp_variant_as_vector2(scoped in godot_variant p_self);
 
@@ -284,7 +284,7 @@ namespace Godot.NativeInterop
 
         public static partial Color godotsharp_variant_as_color(scoped in godot_variant p_self);
 
-        public static partial godot_string_name godotsharp_variant_as_string_name(scoped in godot_variant p_self);
+        public static partial void godotsharp_variant_as_string_name(scoped in godot_variant p_self, godot_string_name* r_dest);
 
         public static partial godot_node_path godotsharp_variant_as_node_path(scoped in godot_variant p_self);
 
