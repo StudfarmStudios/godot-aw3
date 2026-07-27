@@ -3163,6 +3163,13 @@ Error RenderingDeviceDriverWebGPU::command_queue_execute_and_present(CommandQueu
 				}
 			}
 			cmd->written_query_pools.clear();
+			// Submission does not consume the reference: without an explicit release
+			// every frame leaks its command buffers (JS-table entry plus Dawn's
+			// encoded commands), ~2 per frame, which slowly grows the tab without
+			// bound. Measured at +21.5k live GPUCommandBuffer objects per 3 min.
+			if (cmd->finished_buffer) {
+				wgpuCommandBufferRelease(cmd->finished_buffer);
+			}
 			cmd->finished_buffer = nullptr;
 		}
 	}
@@ -3199,6 +3206,13 @@ RDD::CommandBufferID RenderingDeviceDriverWebGPU::command_buffer_create(CommandP
 bool RenderingDeviceDriverWebGPU::command_buffer_begin(CommandBufferID p_cmd_buffer) {
 	WGCommandBuffer *cmd = (WGCommandBuffer *)(p_cmd_buffer.id);
 	ERR_FAIL_NULL_V(cmd, false);
+
+	// A finished buffer that never reached submit (reset without execute) must
+	// still be released, or re-recording leaks the previous recording.
+	if (cmd->finished_buffer) {
+		wgpuCommandBufferRelease(cmd->finished_buffer);
+		cmd->finished_buffer = nullptr;
+	}
 
 	WGPUCommandEncoderDescriptor desc = {};
 	cmd->encoder = wgpuDeviceCreateCommandEncoder(device, &desc);
