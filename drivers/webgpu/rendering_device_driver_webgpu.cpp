@@ -37,6 +37,12 @@
 #include "spirv_preprocess.h"
 
 #include "core/crypto/crypto_core.h"
+#include "core/os/os.h"
+#include "core/io/compression.h"
+#include "core/io/dir_access.h"
+#include "core/io/file_access.h"
+#include "core/templates/hash_set.h"
+#include "core/version.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/hashfuncs.h"
 
@@ -414,9 +420,128 @@ static char *_translate_spirv_to_wgsl(const uint8_t *p_spv_ptr, int p_spv_size) 
 	return out;
 }
 
+// -----------------------------------------------------------------------------
+// Persistent WGSL cache. Tint translation of the shader corpus costs ~22 s of
+// CPU per boot on wasm (measured, 1400 modules), every visit — the results are
+// deterministic per SPIR-V hash, so they are persisted under user:// (IndexedDB
+// on web) and preloaded. The file is keyed by the engine version hash: a new
+// engine build starts a fresh cache and deletes stale ones.
+// Record format: [u64 spv_hash][u32 comp_size][u32 raw_size][zstd bytes].
+
+static bool _wgsl_disk_cache_loaded = false;
+static uint32_t _wgsl_disk_cache_pending = 0;
+static uint64_t _wgsl_disk_cache_last_flush_usec = 0;
+static HashSet<uint64_t> _wgsl_disk_cache_persisted;
+
+static String _wgsl_disk_cache_dir() {
+	return "user://wgsl_cache";
+}
+
+static String _wgsl_disk_cache_file() {
+	return _wgsl_disk_cache_dir().path_join(String(GODOT_VERSION_HASH).left(12) + ".bin");
+}
+
+static void _wgsl_disk_cache_load() {
+	if (_wgsl_disk_cache_loaded) {
+		return;
+	}
+	_wgsl_disk_cache_loaded = true;
+
+	Ref<DirAccess> da = DirAccess::create_for_path("user://");
+	if (da.is_valid()) {
+		da->make_dir_recursive(_wgsl_disk_cache_dir());
+		// Purge caches from other engine builds.
+		Ref<DirAccess> cd = DirAccess::open(_wgsl_disk_cache_dir());
+		if (cd.is_valid()) {
+			String current = _wgsl_disk_cache_file().get_file();
+			cd->list_dir_begin();
+			for (String f = cd->get_next(); !f.is_empty(); f = cd->get_next()) {
+				if (!cd->current_is_dir() && f != current) {
+					cd->remove(f);
+				}
+			}
+			cd->list_dir_end();
+		}
+	}
+
+	Ref<FileAccess> f = FileAccess::open(_wgsl_disk_cache_file(), FileAccess::READ);
+	if (f.is_null()) {
+		return;
+	}
+	uint64_t len = f->get_length();
+	uint32_t loaded = 0;
+	Vector<uint8_t> comp;
+	Vector<uint8_t> raw;
+	while (f->get_position() + 16 <= len) {
+		uint64_t hash = f->get_64();
+		uint32_t comp_size = f->get_32();
+		uint32_t raw_size = f->get_32();
+		if (comp_size == 0 || raw_size == 0 || f->get_position() + comp_size > len) {
+			break; // Truncated tail (interrupted flush) - keep what we have.
+		}
+		comp.resize(comp_size);
+		if (f->get_buffer(comp.ptrw(), comp_size) != comp_size) {
+			break;
+		}
+		raw.resize(raw_size + 1);
+		int r = Compression::decompress(raw.ptrw(), raw_size, comp.ptr(), comp_size, Compression::MODE_ZSTD);
+		if (r != (int)raw_size) {
+			continue;
+		}
+		raw.write[raw_size] = 0;
+		_spv_to_wgsl_cache[hash] = String::utf8((const char *)raw.ptr());
+		_wgsl_disk_cache_persisted.insert(hash);
+		loaded++;
+	}
+	if (loaded > 0) {
+		EM_ASM({ console.log('[WGSLCACHE] loaded ' + $0 + ' entries'); }, (int)loaded);
+	}
+}
+
+static void _wgsl_disk_cache_flush() {
+	if (_wgsl_disk_cache_pending == 0) {
+		return;
+	}
+	Ref<FileAccess> f = FileAccess::open(_wgsl_disk_cache_file(), FileAccess::READ_WRITE);
+	if (f.is_null()) {
+		f = FileAccess::open(_wgsl_disk_cache_file(), FileAccess::WRITE);
+	}
+	if (f.is_null()) {
+		return;
+	}
+	f->seek_end();
+	uint32_t written = 0;
+	for (const KeyValue<uint64_t, String> &kv : _spv_to_wgsl_cache) {
+		if (_wgsl_disk_cache_persisted.has(kv.key)) {
+			continue;
+		}
+		CharString cs = kv.value.utf8();
+		int raw_size = cs.length();
+		Vector<uint8_t> comp;
+		comp.resize(Compression::get_max_compressed_buffer_size(raw_size, Compression::MODE_ZSTD));
+		int comp_size = Compression::compress(comp.ptrw(), (const uint8_t *)cs.get_data(), raw_size, Compression::MODE_ZSTD);
+		if (comp_size <= 0) {
+			continue;
+		}
+		f->store_64(kv.key);
+		f->store_32((uint32_t)comp_size);
+		f->store_32((uint32_t)raw_size);
+		f->store_buffer(comp.ptr(), comp_size);
+		_wgsl_disk_cache_persisted.insert(kv.key);
+		written++;
+	}
+	f.unref(); // Close: on web this marks user:// for IndexedDB sync.
+	_wgsl_disk_cache_pending = 0;
+	_wgsl_disk_cache_last_flush_usec = OS::get_singleton()->get_ticks_usec();
+	if (written > 0) {
+		EM_ASM({ console.log('[WGSLCACHE] flushed ' + $0 + ' new entries'); }, (int)written);
+	}
+}
+
 // Returns a malloc'd null-terminated WGSL string (caller must free), or nullptr on
 // failure. Checks: (1) in-memory cache, (2) precompiled table, (3) Tint fallback.
 static char *_spv_to_wgsl_cached(const uint8_t *p_spv_ptr, int p_spv_size) {
+	_wgsl_disk_cache_load();
 	uint32_t hash_lo = hash_murmur3_buffer(p_spv_ptr, p_spv_size);
 	uint32_t hash_hi = hash_murmur3_buffer(p_spv_ptr, p_spv_size, 0x9E3779B9);
 	uint64_t spv_hash = ((uint64_t)hash_hi << 32) | hash_lo;
@@ -457,6 +582,10 @@ static char *_spv_to_wgsl_cached(const uint8_t *p_spv_ptr, int p_spv_size) {
 
 	if (wgsl_str) {
 		_spv_to_wgsl_cache[spv_hash] = String(wgsl_str);
+		_wgsl_disk_cache_pending++;
+		if (_wgsl_disk_cache_pending >= 64) {
+			_wgsl_disk_cache_flush();
+		}
 	}
 
 	WEBGPU_DIAG({
@@ -3137,6 +3266,12 @@ Error RenderingDeviceDriverWebGPU::command_queue_execute_and_present(CommandQueu
 				sc->current_texture = nullptr;
 			}
 		}
+	}
+
+	// Flush any WGSL cache entries that did not reach a full batch (the tail of
+	// boot compilation); rate-limited to one file write per 2 s.
+	if (_wgsl_disk_cache_pending > 0 && OS::get_singleton()->get_ticks_usec() - _wgsl_disk_cache_last_flush_usec > 2000000) {
+		_wgsl_disk_cache_flush();
 	}
 
 	// Clear finished command buffers (they are consumed by submit).
