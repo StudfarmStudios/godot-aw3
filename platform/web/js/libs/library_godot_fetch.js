@@ -31,6 +31,12 @@
 const GodotFetch = {
 	$GodotFetch__deps: ['$IDHandler', '$GodotRuntime'],
 	$GodotFetch: {
+		// How many bytes may sit in `chunks` awaiting the C++ side. The browser
+		// delivers stream chunks of ~64 KB; without read-ahead the transfer is
+		// capped at one chunk per HTTPRequest poll (one per frame), a few MB/s
+		// even from disk cache. With it, downloads run at connection speed and
+		// memory stays bounded when the consumer is slower than the network.
+		BUFFER_CAP: 8 * 1024 * 1024,
 
 		onread: function (id, result) {
 			const obj = IDHandler.get(id);
@@ -39,9 +45,15 @@ const GodotFetch = {
 			}
 			if (result.value) {
 				obj.chunks.push(result.value);
+				obj.buffered += result.value.length;
 			}
 			obj.reading = false;
 			obj.done = result.done;
+			// Keep the stream pumping between polls instead of waiting for the
+			// consumer to drain the buffer first.
+			if (!result.done && obj.buffered < GodotFetch.BUFFER_CAP) {
+				GodotFetch.read(id);
+			}
 		},
 
 		onresponse: function (id, response) {
@@ -87,6 +99,7 @@ const GodotFetch = {
 				reading: false,
 				status: 0,
 				chunks: [],
+				buffered: 0,
 			};
 			const id = IDHandler.add(obj);
 			const init = {
@@ -174,6 +187,11 @@ const GodotFetch = {
 		if (obj.reader || (obj.response.body == null && !obj.done)) {
 			return 1;
 		}
+		// The stream may be done while read-ahead data is still queued for the
+		// consumer — that is still BODY, or the tail of the transfer is lost.
+		if (obj.chunks.length) {
+			return 1;
+		}
 		if (obj.done) {
 			return 2;
 		}
@@ -219,17 +237,23 @@ const GodotFetch = {
 		const chunks = obj.chunks;
 		while (to_read && chunks.length) {
 			const chunk = obj.chunks[0];
+			// Write position advances as chunks are drained (the original code
+			// overwrote p_buf and dropped the wrong queue end — harmless only
+			// while the queue could never hold more than one chunk).
+			const dst = p_buf + (p_buf_size - to_read);
 			if (chunk.length > to_read) {
-				GodotRuntime.heapCopy(HEAP8, chunk.slice(0, to_read), p_buf);
+				GodotRuntime.heapCopy(HEAP8, chunk.slice(0, to_read), dst);
 				chunks[0] = chunk.slice(to_read);
+				obj.buffered -= to_read;
 				to_read = 0;
 			} else {
-				GodotRuntime.heapCopy(HEAP8, chunk, p_buf);
+				GodotRuntime.heapCopy(HEAP8, chunk, dst);
 				to_read -= chunk.length;
-				chunks.pop();
+				obj.buffered -= chunk.length;
+				chunks.shift();
 			}
 		}
-		if (!chunks.length) {
+		if (obj.buffered < GodotFetch.BUFFER_CAP) {
 			GodotFetch.read(p_id);
 		}
 		return p_buf_size - to_read;
