@@ -231,6 +231,20 @@ static bool _layout_wants_nonfiltering(const WGShader *p_shader, uint32_t p_set_
 	return false;
 }
 
+// True when the shader's layout declares this sampler binding as a comparison
+// sampler. A comparison sampler may only be bound where the layout says so.
+static bool _layout_wants_comparison(const WGShader *p_shader, uint32_t p_set_index, uint32_t p_binding) {
+	if (!p_shader || p_set_index >= (uint32_t)p_shader->bind_group_infos.size()) {
+		return false;
+	}
+	for (const WGShader::BindGroupEntry &bge : p_shader->bind_group_infos[p_set_index].entries) {
+		if (bge.layout_entry.binding == p_binding) {
+			return bge.layout_entry.sampler.type == WGPUSamplerBindingType_Comparison;
+		}
+	}
+	return false;
+}
+
 static void _collect_depth_paired_samplers(const char *p_wgsl, HashSet<uint32_t> *r_sampler_keys) {
 	if (!p_wgsl || !r_sampler_keys) {
 		return;
@@ -345,6 +359,14 @@ static char *_translate_spirv_to_wgsl(const uint8_t *p_spv_ptr, int p_spv_size) 
 	spv = spirv_preprocess::run_all(spv, nullptr, &unused_binding_keys);
 	for (uint32_t key : unused_binding_keys) {
 		_last_unused_binding_keys.push_back(key);
+	}
+
+	// Ask before handing it over: Tint aborts the process on constructs it cannot
+	// translate, so a shader we know it will choke on has to fail here instead.
+	std::string untranslatable = spirv_preprocess::find_untranslatable_construct(spv);
+	if (!untranslatable.empty()) {
+		ERR_PRINT(vformat("WebGPU: shader uses %s, which cannot be expressed in WGSL.", String::utf8(untranslatable.c_str())));
+		return nullptr;
 	}
 
 	// Convert to uint32_t words for Tint.
@@ -564,12 +586,24 @@ RenderingDeviceDriverWebGPU::~RenderingDeviceDriverWebGPU() {
 		wgpuSamplerRelease(dummy_comparison_sampler);
 		dummy_comparison_sampler = nullptr;
 	}
+	if (dummy_nonfiltering_sampler) {
+		wgpuSamplerRelease(dummy_nonfiltering_sampler);
+		dummy_nonfiltering_sampler = nullptr;
+	}
 
 	// Release aliasing stub buffer.
 	if (aliasing_stub_buffer) {
 		wgpuBufferRelease(aliasing_stub_buffer);
 		aliasing_stub_buffer = nullptr;
 	}
+
+	// Release the stand-in attachments for side-effect-only passes.
+	for (KeyValue<uint64_t, DummyAttachment> &kv : dummy_attachments) {
+		wgpuTextureViewRelease(kv.value.view);
+		wgpuTextureDestroy(kv.value.texture);
+		wgpuTextureRelease(kv.value.texture);
+	}
+	dummy_attachments.clear();
 
 	// Clean up readback cache — release persistent staging buffers and shadow memory.
 	for (KeyValue<uint64_t, ReadbackEntry *> &kv : _readback_cache) {
@@ -779,6 +813,16 @@ Error RenderingDeviceDriverWebGPU::initialize(uint32_t p_device_index, uint32_t 
 		csd.maxAnisotropy = 1;
 		csd.compare = WGPUCompareFunction_Less;
 		dummy_comparison_sampler = wgpuDeviceCreateSampler(device, &csd);
+
+		WGPUSamplerDescriptor nsd = {};
+		nsd.addressModeU = WGPUAddressMode_ClampToEdge;
+		nsd.addressModeV = WGPUAddressMode_ClampToEdge;
+		nsd.addressModeW = WGPUAddressMode_ClampToEdge;
+		nsd.magFilter = WGPUFilterMode_Nearest;
+		nsd.minFilter = WGPUFilterMode_Nearest;
+		nsd.mipmapFilter = WGPUMipmapFilterMode_Nearest;
+		nsd.maxAnisotropy = 1;
+		dummy_nonfiltering_sampler = wgpuDeviceCreateSampler(device, &nsd);
 	}
 
 	// Create aliasing stub buffer — substituted for duplicate writable storage buffer bindings
@@ -963,8 +1007,7 @@ void RenderingDeviceDriverWebGPU::_check_capabilities() {
 	// float32-filterable: required for linear sampling of R32Float / RG32Float / RGBA32Float.
 	// Forward Mobile's HDR post-processing path samples 32F render targets with linear
 	// samplers, so without this feature those samplers must fall back to NEAREST.
-	// Feature name enum value 13 per WebGPU spec (not yet in the emdawnwebgpu 4.0.10 header enum).
-	float32_filterable_supported = wgpuDeviceHasFeature(device, (WGPUFeatureName)13);
+	float32_filterable_supported = wgpuDeviceHasFeature(device, WGPUFeatureName_Float32Filterable);
 	if (float32_filterable_supported) {
 		print_verbose("WebGPU: float32-filterable feature is available.");
 	} else {
@@ -974,8 +1017,13 @@ void RenderingDeviceDriverWebGPU::_check_capabilities() {
 	// float32-blendable: required for blending on R32Float / RG32Float / RGBA32Float
 	// render targets. Without this, blend operations on float32 targets silently fail
 	// (particles, post-processing compositing).
-	// Feature name enum value 14 per WebGPU spec (0x0E, not yet in emdawnwebgpu 4.0.10 header).
-	float32_blendable_supported = wgpuDeviceHasFeature(device, (WGPUFeatureName)14);
+	float32_blendable_supported = wgpuDeviceHasFeature(device, WGPUFeatureName_Float32Blendable);
+
+	// depth-clip-control: lets a pipeline ask for depth clamping instead of clipping.
+	depth_clip_control_supported = wgpuDeviceHasFeature(device, WGPUFeatureName_DepthClipControl);
+	if (!depth_clip_control_supported) {
+		WARN_PRINT("WebGPU: depth-clip-control feature NOT available — depth clamp will be ignored.");
+	}
 	if (float32_blendable_supported) {
 		print_verbose("WebGPU: float32-blendable feature is available.");
 	} else {
@@ -2772,6 +2820,28 @@ void RenderingDeviceDriverWebGPU::sampler_free(SamplerID p_sampler) {
 	}
 }
 
+// WebGPU will not accept a comparison sampler where the layout declares a plain
+// one. That combination turns up on bindings the shader never samples: the
+// declaration is dead-code-eliminated before the WGSL is scanned for
+// sampler_comparison, so the layout entry defaults to Filtering, while Godot goes
+// on binding the shadow atlas's comparison sampler (volumetric_fog_process does
+// this with the shadow sampler on its fog-only variants). Nothing reads the
+// binding, so any valid sampler satisfies it.
+WGPUSampler RenderingDeviceDriverWebGPU::_compatible_sampler(WGPUSampler p_sampler, const WGShader *p_shader, uint32_t p_set_index, uint32_t p_binding) {
+	if (p_sampler == nullptr || _layout_wants_comparison(p_shader, p_set_index, p_binding)) {
+		return p_sampler;
+	}
+	const WGPUSamplerDescriptor *desc = sampler_descriptors.getptr(p_sampler);
+	if (desc == nullptr || desc->compare == WGPUCompareFunction_Undefined) {
+		return p_sampler;
+	}
+	if (_layout_wants_nonfiltering(p_shader, p_set_index, p_binding)) {
+		// dummy_filtering_sampler would be rejected in a non-filtering slot.
+		return dummy_nonfiltering_sampler;
+	}
+	return dummy_filtering_sampler;
+}
+
 // A copy of p_sampler with filtering turned off, for binding into a slot the
 // layout declares non-filtering. Address modes and LOD clamps are preserved, so
 // only the interpolation changes - which is the most WebGPU permits when reading
@@ -3608,7 +3678,10 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 		char *wgsl_str = _spv_to_wgsl_cached(spv_bytes.ptr(), (int)spv_bytes.size());
 
 		if (wgsl_str == nullptr) {
-			error_text = vformat("WebGPU: SPIR-V→WGSL conversion failed for stage %d.", (int)s.shader_stage);
+			// Name the shader: the Tint diagnostic above says what is wrong but not
+			// which of the ~150 built-in shaders it came from, and reproducing it
+			// offline against tint_convert_cli needs that name.
+			error_text = vformat("WebGPU: SPIR-V→WGSL conversion failed for shader '%s' stage %d.", shader->name, (int)s.shader_stage);
 			break;
 		}
 
@@ -3688,12 +3761,17 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 			}
 		}
 
-		// WebGPU restriction: Storage buffers with read_write access cannot be used in vertex shaders.
-		// Tint generates var<storage, read_write> for any SSBO without NonWritable decoration.
-		// For render stages (vertex + fragment), demote all read_write storage to read (in-place,
-		// same string length). This ensures the BGL can use ReadOnlyStorage with Vertex|Fragment
-		// visibility. Compute stages keep read_write for actual writes.
-		if (s.shader_stage == RDD::SHADER_STAGE_VERTEX || s.shader_stage == RDD::SHADER_STAGE_FRAGMENT) {
+		// WebGPU restriction: storage buffers with read_write access cannot be used in
+		// vertex shaders. Tint generates var<storage, read_write> for any SSBO without
+		// a NonWritable decoration, so demote them there (in-place, same string
+		// length) and let the BGL use ReadOnlyStorage.
+		//
+		// Fragment is deliberately *not* demoted: WebGPU permits read_write storage
+		// there, and the clustered renderer depends on it — cluster_render.glsl marks
+		// clusters with atomicOr from the fragment stage, and a demoted buffer makes
+		// the module fail to parse ("atomic variables in 'storage' address space must
+		// have 'read_write' access mode").
+		if (s.shader_stage == RDD::SHADER_STAGE_VERTEX) {
 			char *q = wgsl_str;
 			while ((q = strstr(q, "var<storage, read_write>")) != nullptr) {
 				// "var<storage, read_write>" = 24 chars → "var<storage, read>      " = 24 chars
@@ -5170,6 +5248,7 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 					if (_layout_wants_nonfiltering(shader, p_set_index, entry.binding)) {
 						entry.sampler = _nonfiltering_twin(entry.sampler);
 					}
+					entry.sampler = _compatible_sampler(entry.sampler, shader, p_set_index, entry.binding);
 					entries.push_back(entry);
 				}
 			} break;
@@ -5286,6 +5365,7 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 						se.sampler = _layout_wants_nonfiltering(shader, p_set_index, se.binding)
 								? _nonfiltering_twin(sampler)
 								: sampler;
+						se.sampler = _compatible_sampler(se.sampler, shader, p_set_index, se.binding);
 						entries.push_back(se);
 					}
 					if (tex && tex->default_view) {
@@ -6966,6 +7046,37 @@ RDD::RenderPassID RenderingDeviceDriverWebGPU::render_pass_create(VectorView<Att
 	return RenderPassID(rp);
 }
 
+WGPUTextureView RenderingDeviceDriverWebGPU::_get_dummy_attachment_view(uint32_t p_width, uint32_t p_height) {
+	const uint32_t width = MAX(p_width, 1u);
+	const uint32_t height = MAX(p_height, 1u);
+	const uint64_t key = ((uint64_t)width << 32) | (uint64_t)height;
+	if (const DummyAttachment *existing = dummy_attachments.getptr(key)) {
+		return existing->view;
+	}
+
+	WGPUTextureDescriptor desc = {};
+	desc.label = { "godot_dummy_attachment", WGPU_STRLEN };
+	desc.dimension = WGPUTextureDimension_2D;
+	desc.size = { width, height, 1 };
+	desc.format = DUMMY_ATTACHMENT_FORMAT;
+	desc.mipLevelCount = 1;
+	desc.sampleCount = 1;
+	desc.usage = WGPUTextureUsage_RenderAttachment;
+
+	DummyAttachment created;
+	created.texture = wgpuDeviceCreateTexture(device, &desc);
+	ERR_FAIL_NULL_V(created.texture, nullptr);
+	created.view = wgpuTextureCreateView(created.texture, nullptr);
+	if (created.view == nullptr) {
+		wgpuTextureDestroy(created.texture);
+		wgpuTextureRelease(created.texture);
+		ERR_FAIL_V(nullptr);
+	}
+
+	dummy_attachments.insert(key, created);
+	return created.view;
+}
+
 void RenderingDeviceDriverWebGPU::render_pass_free(RenderPassID p_render_pass) {
 	WGRenderPass *rp = (WGRenderPass *)(p_render_pass.id);
 	delete rp;
@@ -7240,6 +7351,21 @@ void RenderingDeviceDriverWebGPU::command_begin_render_pass(CommandBufferID p_cm
 		}
 	}
 #endif // WEBGPU_VERBOSE
+
+	// A pass that produces only side effects (the cluster builder's atomics) declares
+	// no attachments at all, which WebGPU does not allow. Give it a throwaway one;
+	// render_pipeline_create substitutes the matching target on the pipeline side.
+	if (color_attachments.is_empty() && ds_att_ptr == nullptr) {
+		WGPUTextureView dummy_view = _get_dummy_attachment_view(cmd->render_state.render_area_width, cmd->render_state.render_area_height);
+		if (dummy_view != nullptr) {
+			WGPURenderPassColorAttachment dummy = {};
+			dummy.view = dummy_view;
+			dummy.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+			dummy.loadOp = WGPULoadOp_Clear;
+			dummy.storeOp = WGPUStoreOp_Discard;
+			color_attachments.push_back(dummy);
+		}
+	}
 
 	WGPURenderPassDescriptor pass_desc = {};
 	pass_desc.colorAttachmentCount = color_attachments.size();
@@ -8295,6 +8421,18 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 			primitive.cullMode = WGPUCullMode_None;
 			break;
 	}
+	// Depth clamp, which needs the depth-clip-control feature. The clustered
+	// renderer's cluster builder depends on it: a light volume that crosses the near
+	// plane must still rasterize its full screen extent, and clipping it instead
+	// leaves geometry that covers far more of the screen than the light does, so the
+	// light gets marked into clusters it never reaches.
+	if (p_rasterization_state.enable_depth_clamp) {
+		if (depth_clip_control_supported) {
+			primitive.unclippedDepth = true;
+		} else {
+			WARN_PRINT_ONCE("WebGPU: depth-clip-control not available — depth clamp is ignored, which over-marks light clusters.");
+		}
+	}
 	primitive.frontFace = (p_rasterization_state.front_face == POLYGON_FRONT_FACE_CLOCKWISE)
 			? WGPUFrontFace_CW
 			: WGPUFrontFace_CCW;
@@ -8420,8 +8558,14 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 	memset(blend_states.ptr(), 0, sizeof(WGPUBlendState) * color_target_count);
 
 	for (uint32_t i = 0; i < color_target_count; i++) {
-		// Get texture format from subpass color reference i.
-		WGPUTextureFormat fmt = WGPUTextureFormat_RGBA8Unorm; // Placeholder for unused slots.
+		// Get texture format from subpass color reference i. An unused slot stays
+		// Undefined, which is how the C API spells "no attachment here" - the same
+		// gap command_begin_render_pass leaves by giving the slot a null view. A
+		// placeholder format instead would make the pipeline claim a target the pass
+		// does not have, and Dawn rejects the mismatched attachment state. The
+		// clustered renderer's color pass always declares three slots (colour, then
+		// specular and velocity used or not), so this is the common case there.
+		WGPUTextureFormat fmt = WGPUTextureFormat_Undefined;
 		if (i < (uint32_t)subpass.color_references.size()) {
 			int32_t att_idx = subpass.color_references[i].attachment;
 			if (att_idx != ATTACHMENT_UNUSED && (uint32_t)att_idx < (uint32_t)rp->attachments.size()) {
@@ -8435,14 +8579,15 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 				if (att_desc.usage_flags & TEXTURE_USAGE_STORAGE_BIT) {
 					fmt = _promote_storage_format(fmt);
 				}
-				if (fmt == WGPUTextureFormat_Undefined) {
-					fmt = WGPUTextureFormat_RGBA8Unorm;
-				}
 			}
+		}
+		if (p_color_attachments[i] == ATTACHMENT_UNUSED) {
+			fmt = WGPUTextureFormat_Undefined;
 		}
 		color_targets[i].format = fmt;
 
-		if (p_color_attachments[i] == ATTACHMENT_UNUSED) {
+		if (fmt == WGPUTextureFormat_Undefined) {
+			// An empty slot carries no blend state and no write mask.
 			color_targets[i].writeMask = WGPUColorWriteMask_None;
 			continue;
 		}
@@ -8495,6 +8640,25 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 		} else {
 			color_targets[i].writeMask = WGPUColorWriteMask_All;
 		}
+	}
+
+	// Mirror of the dummy attachment command_begin_render_pass adds for a pass with
+	// nothing attached: the pipeline has to declare the same target or its
+	// attachment state will not match the pass it is bound in. Nothing is written to
+	// it, so the write mask stays empty.
+	const bool substituting_dummy_attachment = (color_target_count == 0) &&
+			(subpass.depth_stencil_reference.attachment == RDD::AttachmentReference::UNUSED);
+	if (substituting_dummy_attachment) {
+		color_targets.resize(1);
+		blend_states.resize(1);
+		memset(color_targets.ptr(), 0, sizeof(WGPUColorTargetState));
+		color_targets[0].format = DUMMY_ATTACHMENT_FORMAT;
+		color_targets[0].writeMask = WGPUColorWriteMask_None;
+		color_target_count = 1;
+		// The stand-in attachment is single-sampled. Godot asks for a 4x variant of
+		// the cluster pipeline when 3D MSAA is on, and the sample counts have to
+		// agree; cluster coverage is then computed per pixel rather than per sample.
+		multisample.count = 1;
 	}
 
 	// --- Fragment state ---
@@ -9246,7 +9410,12 @@ bool RenderingDeviceDriverWebGPU::has_feature(Features p_feature) {
 		case SUPPORTS_HALF_FLOAT:
 			return false; // WebGPU shader-f16 extension not reliably available; avoid f16 in generated SPIR-V.
 		case SUPPORTS_FRAGMENT_SHADER_WITH_ONLY_SIDE_EFFECTS:
-			return true; // WebGPU render passes work with no color attachments.
+			// A WebGPU render pass needs at least one attachment, so an attachment-less
+			// pass gets a throwaway colour target substituted in (see
+			// _dummy_attachment_view). Answering false instead would send the clustered
+			// renderer down its SHADER_USE_ATTACHMENT path, which no other driver takes
+			// and which still hands us a framebuffer with nothing attached.
+			return true;
 		case SUPPORTS_IMAGE_ATOMIC_32_BIT:
 			return false; // WebGPU has no image atomics support.
 		case SUPPORTS_MULTIVIEW:

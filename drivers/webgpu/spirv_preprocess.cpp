@@ -100,6 +100,22 @@ static constexpr uint16_t OP_ATOMIC_STORE = 228;
 static constexpr uint16_t OP_IN_BOUNDS_PTR_ACCESS_CHAIN = 216;
 static constexpr uint16_t OP_DECORATION_GROUP = 73;
 
+// OpAtomicLoad .. OpAtomicXor, all of which carry <result-type> <result-id>
+// <pointer>. OpAtomicStore sits inside the range but has no result and is handled
+// with the other pointer-first instructions.
+static constexpr uint16_t OP_ATOMIC_LOAD = 227;
+static constexpr uint16_t OP_ATOMIC_XOR = 242;
+static constexpr uint16_t OP_ATOMIC_FLAG_TEST_AND_SET = 247;
+static constexpr uint16_t OP_ATOMIC_FLAG_CLEAR = 248;
+
+// WGSL has no read-only atomic: `var<storage, read>` cannot hold an `atomic<T>`.
+// So a buffer the shader only ever atomically *reads* still has to be declared
+// read_write, which makes every atomic instruction a write for our purposes.
+static bool _is_atomic_with_result(uint16_t p_op) {
+	return (p_op >= OP_ATOMIC_LOAD && p_op <= OP_ATOMIC_XOR && p_op != OP_ATOMIC_STORE) ||
+			p_op == OP_ATOMIC_FLAG_TEST_AND_SET;
+}
+
 // SPIR-V storage class values.
 static constexpr uint32_t SC_UNIFORM_CONSTANT = 0;
 static constexpr uint32_t SC_OUTPUT = 3;
@@ -116,6 +132,12 @@ static constexpr uint32_t DECO_DESCRIPTOR_SET = 34;
 // SPIR-V BuiltIn values.
 static constexpr uint32_t BUILTIN_POSITION = 0;
 static constexpr uint32_t BUILTIN_POINT_SIZE = 1;
+static constexpr uint32_t BUILTIN_HELPER_INVOCATION = 23;
+
+static constexpr uint16_t OP_CAPABILITY = 17;
+// OpIsNan .. OpSignBitSet, a contiguous run in the spec.
+static constexpr uint16_t OP_IS_NAN = 156;
+static constexpr uint16_t OP_SIGN_BIT_SET = 160;
 
 // SPIR-V execution model values.
 static constexpr uint32_t EXEC_MODEL_VERTEX = 0;
@@ -2218,6 +2240,7 @@ void binding_image_info(const Vector<uint8_t> &p_bytes, HashMap<uint32_t, ImageB
 
 	HashMap<uint32_t, ImageBindingInfo> image_types; // OpTypeImage id -> info
 	HashMap<uint32_t, uint32_t> sampled_image_to_image;
+	HashMap<uint32_t, uint32_t> array_to_element;
 	HashMap<uint32_t, uint32_t> pointer_to_pointee;
 	HashMap<uint32_t, uint32_t> var_to_pointer;
 	HashMap<uint32_t, uint32_t> var_set;
@@ -2245,6 +2268,12 @@ void binding_image_info(const Vector<uint8_t> &p_bytes, HashMap<uint32_t, ImageB
 			case OP_TYPE_SAMPLED_IMAGE: {
 				if (wc >= 3) {
 					sampled_image_to_image.insert(read_word(data, len, pos + 1), read_word(data, len, pos + 2));
+				}
+			} break;
+			case OP_TYPE_ARRAY:
+			case OP_TYPE_RUNTIME_ARRAY: {
+				if (wc >= 3) {
+					array_to_element.insert(read_word(data, len, pos + 1), read_word(data, len, pos + 2));
 				}
 			} break;
 			case OP_TYPE_POINTER: {
@@ -2284,7 +2313,18 @@ void binding_image_info(const Vector<uint8_t> &p_bytes, HashMap<uint32_t, ImageB
 		if (!pointee) {
 			continue;
 		}
+		// An array of handles (lightmap_textures[16], voxel_gi_textures[8]) points at
+		// an OpTypeArray, so unwrap to the element type before looking for the image.
+		// Miss this and the binding falls back to a plain 2D view, which fails to
+		// create against a 3D or layered texture.
 		uint32_t image_id = *pointee;
+		for (int depth = 0; depth < 4; depth++) {
+			const uint32_t *element = array_to_element.getptr(image_id);
+			if (!element) {
+				break;
+			}
+			image_id = *element;
+		}
 		if (const uint32_t *unwrapped = sampled_image_to_image.getptr(image_id)) {
 			image_id = *unwrapped;
 		}
@@ -2398,6 +2438,20 @@ Vector<uint8_t> run_all(const Vector<uint8_t> &p_bytes, Vector<DepthImageFixResu
 		return pass_limit < 0 || pass_index <= pass_limit;
 	};
 
+	// The passes below emit constructs that need SPIR-V 1.3 (the StorageBuffer
+	// storage class), which the input may predate. Declare that up front: the
+	// SPIRV-Tools passes validate as they go, and against a 1.0 header they reject
+	// the module with "StorageBuffer requires SPV_KHR_storage_buffer_storage_class"
+	// rather than the shader's real problem.
+	if (spv.size() >= 20) {
+		uint32_t version;
+		memcpy(&version, spv.ptr() + 4, 4);
+		if (version < 0x00010300) {
+			version = 0x00010300;
+			memcpy(spv.ptrw() + 4, &version, 4);
+		}
+	}
+
 	// Opaque inlining goes first: every pass below rewrites variables, and none
 	// of them follow a texture or sampler across a function boundary.
 	if (want()) { spv = inline_opaque_functions(spv); }
@@ -2438,18 +2492,75 @@ Vector<uint8_t> run_all(const Vector<uint8_t> &p_bytes, Vector<DepthImageFixResu
 	if (want()) { spv = alias_anisotropic_samplers(spv, r_unused_binding_keys); }
 	if (want()) { spv = eliminate_dead_code(spv); }
 
-	// The passes above emit constructs that need SPIR-V 1.3 (the StorageBuffer
-	// storage class), which the input may predate.
-	if (spv.size() >= 20) {
-		uint32_t version;
-		memcpy(&version, spv.ptr() + 4, 4);
-		if (version < 0x00010300) {
-			version = 0x00010300;
-			memcpy(spv.ptrw() + 4, &version, 4);
+	return spv;
+}
+
+// ---- find_untranslatable_construct ----
+
+std::string find_untranslatable_construct(const Vector<uint8_t> &p_bytes) {
+	const uint8_t *data = p_bytes.ptr();
+	int64_t len = p_bytes.size();
+	if (len < 20 || (len % 4) != 0) {
+		return "module is too small to be SPIR-V";
+	}
+	uint32_t nwords = (uint32_t)(len / 4);
+
+	// Capability ids from the SPIR-V spec. Everything here describes something
+	// WGSL has no spelling for, so Tint gives up on it one way or another.
+	struct UnsupportedCapability {
+		uint32_t id;
+		const char *reason;
+	};
+	static const UnsupportedCapability unsupported_capabilities[] = {
+		{ 10, "64-bit floats (WGSL has no f64)" },
+		{ 11, "64-bit integers (WGSL has no i64/u64)" },
+		{ 12, "64-bit atomics" },
+		{ 22, "16-bit integers (WGSL has no i16/u16)" },
+		{ 39, "8-bit integers (WGSL has no i8/u8)" },
+		{ 56, "storage image writes without a format qualifier (WGSL needs a concrete texel format)" },
+		{ 61, "subgroup operations" },
+		{ 62, "subgroup vote operations" },
+		{ 63, "subgroup arithmetic operations" },
+		{ 64, "subgroup ballot operations" },
+		{ 65, "subgroup shuffle operations" },
+		{ 66, "subgroup relative shuffle operations" },
+		{ 67, "clustered subgroup operations" },
+		{ 68, "subgroup quad operations" },
+		{ 4423, "subgroup ballot operations (KHR)" },
+		{ 4431, "subgroup vote operations (KHR)" },
+	};
+
+	uint32_t pos = 5;
+	while (pos < nwords) {
+		uint32_t word0 = read_word(data, len, pos);
+		uint32_t wc = (word0 >> 16) & 0xFFFF;
+		uint16_t op = word0 & 0xFFFF;
+		if (wc == 0 || pos + wc > nwords) {
+			break;
 		}
+
+		if (op == OP_CAPABILITY && wc >= 2) {
+			uint32_t capability = read_word(data, len, pos + 1);
+			for (const UnsupportedCapability &unsupported : unsupported_capabilities) {
+				if (unsupported.id == capability) {
+					return unsupported.reason;
+				}
+			}
+		} else if (op >= OP_IS_NAN && op <= OP_SIGN_BIT_SET) {
+			// OpIsNan .. OpSignBitSet. WGSL dropped all of these, and the reader
+			// has no lowering for them; `x != x` and a magnitude test against
+			// FLT_MAX are the usual replacements.
+			return "an IEEE classification instruction (isnan/isinf/isfinite)";
+		} else if (op == OP_DECORATE && wc >= 4 &&
+				read_word(data, len, pos + 2) == DECO_BUILTIN &&
+				read_word(data, len, pos + 3) == BUILTIN_HELPER_INVOCATION) {
+			return "the HelperInvocation builtin (WGSL cannot ask whether an invocation is a helper)";
+		}
+
+		pos += wc;
 	}
 
-	return spv;
+	return std::string();
 }
 
 // ---- inline_opaque_functions ----
@@ -3206,9 +3317,10 @@ Vector<uint8_t> infer_readonly_storage(const Vector<uint8_t> &p_bytes) {
 					}
 				} break;
 
-				// OpAtomicStore: pointer scope semantics value
-				case OP_ATOMIC_STORE: {
-					if (wc >= 5) {
+				// OpAtomicStore / OpAtomicFlagClear: pointer scope semantics [value]
+				case OP_ATOMIC_STORE:
+				case OP_ATOMIC_FLAG_CLEAR: {
+					if (wc >= 4) {
 						uint32_t ptr_id = read_word(data, len, pos + 1);
 						if (storage_vars.has(ptr_id)) {
 							written_vars.insert(ptr_id);

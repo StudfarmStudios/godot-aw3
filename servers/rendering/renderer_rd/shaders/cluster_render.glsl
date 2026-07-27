@@ -65,6 +65,7 @@ void main() {
 
 #VERSION_DEFINES
 
+#ifndef NO_SUBGROUPS
 #extension GL_KHR_shader_subgroup_ballot : enable
 #extension GL_KHR_shader_subgroup_arithmetic : enable
 #extension GL_KHR_shader_subgroup_vote : enable
@@ -72,6 +73,7 @@ void main() {
 // On Apple platforms, gl_HelperInvocation (simd_is_helper_thread()) is unreliable with MSAA, causing rendering artifacts.
 // Setting this to false will disable the helper invocation check.
 layout(constant_id = 0) const bool sc_use_helper_check = true;
+#endif // !NO_SUBGROUPS
 
 layout(location = 0) in float depth_interp;
 layout(location = 1) in flat uint element_index;
@@ -117,6 +119,13 @@ void main() {
 
 	uint aux = 0;
 
+#ifdef NO_SUBGROUPS
+	// Without subgroup ops there is no way to elect one invocation per cluster, so
+	// every invocation ors its own bit in. The result is identical - the election is
+	// only there to cut atomic contention. gl_HelperInvocation goes with it: WGSL has
+	// no such query, and discarding a helper's write is the platform's job there.
+	aux = atomicOr(cluster_render.data[usage_write_offset], usage_write_bit);
+#else
 	uint cluster_thread_group_index;
 	if (!sc_use_helper_check || !gl_HelperInvocation) {
 		//https://advances.realtimerendering.com/s2017/2017_Sig_Improved_Culling_final.pdf
@@ -142,6 +151,7 @@ void main() {
 			aux = atomicOr(cluster_render.data[usage_write_offset], usage_write_bit);
 		}
 	}
+#endif // NO_SUBGROUPS
 
 	//find the current element in the depth usage list and mark the current depth as used
 	float unit_depth = depth_interp * state.inv_z_far;
@@ -151,12 +161,24 @@ void main() {
 	uint z_write_offset = cluster_offset + state.cluster_depth_offset + element_index;
 	uint z_write_bit = 1 << z_bit;
 
+#ifdef NO_SUBGROUPS
+	// subgroupOr above unions the z bits of the whole wave, which incidentally covers
+	// the depth extent the light volume spans across the tile. An invocation on its
+	// own knows only its own slice, and marking just that leaves the slices between
+	// the volume's front and back faces unmarked - geometry landing in one of those
+	// gaps is culled from a light that does reach it, which reads as a grid of
+	// unlit cluster tiles. Mark every slice from here to the far plane: conservative
+	// in the same direction as the wave union, and it never culls a light that applies.
+	z_write_bit = ~(z_write_bit - 1u);
+	aux = atomicOr(cluster_render.data[z_write_offset], z_write_bit);
+#else
 	if (!sc_use_helper_check || !gl_HelperInvocation) {
 		z_write_bit = subgroupOr(z_write_bit); //merge all Zs
 		if (cluster_thread_group_index == 0) {
 			aux = atomicOr(cluster_render.data[z_write_offset], z_write_bit);
 		}
 	}
+#endif
 
 #ifdef USE_ATTACHMENT
 	frag_color = vec4(float(aux));

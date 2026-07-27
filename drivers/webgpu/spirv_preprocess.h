@@ -35,6 +35,7 @@
 #include "core/templates/vector.h"
 
 #include <cstdint>
+#include <string>
 
 namespace spirv_preprocess {
 
@@ -172,5 +173,14 @@ Vector<uint8_t> eliminate_dead_code(const Vector<uint8_t> &p_bytes);
 // fragment shader wants 18; anisotropy is the cheapest of those to give up.
 // Matches on the engine's sampler names, so it no-ops on anything else.
 Vector<uint8_t> alias_anisotropic_samplers(const Vector<uint8_t> &p_bytes, Vector<uint32_t> *r_removed_binding_keys = nullptr);
+
+// Tint's SPIR-V reader answers a construct it cannot express in WGSL with
+// TINT_UNIMPLEMENTED / TINT_ASSERT, and both abort the process instead of
+// returning an error. In a browser that kills the whole game over one unused
+// effect shader, so screen for the ones we know of first and let the caller fail
+// just that shader. Returns the reason, or an empty string if the module looks
+// translatable. Deliberately errs towards rejecting: losing a shader costs a
+// feature, an abort costs the session.
+std::string find_untranslatable_construct(const Vector<uint8_t> &p_bytes);
 
 } // namespace spirv_preprocess

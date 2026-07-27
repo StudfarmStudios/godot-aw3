@@ -5114,6 +5114,14 @@ RenderForwardClustered::RenderForwardClustered() {
 		defines += "\n#define SDFGI_OCT_SIZE " + itos(gi.sdfgi_get_lightprobe_octahedron_size()) + "\n";
 		defines += "\n#define MAX_DIRECTIONAL_LIGHT_DATA_STRUCTS " + itos(MAX_DIRECTIONAL_LIGHTS) + "\n";
 
+		if (!cluster_subgroup_ops_supported()) {
+			defines += "\n#define NO_SUBGROUPS\n";
+			// The no-subgroups driver is WebGPU, where depth textures may not pair
+			// with filtering samplers; see SAMPLER_DEPTH_READ in
+			// scene_forward_lights_inc.glsl.
+			defines += "\n#define DEPTH_FILTERING_UNSUPPORTED\n";
+		}
+
 		bool force_vertex_shading = GLOBAL_GET("rendering/shading/overrides/force_vertex_shading");
 		if (force_vertex_shading) {
 			defines += "\n#define USE_VERTEX_LIGHTING\n";

@@ -25,6 +25,13 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 #define DENSITY_SCALE 1024.0
 
+// One comparison rejects both NaN and infinity: NaN fails every comparison, and
+// anything infinite is above FLT_MAX. Spelled out rather than using isnan/isinf
+// because WGSL has neither, and Tint cannot translate OpIsNan/OpIsInf at all.
+bool is_finite(vec4 v) {
+	return all(lessThanEqual(abs(v), vec4(3.402823466e+38)));
+}
+
 layout(set = 0, binding = 1) uniform texture2D shadow_atlas;
 layout(set = 0, binding = 2) uniform texture2D directional_shadow_atlas;
 
@@ -54,6 +61,17 @@ layout(set = 0, binding = 7, std430) buffer restrict readonly ClusterBuffer {
 cluster_buffer;
 
 layout(set = 0, binding = 8) uniform sampler linear_sampler;
+layout(set = 0, binding = 22) uniform sampler nearest_sampler;
+
+// Raw depth reads from the shadow atlases must not share a filtering sampler
+// binding on WebGPU: depth textures only accept non-filtering (or comparison)
+// samplers there, and one pairing demotes the whole binding - which would turn
+// the reprojection history read above nearest and posterize the fog to froxels.
+#ifdef DEPTH_FILTERING_UNSUPPORTED
+#define SAMPLER_DEPTH_READ nearest_sampler
+#else
+#define SAMPLER_DEPTH_READ linear_sampler
+#endif
 
 #ifdef MODE_DENSITY
 layout(rgba16f, set = 0, binding = 9) uniform restrict writeonly image3D density_map;
@@ -429,7 +447,7 @@ void main() {
 						z_range = directional_lights.data[i].shadow_z_range.w;
 					}
 
-					float depth = texture(sampler2D(directional_shadow_atlas, linear_sampler), pssm_coord.xy).r;
+					float depth = texture(sampler2D(directional_shadow_atlas, SAMPLER_DEPTH_READ), pssm_coord.xy).r;
 					float shadow = exp(min(0.0, (pssm_coord.z - depth)) * z_range * INV_FOG_FADE);
 
 					shadow = mix(shadow, 1.0, smoothstep(directional_lights.data[i].fade_from, directional_lights.data[i].fade_to, view_pos.z)); //done with negative values for performance
@@ -472,6 +490,7 @@ void main() {
 			uint item_to;
 
 			cluster_get_item_range(cluster_omni_offset + params.max_cluster_element_count_div_32 + cluster_z, item_min, item_max, item_from, item_to);
+
 
 			for (uint i = item_from; i < item_to; i++) {
 				uint mask = cluster_buffer.data[cluster_omni_offset + i];
@@ -519,7 +538,7 @@ void main() {
 							pos.xy = pos.xy * 0.5 + 0.5;
 							pos.xy = uv_rect.xy + pos.xy * uv_rect.zw;
 
-							float depth = texture(sampler2D(shadow_atlas, linear_sampler), pos.xy).r;
+							float depth = texture(sampler2D(shadow_atlas, SAMPLER_DEPTH_READ), pos.xy).r;
 
 							shadow_attenuation = mix(1.0 - omni_lights.data[light_index].shadow_opacity, 1.0, exp(min(0.0, (pos.z - depth)) / omni_lights.data[light_index].inv_radius * INV_FOG_FADE));
 						}
@@ -584,7 +603,7 @@ void main() {
 
 							vec3 pos = vec3(splane.xy * spot_lights.data[light_index].atlas_rect.zw + spot_lights.data[light_index].atlas_rect.xy, splane.z);
 
-							float depth = texture(sampler2D(shadow_atlas, linear_sampler), pos.xy).r;
+							float depth = texture(sampler2D(shadow_atlas, SAMPLER_DEPTH_READ), pos.xy).r;
 
 							shadow_attenuation = mix(1.0 - spot_lights.data[light_index].shadow_opacity, 1.0, exp(min(0.0, (pos.z - depth)) / spot_lights.data[light_index].inv_radius * INV_FOG_FADE));
 						}
@@ -685,7 +704,7 @@ void main() {
 								pos.xy = pos.xy * 0.5 + 0.5;
 								pos.xy = uv_rect.xy + pos.xy * uv_rect.zw;
 
-								float depth = texture(sampler2D(shadow_atlas, linear_sampler), pos.xy).r;
+								float depth = texture(sampler2D(shadow_atlas, SAMPLER_DEPTH_READ), pos.xy).r;
 
 								shadow_attenuation = mix(1.0 - area_lights.data[light_index].shadow_opacity, 1.0, exp(min(0.0, (pos.z - depth)) / inv_center_range * INV_FOG_FADE));
 							}
@@ -801,8 +820,8 @@ void main() {
 	}
 
 	vec4 final_density = vec4(total_light * scattering + emission, total_density);
-	bool is_reprojected_density_invalid = any(isnan(reprojected_density)) || any(isinf(reprojected_density));
-	bool is_final_density_invalid = any(isnan(final_density)) || any(isinf(final_density));
+	bool is_reprojected_density_invalid = !is_finite(reprojected_density);
+	bool is_final_density_invalid = !is_finite(final_density);
 
 	if (is_final_density_invalid) {
 		final_density = is_reprojected_density_invalid ? vec4(0.0) : reprojected_density;
@@ -853,7 +872,7 @@ void main() {
 		prev_z = z;
 
 		vec4 final_fog = vec4(fog_accum.rgb, fog_accum.a);
-		bool is_final_fog_invalid = any(isnan(final_fog)) || any(isinf(final_fog));
+		bool is_final_fog_invalid = !is_finite(final_fog);
 		final_fog = is_final_fog_invalid ? vec4(0.0) : final_fog;
 		final_fog = clamp(final_fog, vec4(0.0), vec4(65504.0));
 		imageStore(fog_map, fog_pos, final_fog);

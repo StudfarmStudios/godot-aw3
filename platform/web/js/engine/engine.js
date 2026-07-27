@@ -319,6 +319,13 @@ const Engine = (function () {
 			// Request optional texture format tiers used by Godot (r16snorm, rg16snorm, etc.).
 			var optionalFeatures = [
 				'readonly-and-readwrite-storage-textures',
+				// The clustered renderer's depth buffer is D32S8; without this the
+				// first render pipeline using it fails to create.
+				'depth32float-stencil8',
+				// Depth clamp for the cluster builder's light volumes. Without it they
+				// are clipped at the near plane and get marked into far more clusters
+				// than the light actually reaches.
+				'depth-clip-control',
 				'texture-formats-tier1',
 				'texture-formats-tier2',
 				'float32-filterable',
@@ -351,8 +358,15 @@ const Engine = (function () {
 				'maxUniformBuffersPerShaderStage',
 				'maxSampledTexturesPerShaderStage',
 				'maxSamplersPerShaderStage',
+				'maxStorageTexturesPerShaderStage',
 				'maxColorAttachments',
 				'maxBindGroups',
+				// Newer split limits. Dawn enforces these per stage in addition to the
+				// combined ones above, so raising only the combined limit is not enough.
+				'maxStorageBuffersInFragmentStage',
+				'maxStorageBuffersInVertexStage',
+				'maxStorageTexturesInFragmentStage',
+				'maxStorageTexturesInVertexStage',
 			];
 			for (var li = 0; li < limitsToMax.length; li++) {
 				var key = limitsToMax[li];

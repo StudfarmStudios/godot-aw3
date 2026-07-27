@@ -74,7 +74,12 @@ ClusterBuilderSharedDataRD::ClusterBuilderSharedDataRD() {
 			shader_variant = ClusterRender::SHADER_USE_ATTACHMENT;
 		}
 
-		cluster_render.cluster_render_shader.initialize(variants);
+		String general_defines;
+		if (!cluster_subgroup_ops_supported()) {
+			general_defines += "\n#define NO_SUBGROUPS\n";
+		}
+
+		cluster_render.cluster_render_shader.initialize(variants, general_defines);
 		cluster_render.shader_version = cluster_render.cluster_render_shader.version_create();
 		cluster_render.shader = cluster_render.cluster_render_shader.version_get_shader(cluster_render.shader_version, shader_variant);
 		cluster_render.shader_pipelines[ClusterRender::PIPELINE_NORMAL] = RD::get_singleton()->render_pipeline_create(cluster_render.shader, fb_format, vertex_format, RD::RENDER_PRIMITIVE_TRIANGLES, rasterization_state, RD::PipelineMultisampleState(), RD::PipelineDepthStencilState(), blend_state, 0);
@@ -282,6 +287,7 @@ void ClusterBuilderRD::setup(Size2i p_screen_size, uint32_t p_max_elements, RID 
 	ERR_FAIL_COND(p_max_elements == 0);
 	ERR_FAIL_COND(p_screen_size.x < 1);
 	ERR_FAIL_COND(p_screen_size.y < 1);
+
 
 	_clear();
 

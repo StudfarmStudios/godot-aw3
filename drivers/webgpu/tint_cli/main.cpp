@@ -64,6 +64,14 @@ static std::string convert_spirv_to_wgsl(const std::vector<uint8_t> &p_spv_bytes
 		}
 	}
 
+	// The same gate the runtime driver applies. Tint aborts instead of returning an
+	// error on these, which in --batch mode would take every other shader with it.
+	std::string untranslatable = spirv_preprocess::find_untranslatable_construct(spv);
+	if (!untranslatable.empty()) {
+		r_error = "shader uses " + untranslatable + ", which cannot be expressed in WGSL";
+		return {};
+	}
+
 	// Convert to uint32_t words for Tint.
 	size_t word_count = (size_t)spv.size() / 4;
 	const uint32_t *words = reinterpret_cast<const uint32_t *>(spv.ptr());

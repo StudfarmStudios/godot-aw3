@@ -547,8 +547,12 @@ SHADER_REGISTRY = [
     # ── Cluster ─────────────────────────────────────────────────────
     ("servers/rendering/renderer_rd/shaders/cluster_debug.glsl",
      GENERAL_DEFINES_NONE, [("default", "", [VERT, FRAG])]),
+    # NO_SUBGROUPS is what cluster_builder_rd.cpp defines on a device without
+    # fragment-stage subgroup ops, which is every WebGPU device. Without it this
+    # entry compiles the subgroup path, whose SPIR-V the runtime never asks for.
     ("servers/rendering/renderer_rd/shaders/cluster_render.glsl",
-     GENERAL_DEFINES_NONE, [("default", "", [VERT, FRAG])]),
+     "\n#define NO_SUBGROUPS\n", [("default", "", [VERT, FRAG]),
+                                  ("use_attachment", "\n#define USE_ATTACHMENT\n", [VERT, FRAG])]),
     ("servers/rendering/renderer_rd/shaders/cluster_store.glsl",
      GENERAL_DEFINES_NONE, [("default", "", [COMP])]),
 
@@ -619,7 +623,12 @@ def compile_glsl_to_spirv(glsl_source, stage, glslang_path="glslangValidator"):
         result = subprocess.run(
             [
                 glslang_path,
-                "-V",
+                # Must match RenderingShaderContainerFormatWebGPU's language/SPIR-V
+                # versions (Vulkan 1.1 -> SPIR-V 1.3). Plain -V targets Vulkan 1.0,
+                # where SSBOs come out as Uniform + BufferBlock rather than the
+                # StorageBuffer storage class - different SPIR-V, so a different
+                # hash, so nothing precompiled here would ever be found at runtime.
+                "--target-env", "vulkan1.1",
                 "-S", stage,
                 "-o", spv_path,
                 glsl_path,
@@ -630,7 +639,9 @@ def compile_glsl_to_spirv(glsl_source, stage, glslang_path="glslangValidator"):
         )
 
         if result.returncode != 0:
-            return None, result.stderr
+            # glslangValidator reports compile errors on stdout, not stderr, so
+            # taking stderr alone turns every GLSL failure into a bare "unknown".
+            return None, (result.stdout + result.stderr).strip()
 
         with open(spv_path, "rb") as f:
             spv_bytes = f.read()

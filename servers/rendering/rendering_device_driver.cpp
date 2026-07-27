@@ -55,6 +55,12 @@ uint64_t RenderingDeviceDriver::api_trait_get(ApiTrait p_trait) {
 			return false;
 		case API_TRAIT_TEXTURE_OUTPUTS_REQUIRE_CLEARS:
 			return false;
+		case API_TRAIT_GPU_CALLS_MAIN_THREAD_ONLY:
+			// Only WebGPU is pinned to the thread that created the device. Answering
+			// here rather than in every driver keeps Metal/Vulkan/D3D12 off the error
+			// path below - this is queried per frame, so the miss showed up as ~11k
+			// "Method/function failed" lines in a 100-second desktop run.
+			return false;
 		default:
 			ERR_FAIL_V(0);
 	}

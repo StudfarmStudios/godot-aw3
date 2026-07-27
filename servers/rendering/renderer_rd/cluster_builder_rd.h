@@ -35,6 +35,17 @@
 #include "servers/rendering/renderer_rd/shaders/cluster_store.glsl.gen.h"
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
 
+// Cluster building and cluster iteration use fragment-stage subgroup ops (broadcast,
+// min/max/or, ballot) to keep a wave's work uniform. They are an optimization, not a
+// requirement, so the shaders carry a scalar fallback behind NO_SUBGROUPS. Every
+// desktop API has subgroups; WebGPU has none, so the choice is made at runtime.
+_FORCE_INLINE_ bool cluster_subgroup_ops_supported() {
+	RenderingDevice *rd = RD::get_singleton();
+	const uint64_t required_ops = RD::SUBGROUP_BASIC_BIT | RD::SUBGROUP_ARITHMETIC_BIT | RD::SUBGROUP_BALLOT_BIT;
+	return (rd->limit_get(RD::LIMIT_SUBGROUP_IN_SHADERS) & RD::SHADER_STAGE_FRAGMENT_BIT) &&
+			(rd->limit_get(RD::LIMIT_SUBGROUP_OPERATIONS) & required_ops) == required_ops;
+}
+
 class ClusterBuilderSharedDataRD {
 	friend class ClusterBuilderRD;
 

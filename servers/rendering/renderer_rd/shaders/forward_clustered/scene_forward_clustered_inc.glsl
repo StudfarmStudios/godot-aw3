@@ -5,8 +5,18 @@
 #define MAX_VOXEL_GI_INSTANCES 8
 #define MAX_VIEWS 2
 
+#ifdef NO_SUBGROUPS
+// Cluster iteration only uses subgroup ops to make the loop bounds and the element
+// mask uniform across a wave, so collapsing them to the invocation's own value is
+// correct - just without the coherence win. WebGPU exposes no subgroup ops at all.
+#define subgroupBroadcastFirst(m_value) (m_value)
+#define subgroupMin(m_value) (m_value)
+#define subgroupMax(m_value) (m_value)
+#define subgroupOr(m_value) (m_value)
+#else
 #extension GL_KHR_shader_subgroup_ballot : enable
 #extension GL_KHR_shader_subgroup_arithmetic : enable
+#endif
 
 #include "../cluster_data_inc.glsl"
 #include "../decal_data_inc.glsl"

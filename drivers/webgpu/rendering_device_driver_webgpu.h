@@ -107,6 +107,7 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 	HashMap<WGPUTexture, LocalVector<WGPUTexture>> rw_shadow_copy_map;
 	bool float32_filterable_supported = false;
 	bool float32_blendable_supported = false;
+	bool depth_clip_control_supported = false;
 	// Optional texture-compression features (BC, ETC2, ASTC). Requested by the JS
 	// shell at device creation; the driver must only report the corresponding
 	// DataFormats as supported when the feature is actually enabled, otherwise
@@ -182,12 +183,37 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 	WGPUBuffer aliasing_stub_buffer = nullptr;
 	static constexpr uint64_t ALIASING_STUB_BUFFER_SIZE = 65536; // 64KB — large enough for any sub-emitter emission buffer
 
+	// --- Dummy Attachment for Side-Effect-Only Render Passes ---
+	// A WebGPU render pass must have at least one attachment. Vulkan, Metal and
+	// D3D12 all allow a pass with none, and the clustered renderer uses one to
+	// build the light cluster purely through storage-buffer atomics. Substituting a
+	// throwaway colour target (nothing is written to it, and it is never read) keeps
+	// that pass legal here. Sized to the framebuffer, since gl_FragCoord and the
+	// implied viewport come from the attachment.
+	// Keyed by exact size: a render pass takes its extent from its attachments, so a
+	// larger stand-in would change the pass's dimensions. The cluster builder runs at
+	// a fraction of the screen while other side-effect passes run full size, so there
+	// are a small, fixed number of these.
+	struct DummyAttachment {
+		WGPUTexture texture = nullptr;
+		WGPUTextureView view = nullptr;
+	};
+	HashMap<uint64_t, DummyAttachment> dummy_attachments;
+	static constexpr WGPUTextureFormat DUMMY_ATTACHMENT_FORMAT = WGPUTextureFormat_R8Unorm;
+	WGPUTextureView _get_dummy_attachment_view(uint32_t p_width, uint32_t p_height);
+
 	// --- Dummy Samplers for BGL Rebinding ---
 	// When a bind group must be re-created with a different BGL (e.g., because
 	// the original BGL has a Comparison sampler but the target has Filtering),
 	// these dummy samplers are used as substitutes.
 	WGPUSampler dummy_filtering_sampler = nullptr;
 	WGPUSampler dummy_comparison_sampler = nullptr;
+	WGPUSampler dummy_nonfiltering_sampler = nullptr;
+
+	// Swaps in one of the dummies above when the sampler Godot bound cannot legally
+	// occupy the slot the shader's layout declares (a comparison sampler in a plain
+	// one's place). Only reached on bindings the shader does not sample.
+	WGPUSampler _compatible_sampler(WGPUSampler p_sampler, const WGShader *p_shader, uint32_t p_set_index, uint32_t p_binding);
 
 	// --- BGL Rebinding Helper ---
 	WGPUBindGroup _get_compatible_bind_group(WGUniformSet *p_us, WGShader *p_target_shader, uint32_t p_set_idx);

@@ -306,6 +306,11 @@ ALBEDO = vec3(1.0);
 		if (p_is_using_radiance_octmap_array) {
 			defines += "\n#define USE_RADIANCE_OCTMAP_ARRAY \n";
 		}
+		if (!cluster_subgroup_ops_supported()) {
+			// The no-subgroups driver is WebGPU, where depth textures may not pair
+			// with filtering samplers; see SAMPLER_DEPTH_READ in the shader.
+			defines += "\n#define DEPTH_FILTERING_UNSUPPORTED\n";
+		}
 		Vector<ShaderRD::VariantDefine> volumetric_fog_modes;
 		int shader_group = 0;
 		for (int vk_memory_model = 0; vk_memory_model < 2; vk_memory_model++) {
@@ -1005,6 +1010,22 @@ void Fog::volumetric_fog_update(const VolumetricFogSettings &p_settings, const P
 			uniforms.push_back(u);
 			copy_uniforms.push_back(u);
 		}
+
+		{
+			// Dedicated sampler for raw depth reads (see SAMPLER_DEPTH_READ in the
+			// shader): a depth texture may not pair with a filtering sampler binding
+			// on WebGPU without demoting that binding for every texture it samples.
+			RD::Uniform u;
+			u.uniform_type = RD::UNIFORM_TYPE_SAMPLER;
+			u.binding = 22;
+			u.append_id(material_storage->sampler_rd_get_default(RSE::CANVAS_ITEM_TEXTURE_FILTER_NEAREST, RSE::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED));
+			uniforms.push_back(u);
+			copy_uniforms.push_back(u);
+		}
+
+		// NOTE: keep this the last uniform pushed - process_uniform_set2 below
+		// swaps entries by vector INDEX (write[8]/write[9]/remove_at(9)), so
+		// nothing may be inserted before the binding 9/10 images.
 
 		if (fog->copy_uniform_set.is_valid() && RD::get_singleton()->uniform_set_is_valid(fog->copy_uniform_set)) {
 			RD::get_singleton()->free_rid(fog->copy_uniform_set);
