@@ -1,0 +1,10 @@
+# Context hygiene for misc/aw3/builder.Dockerfile: the image builds the engine
+# from source, so local build artifacts and git history must not leak into the
+# context (bin/ alone can be many GB on a dev machine).
+.git
+bin/
+temp/
+*.o
+*.a
+.sconsign*.dblite
+__pycache__/
