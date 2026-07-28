@@ -699,11 +699,13 @@ void godotsharp_variant_as_float(const Variant *p_self, double *r_dest) {
 	*r_dest = p_self->operator double();
 }
 
-godot_string godotsharp_variant_as_string(const Variant *p_self) {
-	godot_string raw_dest;
-	String *dest = (String *)&raw_dest;
+void godotsharp_variant_as_string(const Variant *p_self, godot_string *r_dest) {
+	// Out-pointer, not a by-value struct return: the mono interpreter's icall
+	// path invokes struct-returning P/Invokes with a mismatched wasm signature
+	// (same class of trap as the FP P/Invokes above), and interp'd generic
+	// code converting Variant -> string is common enough to hit it.
+	String *dest = (String *)r_dest;
 	memnew_placement(dest, String(p_self->operator String()));
-	return raw_dest;
 }
 
 godot_vector2 godotsharp_variant_as_vector2(const Variant *p_self) {
@@ -818,11 +820,9 @@ godot_color godotsharp_variant_as_color(const Variant *p_self) {
 	return raw_dest;
 }
 
-godot_string_name godotsharp_variant_as_string_name(const Variant *p_self) {
-	godot_string_name raw_dest;
-	StringName *dest = (StringName *)&raw_dest;
+void godotsharp_variant_as_string_name(const Variant *p_self, godot_string_name *r_dest) {
+	StringName *dest = (StringName *)r_dest;
 	memnew_placement(dest, StringName(p_self->operator StringName()));
-	return raw_dest;
 }
 
 godot_node_path godotsharp_variant_as_node_path(const Variant *p_self) {

@@ -514,16 +514,30 @@ namespace Godot.NativeInterop
                 }
                 default:
                 {
-                    using godot_string godotString = NativeFuncs.godotsharp_variant_as_string(p_var);
-                    return Marshaling.ConvertStringToManaged(godotString);
+                    godot_string godotString;
+                    unsafe
+                    {
+                        NativeFuncs.godotsharp_variant_as_string(p_var, &godotString);
+                    }
+                    using (godotString)
+                    {
+                        return Marshaling.ConvertStringToManaged(godotString);
+                    }
                 }
             }
         }
 
         public static godot_string_name ConvertToNativeStringName(scoped in godot_variant p_var)
-            => p_var.Type == Variant.Type.StringName ?
-                NativeFuncs.godotsharp_string_name_new_copy(p_var.StringName) :
-                NativeFuncs.godotsharp_variant_as_string_name(p_var);
+        {
+            if (p_var.Type == Variant.Type.StringName)
+                return NativeFuncs.godotsharp_string_name_new_copy(p_var.StringName);
+            godot_string_name dest;
+            unsafe
+            {
+                NativeFuncs.godotsharp_variant_as_string_name(p_var, &dest);
+            }
+            return dest;
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static StringName ConvertToStringName(in godot_variant p_var)
