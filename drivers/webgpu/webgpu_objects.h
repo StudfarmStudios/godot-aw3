@@ -249,6 +249,10 @@ struct WGPipelineWrapper {
 	bool ready = true;
 	// Set if the asynchronous creation failed; the pipeline stays unusable.
 	bool failed = false;
+	// Set by pipeline_free when an asynchronous creation is still in flight: the
+	// Dawn callback holds this pointer, so the last callback performs the release
+	// and delete instead of pipeline_free.
+	bool orphaned = false;
 	// A strip pipeline needs a second (Uint16) variant, so readiness waits for both.
 	uint32_t pending_creations = 0;
 	// Specialized shader modules created with pipeline-specific specialization constants.
@@ -347,6 +351,11 @@ struct WGCommandBuffer {
 
 	enum ActiveEncoder { NONE, RENDER, COMPUTE };
 	ActiveEncoder active_encoder = NONE;
+
+	// The bound compute pipeline's asynchronous creation has not landed yet: the
+	// encoder has no pipeline set, and dispatches are dropped until a bind finds
+	// the wrapper ready. Set/cleared by every command_bind_compute_pipeline.
+	bool compute_pipeline_pending = false;
 
 	// Push constant emulation state.
 	static constexpr uint32_t MAX_PUSH_CONSTANT_SIZE = 128;
