@@ -15,9 +15,19 @@
 # (hours). That warmth is the whole point of baking the engine in; the cost is
 # an image of several GB.
 #
-# Build from the repo root:
-#   docker build -f misc/aw3/builder.Dockerfile -t aw3-wasm-builder .
-# The aw3 repo's web-build workflow runs `aw3-build-web <aw3 checkout>`.
+# Built LOCALLY and pushed to ghcr (a CI build of this image burns too many
+# runner credits — it is a full editor + web template build per rebuild). From
+# the repo root, on the aw-web-export branch:
+#
+#   docker buildx build --platform linux/amd64 \
+#     -f misc/aw3/builder.Dockerfile \
+#     -t ghcr.io/studfarmstudios/aw3-wasm-builder:$(git rev-parse --short HEAD) \
+#     -t ghcr.io/studfarmstudios/aw3-wasm-builder:latest --load .
+#   docker push --all-tags ghcr.io/studfarmstudios/aw3-wasm-builder
+#
+# (amd64 because the Avrea runners that consume it are amd64.) Rebuild + push
+# whenever the engine moves; the aw3 repo's web-build workflow consumes the
+# image by tag and runs `aw3-build-web <aw3 checkout>` inside it.
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
