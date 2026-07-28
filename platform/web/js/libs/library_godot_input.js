@@ -616,6 +616,23 @@ const GodotInput = {
 		};
 		GodotEventListeners.add(GodotConfig.canvas, 'keydown', GodotInput.onKeyEvent.bind(null, true), false);
 		GodotEventListeners.add(GodotConfig.canvas, 'keyup', GodotInput.onKeyEvent.bind(null, false), false);
+		// Key listeners live on the canvas, so they only fire while the canvas
+		// is the focused ELEMENT. A page whose window starts in the background
+		// misses the startup focus grab, and a keyboard-only game gives the
+		// user no reason to ever click the canvas — keys look dead until
+		// something incidental (a resize) happens to focus it. Re-grab whenever
+		// the window gains OS focus, unless something else on the page (an
+		// input field) legitimately holds focus.
+		GodotEventListeners.add(window, 'focus', function () {
+			const active = document.activeElement;
+			if (active === GodotConfig.canvas) {
+				return;
+			}
+			if (active && active !== document.body && active.tagName !== 'HTML') {
+				return;
+			}
+			GodotConfig.canvas.focus();
+		}, false);
 	},
 
 	/*
