@@ -736,10 +736,28 @@ const GodotDisplay = {
 		});
 	},
 
+	godot_js_display_setup_canvas__deps: ['emscripten_set_main_loop_timing'],
 	godot_js_display_setup_canvas__proxy: 'sync',
 	godot_js_display_setup_canvas__sig: 'viiii',
 	godot_js_display_setup_canvas: function (p_width, p_height, p_fullscreen, p_hidpi) {
 		const canvas = GodotConfig.canvas;
+		// The main loop rides requestAnimationFrame, and browsers stop rAF for
+		// hidden/occluded windows — halting the whole engine, including network
+		// servicing: a multiplayer client dies its server-side timeout death
+		// merely because the player switched tabs. While hidden, pace the loop
+		// with setTimeout instead (browsers still grant hidden pages ~1 Hz),
+		// which is plenty to keep connections alive; restore rAF on return.
+		GodotEventListeners.add(document, 'visibilitychange', function () {
+			try {
+				if (document.visibilityState === 'hidden') {
+					_emscripten_set_main_loop_timing(0 /* EM_TIMING_SETTIMEOUT */, 250);
+				} else {
+					_emscripten_set_main_loop_timing(1 /* EM_TIMING_RAF */, 1);
+				}
+			} catch (e) {
+				// No main loop registered (yet) — nothing to repace.
+			}
+		}, false);
 		GodotEventListeners.add(canvas, 'contextmenu', function (ev) {
 			ev.preventDefault();
 		}, false);
