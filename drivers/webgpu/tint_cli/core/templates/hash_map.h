@@ -1,4 +1,5 @@
 // Minimal shim for Godot's HashMap<K, V> — standalone CLI builds only.
+#include <cstdint>
 // Maps to std::unordered_map with Godot-compatible API surface.
 #pragma once
 

@@ -1,4 +1,5 @@
 // Minimal shim for Godot's HashSet<T> — standalone CLI builds only.
+#include <cstdint>
 // Maps to std::unordered_set with Godot-compatible API surface.
 #pragma once
 
