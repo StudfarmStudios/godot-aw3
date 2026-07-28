@@ -66,6 +66,7 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 		uint32_t gap_bind_group_calls = 0;
 		uint32_t first_instance_draws = 0;
 		uint32_t ring_overflows = 0;
+		uint32_t compute_dispatches_skipped = 0;
 		double last_log_time = 0;
 		double last_frame_time = 0;
 		uint32_t frames_since_log = 0;
@@ -85,6 +86,7 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 			gap_bind_group_calls = 0;
 			first_instance_draws = 0;
 			ring_overflows = 0;
+			compute_dispatches_skipped = 0;
 			// Kept in step, or the next per-frame delta underflows.
 			draw_calls_at_last_frame = 0;
 			set_bind_group_calls_at_last_frame = 0;

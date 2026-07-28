@@ -70,6 +70,26 @@
 // Forward declaration for timestamp readback callback (defined below command_timestamp_query_pool_reset).
 static void _timestamp_readback_callback(WGPUMapAsyncStatus p_status, WGPUStringView p_message, void *p_userdata1, void *p_userdata2);
 
+// Release everything a pipeline wrapper owns and delete it. Shared between
+// pipeline_free and the async-creation callbacks (which own the wrapper's
+// destruction when pipeline_free orphaned it mid-flight).
+static void _pipeline_wrapper_destroy(WGPipelineWrapper *pw) {
+	if (pw->type == WGPipelineWrapper::RENDER && pw->render_handle) {
+		wgpuRenderPipelineRelease(pw->render_handle);
+		if (pw->render_handle_u16) {
+			wgpuRenderPipelineRelease(pw->render_handle_u16);
+		}
+	} else if (pw->type == WGPipelineWrapper::COMPUTE && pw->compute_handle) {
+		wgpuComputePipelineRelease(pw->compute_handle);
+	}
+	for (int i = 0; i < 6; i++) {
+		if (pw->specialized_modules[i]) {
+			wgpuShaderModuleRelease(pw->specialized_modules[i]);
+		}
+	}
+	delete pw;
+}
+
 // Asynchronous render pipeline creation lands here, once per requested variant
 // (a strip pipeline asks for two). The wrapper only becomes usable when every
 // variant has arrived.
@@ -98,8 +118,40 @@ static void _render_pipeline_async_callback(WGPUCreatePipelineAsyncStatus p_stat
 		pw->pending_creations--;
 	}
 	if (pw->pending_creations == 0) {
+		if (pw->orphaned) {
+			// pipeline_free ran while this creation was in flight.
+			_pipeline_wrapper_destroy(pw);
+			return;
+		}
 		pw->ready = !pw->failed && pw->render_handle != nullptr;
 	}
+}
+
+// Asynchronous compute pipeline creation. No variants — one callback readies
+// (or fails) the wrapper; command_bind_compute_pipeline drops dispatches for
+// unready wrappers, so per-frame users (particles, effects) simply pick the
+// pipeline up on the first frame after it lands.
+static void _compute_pipeline_async_callback(WGPUCreatePipelineAsyncStatus p_status, WGPUComputePipeline p_pipeline,
+		WGPUStringView p_message, void *p_userdata1, void *p_userdata2) {
+	WGPipelineWrapper *pw = (WGPipelineWrapper *)p_userdata1;
+	if (pw == nullptr) {
+		return;
+	}
+
+	if (p_status == WGPUCreatePipelineAsyncStatus_Success && p_pipeline != nullptr) {
+		pw->compute_handle = p_pipeline;
+	} else {
+		pw->failed = true;
+		ERR_PRINT(vformat("WebGPU: asynchronous compute pipeline creation failed: %s",
+				p_message.data ? String::utf8(p_message.data, (int)p_message.length) : String("unknown")));
+	}
+
+	pw->pending_creations = 0;
+	if (pw->orphaned) {
+		_pipeline_wrapper_destroy(pw);
+		return;
+	}
+	pw->ready = !pw->failed && pw->compute_handle != nullptr;
 }
 
 // Fence work-done callback: fires when wgpuQueueSubmit work completes on GPU.
@@ -3261,7 +3313,12 @@ Error RenderingDeviceDriverWebGPU::command_queue_execute_and_present(CommandQueu
 			push_constant_shadow_dirty_end = 0;
 		}
 
+		uint64_t _submit_t0 = OS::get_singleton()->get_ticks_usec();
 		wgpuQueueSubmit(queue, wgpu_cmd_buffers.size(), wgpu_cmd_buffers.ptr());
+		uint64_t _submit_dt = OS::get_singleton()->get_ticks_usec() - _submit_t0;
+		if (_submit_dt > 20000) {
+			print_line(vformat("[SUBMITTIME] %.1fms cmds=%d", _submit_dt / 1000.0, (int)wgpu_cmd_buffers.size()));
+		}
 		// Diagnostic: log submit count for the first few frames.
 #ifdef WEBGPU_VERBOSE
 		static int _submit_log = 0;
@@ -4370,9 +4427,12 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 		CharString _mod_label_cs = _mod_label.utf8();
 		mod_desc.label = { _mod_label_cs.get_data(), WGPU_STRLEN };
 
+		uint64_t _mod_t0 = OS::get_singleton()->get_ticks_usec();
 		WGPUShaderModule mod = wgpuDeviceCreateShaderModule(device, &mod_desc);
-
-
+		uint64_t _mod_dt = OS::get_singleton()->get_ticks_usec() - _mod_t0;
+		if (_mod_dt > 3000) {
+			print_line(vformat("[MODTIME] %s %.1fms", _mod_label, _mod_dt / 1000.0));
+		}
 
 		// Scan WGSL for texture dimension declarations so the BGL uses the right viewDimension.
 		// Tint format: "@group(G) @binding(B) var NAME: texture_TYPE<...>;"
@@ -6915,21 +6975,13 @@ void RenderingDeviceDriverWebGPU::command_copy_texture_to_buffer(CommandBufferID
 void RenderingDeviceDriverWebGPU::pipeline_free(PipelineID p_pipeline) {
 	WGPipelineWrapper *pw = (WGPipelineWrapper *)(p_pipeline.id);
 	ERR_FAIL_NULL(pw);
-	if (pw->type == WGPipelineWrapper::RENDER && pw->render_handle) {
-		wgpuRenderPipelineRelease(pw->render_handle);
-		if (pw->render_handle_u16) {
-			wgpuRenderPipelineRelease(pw->render_handle_u16);
-		}
-	} else if (pw->type == WGPipelineWrapper::COMPUTE && pw->compute_handle) {
-		wgpuComputePipelineRelease(pw->compute_handle);
+	if (pw->pending_creations > 0) {
+		// An asynchronous creation is still in flight and the Dawn callback holds
+		// this pointer — hand destruction over to the last callback.
+		pw->orphaned = true;
+		return;
 	}
-	// Release any specialized shader modules owned by this pipeline.
-	for (int i = 0; i < 6; i++) {
-		if (pw->specialized_modules[i]) {
-			wgpuShaderModuleRelease(pw->specialized_modules[i]);
-		}
-	}
-	delete pw;
+	_pipeline_wrapper_destroy(pw);
 }
 
 void RenderingDeviceDriverWebGPU::command_bind_push_constants(CommandBufferID p_cmd_buffer, ShaderID p_shader, uint32_t p_first_index, VectorView<uint32_t> p_data) {
@@ -8439,7 +8491,12 @@ WGPUShaderModule RenderingDeviceDriverWebGPU::_create_module_with_spec_constants
 	CharString _spec_label_cs = _spec_label.utf8();
 	desc.label = { _spec_label_cs.get_data(), WGPU_STRLEN };
 
+	uint64_t _spec_t0 = OS::get_singleton()->get_ticks_usec();
 	WGPUShaderModule mod = wgpuDeviceCreateShaderModule(device, &desc);
+	uint64_t _spec_dt = OS::get_singleton()->get_ticks_usec() - _spec_t0;
+	if (_spec_dt > 3000) {
+		print_line(vformat("[MODTIME] %s %.1fms", _spec_label, _spec_dt / 1000.0));
+	}
 	free(wgsl_str);
 
 	return mod;
@@ -8945,7 +9002,15 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 		return PipelineID(pw);
 	}
 
+	// Stall attribution: a sync create on the device thread is a frame stall if
+	// the browser compiles eagerly. Printed above a threshold so the console
+	// shows where scene-switch hitches come from.
+	uint64_t _create_t0 = OS::get_singleton()->get_ticks_usec();
 	WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(device, &desc);
+	uint64_t _create_dt = OS::get_singleton()->get_ticks_usec() - _create_t0;
+	if (_create_dt > 3000) {
+		print_line(vformat("[PIPETIME] render-sync %s %.1fms", _pipeline_label_str, _create_dt / 1000.0));
+	}
 	if (!pipeline) {
 		if (specialized_vertex) wgpuShaderModuleRelease(specialized_vertex);
 		if (specialized_fragment) wgpuShaderModuleRelease(specialized_fragment);
@@ -8992,6 +9057,17 @@ void RenderingDeviceDriverWebGPU::command_bind_compute_pipeline(CommandBufferID 
 		cmd->compute_encoder = wgpuCommandEncoderBeginComputePass(cmd->encoder, &pass_desc);
 		cmd->active_encoder = WGCommandBuffer::COMPUTE;
 	}
+
+	if (!pw->ready) {
+		// Asynchronous creation still in flight (or failed): record the wrapper as
+		// current so uniform-set binding resolves against the right shader layout,
+		// but leave the encoder's pipeline unset — dispatches are dropped until a
+		// later bind finds the wrapper ready.
+		cmd->render_state.current_pipeline = pw;
+		cmd->compute_pipeline_pending = true;
+		return;
+	}
+	cmd->compute_pipeline_pending = false;
 
 	wgpuComputePassEncoderSetPipeline(cmd->compute_encoder, pw->compute_handle);
 	cmd->render_state.current_pipeline = pw;
@@ -9075,6 +9151,13 @@ void RenderingDeviceDriverWebGPU::command_compute_dispatch(CommandBufferID p_cmd
 	ERR_FAIL_NULL(cmd);
 	ERR_FAIL_COND(!cmd->compute_encoder);
 
+	if (cmd->compute_pipeline_pending) {
+		// The bound pipeline's asynchronous creation hasn't landed — drop the
+		// dispatch. Counted so silent drops are visible in the perf log.
+		perf.compute_dispatches_skipped++;
+		return;
+	}
+
 	if (cmd->render_state.current_pipeline) {
 		_flush_push_constants(cmd, cmd->render_state.current_pipeline->shader);
 	}
@@ -9088,6 +9171,11 @@ void RenderingDeviceDriverWebGPU::command_compute_dispatch_indirect(CommandBuffe
 	ERR_FAIL_NULL(cmd);
 	ERR_FAIL_NULL(indirect);
 	ERR_FAIL_COND(!cmd->compute_encoder);
+
+	if (cmd->compute_pipeline_pending) {
+		perf.compute_dispatches_skipped++;
+		return;
+	}
 
 	if (cmd->render_state.current_pipeline) {
 		_flush_push_constants(cmd, cmd->render_state.current_pipeline->shader);
@@ -9152,7 +9240,34 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::compute_pipeline_create(ShaderID p_
 		desc.compute.constants = compute_constants.ptr();
 	}
 
+	// Asynchronous creation (mirrors render_pipeline_create): Dawn compiles on
+	// its own threads and the callback readies the wrapper; until then binds
+	// leave the encoder's pipeline unset and dispatches are dropped. Only used
+	// where the caller tolerates the pipeline arriving a few frames late
+	// (PipelineDeferredRD's compute path — particles, effects).
+	if (pipeline_create_async) {
+		WGPipelineWrapper *pw = new WGPipelineWrapper();
+		pw->type = WGPipelineWrapper::COMPUTE;
+		pw->compute_handle = nullptr;
+		pw->shader = shader;
+		pw->specialized_modules[SHADER_STAGE_COMPUTE] = specialized_compute;
+		pw->ready = false;
+		pw->pending_creations = 1;
+
+		WGPUCreateComputePipelineAsyncCallbackInfo cb = {};
+		cb.mode = WGPUCallbackMode_AllowSpontaneous;
+		cb.callback = _compute_pipeline_async_callback;
+		cb.userdata1 = pw;
+		wgpuDeviceCreateComputePipelineAsync(device, &desc, cb);
+		return PipelineID(pw);
+	}
+
+	uint64_t _ccreate_t0 = OS::get_singleton()->get_ticks_usec();
 	WGPUComputePipeline pipeline = wgpuDeviceCreateComputePipeline(device, &desc);
+	uint64_t _ccreate_dt = OS::get_singleton()->get_ticks_usec() - _ccreate_t0;
+	if (_ccreate_dt > 3000) {
+		print_line(vformat("[PIPETIME] compute-sync %s %.1fms", shader->name, _ccreate_dt / 1000.0));
+	}
 	if (!pipeline) {
 		if (specialized_compute) {
 			wgpuShaderModuleRelease(specialized_compute);

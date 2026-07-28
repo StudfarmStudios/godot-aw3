@@ -67,8 +67,19 @@ protected:
 	void _start(const CreationParameters &c) {
 		free();
 		if (RD::get_singleton()->gpu_calls_main_thread_only()) {
-			// Driver is bound to the device's thread, so no background task.
-			_create(c);
+			// Driver is bound to the device's thread, so no background task. Compute
+			// pipelines still get the driver's asynchronous creation: the browser
+			// compiles off-thread and dispatches are dropped until the pipeline is
+			// ready, which this class's users (particles, effects) tolerate — they
+			// re-dispatch every frame. Render pipelines stay synchronous: their
+			// callers draw with whatever get_rid() returns, with no fallback.
+			if (c.is_compute) {
+				RD::get_singleton()->pipeline_set_async_creation(true);
+				_create(c);
+				RD::get_singleton()->pipeline_set_async_creation(false);
+			} else {
+				_create(c);
+			}
 			return;
 		}
 		task = WorkerThreadPool::get_singleton()->add_template_task(this, &PipelineDeferredRD::_create, c, true, "PipelineCompilation");
