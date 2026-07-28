@@ -8,8 +8,16 @@
 # engine moves; the aw3 workflow picks images by tag (sha or latest).
 name: aw3-wasm-builder image
 
+# workflow_dispatch never registers here because the repo is a fork whose
+# default branch is upstream's master — the push trigger (scoped to the image's
+# own inputs) is what actually runs this.
 on:
   workflow_dispatch:
+  push:
+    branches: [aw-web-export, aw-wasm-builder]
+    paths:
+      - "misc/aw3/**"
+      - ".github/workflows/aw3-builder-image.yml"
 
 permissions:
   contents: read
