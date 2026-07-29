@@ -1,0 +1,37 @@
+#!/usr/bin/env python
+from misc.utility.scons_hints import *
+
+Import("env")
+
+common_sdl = [
+    "godot_sdl.cpp",
+    "os_sdl.cpp",
+    "display_server_sdl.cpp",
+    "key_mapping_sdl.cpp",
+    "audio_driver_sdl.cpp",
+    "crash_handler_sdl.cpp",
+    # drivers/SCsub only compiles the SDL joypad driver for the upstream
+    # platforms, so pull it in from here.
+    "#drivers/sdl/joypad_sdl.cpp",
+]
+
+if env["vulkan"]:
+    common_sdl.append("rendering_context_driver_vulkan_sdl.cpp")
+
+if env["opengl3"]:
+    # GLAD loaders (see the note in detect.py); compiled here because
+    # drivers/gl_context/SCsub skips non-upstream platforms.
+    env_glad = env.Clone()
+    env_glad.disable_warnings()
+    common_sdl.append(
+        env_glad.SharedObject("#thirdparty/glad/gl.c")
+        if env["library_type"] == "shared_library"
+        else env_glad.Object("#thirdparty/glad/gl.c")
+    )
+    common_sdl.append(
+        env_glad.SharedObject("#thirdparty/glad/egl.c")
+        if env["library_type"] == "shared_library"
+        else env_glad.Object("#thirdparty/glad/egl.c")
+    )
+
+prog = env.add_program("#bin/godot", common_sdl)

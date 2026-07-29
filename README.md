@@ -1,13 +1,15 @@
 # Godot Engine — Assault Wing 3 fork
 
-Godot **4.7.1** with the two things AW3 needs on the web and the official engine
-does not have:
+Godot **4.7.1** with the things AW3 needs and the official engine does not have:
 
 - **C# ahead-of-time compiled to WebAssembly.** Godot cannot export C# to the
   web at all; this can, and the gameplay code is compiled rather than
   interpreted (~45-52 fps against ~28-30 for the interpreter in AW3).
 - **A WebGPU rendering backend**, so the web build is not limited to WebGL2 and
   the Compatibility renderer.
+- **An SDL3 platform port** ([`platform/sdl`](platform/sdl/README.md)), so
+  export templates run on Linux devices with no display server — only KMS+DRM
+  (embedded arm64 boxes that boot straight into the game).
 
 Upstream Godot is otherwise unchanged; see [`GODOT_README.md`](GODOT_README.md).
 
@@ -18,6 +20,7 @@ Upstream Godot is otherwise unchanged; see [`GODOT_README.md`](GODOT_README.md).
 | Static-linked Mono for web | [ComplexRobot/godot](https://github.com/ComplexRobot/godot) `dotnet/mono-static-linking` — upstream draft [godotengine/godot#106125](https://github.com/godotengine/godot/pull/106125) |
 | AW3's web/.NET fixes | this fork, commit "Web/.NET export fixes for AW3" |
 | WebGPU backend | [dwalter/godotwebgpu](https://github.com/dwalter/godotwebgpu) `webgpu-4.6.2` @ `f329e39`, imported onto 4.7.1 |
+| SDL platform port | this fork, written for AW3 against 4.7 (previously carried in the AW3 repo as `tools/godot-sdl-platform`) |
 
 The WebGPU work was written against 4.6.2, and Godot's 4.6 release branch is not
 an ancestor of 4.7.1, so it is carried here as an import of that branch's diff
@@ -45,8 +48,14 @@ python3 modules/mono/build_scripts/build_assemblies.py \
 scons platform=web target=template_release module_mono_enabled=yes webgpu=yes \
       stack_size=32768 default_pthread_stack_size=32768 initial_memory=256 \
       mono_aot_dir=<abs path>/gameclient/.godot/mono/temp/obj/ExportRelease/browser-wasm/wasm/for-publish
+
+# KMS/DRM (arm64 device) template. Needs a static SDL3 first; both steps are
+# wrapped by the scripts in platform/sdl - see that README.
+platform/sdl/build-sdl3.sh
+ARCH=arm64 platform/sdl/build-template.sh
 ```
 
 The AOT pipeline, why each fix exists, and the browser-testing recipe are
 documented in the AW3 repository under `docs/gameclient/web-csharp-export.md`.
-The WebGPU driver has its own notes in [`drivers/webgpu/README.md`](drivers/webgpu/README.md).
+The WebGPU driver has its own notes in [`drivers/webgpu/README.md`](drivers/webgpu/README.md),
+the SDL platform port in [`platform/sdl/README.md`](platform/sdl/README.md).
