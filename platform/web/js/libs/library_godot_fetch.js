@@ -81,11 +81,14 @@ const GodotFetch = {
 		},
 
 		onerror: function (id, err) {
-			GodotRuntime.error(err);
 			const obj = IDHandler.get(id);
 			if (!obj) {
+				// The handle is already gone, so this is the abort in `free` landing
+				// on a request nobody is waiting for any more. Reporting it would
+				// turn every closed HTTPClient into a console error.
 				return;
 			}
+			GodotRuntime.error(err);
 			obj.error = err;
 		},
 
@@ -100,6 +103,10 @@ const GodotFetch = {
 				status: 0,
 				chunks: [],
 				buffered: 0,
+				// Kept for `free`: aborting a fetch is only possible through the
+				// controller whose signal it was started with, so the one chance to
+				// have it is here, before the request goes out.
+				controller: null,
 			};
 			const id = IDHandler.add(obj);
 			const init = {
@@ -107,6 +114,12 @@ const GodotFetch = {
 				headers: headers,
 				body: body,
 			};
+			// AbortController is available wherever fetch is; guard anyway, so a
+			// host without it loses the abort rather than the request.
+			if (typeof AbortController !== 'undefined') {
+				obj.controller = new AbortController();
+				init.signal = obj.controller.signal;
+			}
 			obj.request = fetch(url, init);
 			obj.request.then(GodotFetch.onresponse.bind(null, id)).catch(GodotFetch.onerror.bind(null, id));
 			return id;
@@ -121,10 +134,17 @@ const GodotFetch = {
 			if (!obj.request) {
 				return;
 			}
-			// Try to abort
-			obj.request.then(function (response) {
-				response.abort();
-			}).catch(function (e) { /* nothing to do */ });
+			// Abort, so that closing an HTTPClient ends the request rather than
+			// just letting go of it: an un-aborted fetch runs to completion with
+			// nobody reading it, holding a connection open and leaving the server
+			// believing the client is still there. (This replaces a call to
+			// `response.abort()`, which is not a method Response has — the
+			// TypeError it threw went straight into the catch below.)
+			// The rejection an abort causes is already handled: `create` attached
+			// onerror to this promise, and the read loop's reads to its own.
+			if (obj.controller) {
+				obj.controller.abort();
+			}
 		},
 
 		read: function (id) {
