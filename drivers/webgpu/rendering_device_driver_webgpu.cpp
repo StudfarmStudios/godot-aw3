@@ -736,6 +736,18 @@ static bool _is_float32_format(WGPUTextureFormat p_format) {
 	}
 }
 
+// WebGPU supports exactly two sample counts: 1 and 4. Godot's TextureSamples
+// enum also offers 2x, 8x, 16x and beyond, and passing any of those straight
+// through fails texture creation outright — "The sample count (2) of the texture
+// is not supported" — after which every view, attachment and pipeline built from
+// that texture is invalid, which reaches the screen as an all-black viewport.
+// Anything multisampled therefore lands on 4.
+//
+// p_samples is Godot's enum, i.e. the base-2 exponent: 0 = TEXTURE_SAMPLES_1.
+static uint32_t _wgpu_sample_count(uint32_t p_samples) {
+	return p_samples == 0 ? 1u : 4u;
+}
+
 // Maps a WGPUTextureFormat to the WGPUTextureSampleType needed for a sampled
 // texture BGL entry. Integer formats → Uint/Sint, everything else → UnfilterableFloat.
 // Every integer format has to be listed: a missing case falls through to the
@@ -2214,7 +2226,7 @@ RDD::TextureID RenderingDeviceDriverWebGPU::texture_create(const TextureFormat &
 	tex->depth = p_format.depth;
 	tex->mipmaps = p_format.mipmaps;
 	tex->layers = p_format.array_layers;
-	tex->sample_count = 1 << p_format.samples;
+	tex->sample_count = _wgpu_sample_count((uint32_t)p_format.samples);
 	tex->usage = _texture_usage_to_wgpu(p_format.usage_bits);
 
 	// WebGPU does not support R8/RG8/R16/RG16 as storage texel formats.
@@ -8966,8 +8978,9 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 
 	// --- Multisample state ---
 	WGPUMultisampleState multisample = {};
-	// TextureSamples enum: 0=1x, 1=2x, 2=4x, 3=8x ... → 1 << sample_count
-	multisample.count = (uint32_t)(1u << (uint32_t)p_multisample_state.sample_count);
+	// Clamped the same way the attachment textures are, or the pipeline's sample
+	// count would not match the framebuffer it renders into.
+	multisample.count = _wgpu_sample_count((uint32_t)p_multisample_state.sample_count);
 	multisample.mask = 0xFFFFFFFFu;
 	multisample.alphaToCoverageEnabled = p_multisample_state.enable_alpha_to_coverage;
 
