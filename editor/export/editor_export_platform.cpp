@@ -1090,8 +1090,19 @@ String EditorExportPlatform::_export_customize(const String &p_path, LocalVector
 			save_path = export_base_path.path_join("export-" + p_path.md5_text() + "-" + base_file);
 
 			Ref<PackedScene> s;
-			s.instantiate();
-			s->pack(node);
+			if (modified) {
+				s.instantiate();
+				s->pack(node);
+			} else {
+				// Nothing customized the scene, so this is only a TSCN -> SCN conversion.
+				// Save the loaded scene as-is instead of instantiating and re-packing it:
+				// pack() records a live node tree, and a node that belongs to an instanced
+				// sub-scene is not written back with the properties the outer scene
+				// overrode on it. Round-tripping through pack() therefore silently drops
+				// those overrides, and the exported scene falls back to the sub-scene's
+				// own values - a node scaled 100x in the editor exports at 1x.
+				s = ps;
+			}
 			Error err = ResourceSaver::save(s, save_path);
 			ERR_FAIL_COND_V_MSG(err != OK, p_path, "Unable to save export scene file to: " + save_path);
 		}
