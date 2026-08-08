@@ -161,6 +161,17 @@ struct WGShader {
 	//   bind_group_infos[set_index].entries[binding_index] → layout entry + Godot type.
 	struct BindGroupEntry {
 		WGPUBindGroupLayoutEntry layout_entry = {};
+		// For UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, layout_entry holds the TEXTURE half
+		// (binding*2+1) only. The sampler half lives at binding*2+0, so its declared
+		// type is kept here — otherwise sampler-compatibility lookups cannot see it,
+		// and a filtering sampler gets bound to a NonFiltering slot. That fails bind
+		// group creation and invalidates every pipeline that uses the set.
+		WGPUSamplerBindingType combined_sampler_type = WGPUSamplerBindingType_BindingNotUsed;
+		// True when a SAMPLER_WITH_TEXTURE has no sampler half at all. A multisampled
+		// combined sampler (sampler2DMS) can only be textureLoad'ed, so the SPIR-V
+		// preprocessor emits one bare texture at the sampler's slot (binding*2+0) and
+		// nothing at binding*2+1. layout_entry then holds that single texture entry.
+		bool combined_collapsed_to_texture = false;
 		RDD::UniformType godot_type = RDD::UNIFORM_TYPE_MAX;
 		uint32_t array_length = 0; // >1 for binding_array (e.g., texture arrays)
 	};

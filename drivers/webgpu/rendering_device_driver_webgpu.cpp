@@ -285,6 +285,12 @@ static bool _layout_wants_nonfiltering(const WGShader *p_shader, uint32_t p_set_
 		if (bge.layout_entry.binding == p_binding) {
 			return bge.layout_entry.sampler.type == WGPUSamplerBindingType_NonFiltering;
 		}
+		// Combined sampler+texture: only the texture half (binding+1) is stored, so
+		// the sampler half has to be matched through its remembered type.
+		if (bge.combined_sampler_type != WGPUSamplerBindingType_BindingNotUsed &&
+				bge.layout_entry.binding == p_binding + 1) {
+			return bge.combined_sampler_type == WGPUSamplerBindingType_NonFiltering;
+		}
 	}
 	return false;
 }
@@ -298,6 +304,11 @@ static bool _layout_wants_comparison(const WGShader *p_shader, uint32_t p_set_in
 	for (const WGShader::BindGroupEntry &bge : p_shader->bind_group_infos[p_set_index].entries) {
 		if (bge.layout_entry.binding == p_binding) {
 			return bge.layout_entry.sampler.type == WGPUSamplerBindingType_Comparison;
+		}
+		// Combined sampler+texture: see _layout_wants_nonfiltering.
+		if (bge.combined_sampler_type != WGPUSamplerBindingType_BindingNotUsed &&
+				bge.layout_entry.binding == p_binding + 1) {
+			return bge.combined_sampler_type == WGPUSamplerBindingType_Comparison;
 		}
 	}
 	return false;
@@ -727,23 +738,179 @@ static bool _is_float32_format(WGPUTextureFormat p_format) {
 
 // Maps a WGPUTextureFormat to the WGPUTextureSampleType needed for a sampled
 // texture BGL entry. Integer formats → Uint/Sint, everything else → UnfilterableFloat.
+// Every integer format has to be listed: a missing case falls through to the
+// float default and poisons any pipeline whose shader declares texture_2d<i32>.
 static WGPUTextureSampleType _texture_sample_type_for_format(WGPUTextureFormat p_format) {
 	switch (p_format) {
+		case WGPUTextureFormat_R8Uint:
+		case WGPUTextureFormat_R16Uint:
 		case WGPUTextureFormat_R32Uint:
-		case WGPUTextureFormat_RGBA8Uint:
+		case WGPUTextureFormat_RG8Uint:
+		case WGPUTextureFormat_RG16Uint:
 		case WGPUTextureFormat_RG32Uint:
+		case WGPUTextureFormat_RGBA8Uint:
 		case WGPUTextureFormat_RGBA16Uint:
 		case WGPUTextureFormat_RGBA32Uint:
+		case WGPUTextureFormat_RGB10A2Uint:
 			return WGPUTextureSampleType_Uint;
+		case WGPUTextureFormat_R8Sint:
+		case WGPUTextureFormat_R16Sint:
 		case WGPUTextureFormat_R32Sint:
-		case WGPUTextureFormat_RGBA8Sint:
+		case WGPUTextureFormat_RG8Sint:
+		case WGPUTextureFormat_RG16Sint:
 		case WGPUTextureFormat_RG32Sint:
+		case WGPUTextureFormat_RGBA8Sint:
 		case WGPUTextureFormat_RGBA16Sint:
 		case WGPUTextureFormat_RGBA32Sint:
 			return WGPUTextureSampleType_Sint;
 		default:
 			return WGPUTextureSampleType_UnfilterableFloat;
 	}
+}
+
+// Reads the component type out of a WGSL sampled-texture declaration, e.g. the
+// "i32" in "texture_2d<i32>". Storage textures (texture_storage_*<format, access>)
+// and depth textures (no type parameter) must not be passed here.
+// Returns Undefined when there is no parseable type parameter.
+static WGPUTextureSampleType _wgsl_declared_sample_type(const char *p_type, const char *p_limit) {
+	const char *lt = nullptr;
+	for (const char *c = p_type; c < p_limit && *c; c++) {
+		if (*c == '<') {
+			lt = c + 1;
+			break;
+		}
+	}
+	if (!lt) {
+		return WGPUTextureSampleType_Undefined;
+	}
+	while (lt < p_limit && (*lt == ' ' || *lt == '\t')) {
+		lt++;
+	}
+	if (lt + 3 > p_limit) {
+		return WGPUTextureSampleType_Undefined;
+	}
+	if (strncmp(lt, "i32", 3) == 0) {
+		return WGPUTextureSampleType_Sint;
+	}
+	if (strncmp(lt, "u32", 3) == 0) {
+		return WGPUTextureSampleType_Uint;
+	}
+	if (strncmp(lt, "f32", 3) == 0) {
+		return WGPUTextureSampleType_Float;
+	}
+	return WGPUTextureSampleType_Undefined;
+}
+
+// The sample type for a sampled-texture BGL entry. The layout has to describe
+// what the shader declared, not what the Godot-side texture format suggests:
+// an integer texture described as a float variant fails pipeline creation with
+// "shader's texture sample type isn't compatible with the layout's", and every
+// later use of that pipeline re-emits the error as cascade noise.
+static WGPUTextureSampleType _resolve_texture_sample_type(
+		const HashMap<uint32_t, WGPUTextureSampleType> &p_declared,
+		uint32_t p_key, bool p_is_depth, bool p_is_ms) {
+	if (p_is_depth) {
+		return WGPUTextureSampleType_Depth;
+	}
+	if (p_declared.has(p_key)) {
+		const WGPUTextureSampleType declared = p_declared[p_key];
+		// Integer textures are never filterable, and the MSAA rule below does
+		// not apply to them - Sint/Uint are already the only legal choice.
+		if (declared == WGPUTextureSampleType_Sint || declared == WGPUTextureSampleType_Uint) {
+			return declared;
+		}
+	}
+	// Multisampled float textures must use UnfilterableFloat, not Float
+	// (filtering is illegal for MSAA textures in WebGPU).
+	return p_is_ms ? WGPUTextureSampleType_UnfilterableFloat : WGPUTextureSampleType_Float;
+}
+
+// Sample type for a storage texture that the preprocessor rewrote into a sampled
+// one. The declared WGSL component type wins for integer textures; for float ones
+// the storage format is the better source, because it also distinguishes the
+// unfilterable 32-bit float formats that a bare "f32" in WGSL does not.
+static WGPUTextureSampleType _resolve_storage_sampled_type(
+		const HashMap<uint32_t, WGPUTextureSampleType> &p_declared,
+		uint32_t p_key, WGPUTextureFormat p_format) {
+	if (p_declared.has(p_key)) {
+		const WGPUTextureSampleType declared = p_declared[p_key];
+		if (declared == WGPUTextureSampleType_Sint || declared == WGPUTextureSampleType_Uint) {
+			return declared;
+		}
+	}
+	return _texture_sample_type_for_format(p_format);
+}
+
+// Maps a WGSL storage-texture format enumerant ("rgba8unorm", "rgb10a2unorm", ...)
+// to its WGPUTextureFormat. p_name points at the first character of the name inside
+// the type parameter list; the name ends at the first ',', '>' or space.
+//
+// Returns Undefined for an unrecognised name, so callers can warn rather than
+// silently substitute a format the shader never declared: a wrong format here
+// fails pipeline creation with "the layout's binding format (X) doesn't match the
+// shader's binding format (Y)", and the poisoned pipeline then re-emits a
+// validation error on every frame that binds it.
+static WGPUTextureFormat _wgsl_storage_format_from_name(const char *p_name, const char *p_limit) {
+	const char *end = p_name;
+	while (end < p_limit && *end != ',' && *end != '>' && *end != ' ') {
+		end++;
+	}
+	const size_t len = (size_t)(end - p_name);
+	struct FormatName {
+		const char *name;
+		WGPUTextureFormat format;
+	};
+	// The snorm/unorm 16-bit entries are deliberate: WebGPU has no such storage
+	// format, and the preprocessor rewrites those declarations to the same-width
+	// float format, so the layout has to agree with the rewrite.
+	static const FormatName names[] = {
+		{ "rgba8unorm", WGPUTextureFormat_RGBA8Unorm },
+		{ "rgba8snorm", WGPUTextureFormat_RGBA8Snorm },
+		{ "rgba8uint", WGPUTextureFormat_RGBA8Uint },
+		{ "rgba8sint", WGPUTextureFormat_RGBA8Sint },
+		{ "bgra8unorm", WGPUTextureFormat_BGRA8Unorm },
+		{ "rgba16float", WGPUTextureFormat_RGBA16Float },
+		{ "rgba16uint", WGPUTextureFormat_RGBA16Uint },
+		{ "rgba16sint", WGPUTextureFormat_RGBA16Sint },
+		{ "rgba16snorm", WGPUTextureFormat_RGBA16Float },
+		{ "rgba16unorm", WGPUTextureFormat_RGBA16Float },
+		{ "rgba32float", WGPUTextureFormat_RGBA32Float },
+		{ "rgba32uint", WGPUTextureFormat_RGBA32Uint },
+		{ "rgba32sint", WGPUTextureFormat_RGBA32Sint },
+		{ "rg8unorm", WGPUTextureFormat_RG8Unorm },
+		{ "rg8snorm", WGPUTextureFormat_RG8Snorm },
+		{ "rg8uint", WGPUTextureFormat_RG8Uint },
+		{ "rg8sint", WGPUTextureFormat_RG8Sint },
+		{ "rg16float", WGPUTextureFormat_RG16Float },
+		{ "rg16uint", WGPUTextureFormat_RG16Uint },
+		{ "rg16sint", WGPUTextureFormat_RG16Sint },
+		{ "rg16snorm", WGPUTextureFormat_RG16Float },
+		{ "rg16unorm", WGPUTextureFormat_RG16Float },
+		{ "rg32float", WGPUTextureFormat_RG32Float },
+		{ "rg32uint", WGPUTextureFormat_RG32Uint },
+		{ "rg32sint", WGPUTextureFormat_RG32Sint },
+		{ "r8unorm", WGPUTextureFormat_R8Unorm },
+		{ "r8snorm", WGPUTextureFormat_R8Snorm },
+		{ "r8uint", WGPUTextureFormat_R8Uint },
+		{ "r8sint", WGPUTextureFormat_R8Sint },
+		{ "r16float", WGPUTextureFormat_R16Float },
+		{ "r16uint", WGPUTextureFormat_R16Uint },
+		{ "r16sint", WGPUTextureFormat_R16Sint },
+		{ "r16snorm", WGPUTextureFormat_R16Float },
+		{ "r16unorm", WGPUTextureFormat_R16Float },
+		{ "r32float", WGPUTextureFormat_R32Float },
+		{ "r32uint", WGPUTextureFormat_R32Uint },
+		{ "r32sint", WGPUTextureFormat_R32Sint },
+		{ "rgb10a2unorm", WGPUTextureFormat_RGB10A2Unorm },
+		{ "rgb10a2uint", WGPUTextureFormat_RGB10A2Uint },
+		{ "rg11b10ufloat", WGPUTextureFormat_RG11B10Ufloat },
+	};
+	for (const FormatName &e : names) {
+		if (strlen(e.name) == len && strncmp(p_name, e.name, len) == 0) {
+			return e.format;
+		}
+	}
+	return WGPUTextureFormat_Undefined;
 }
 
 // =============================================================================
@@ -3001,8 +3168,12 @@ RDD::SamplerID RenderingDeviceDriverWebGPU::sampler_create(const SamplerState &p
 	desc.addressModeU = map_address(p_state.repeat_u);
 	desc.addressModeV = map_address(p_state.repeat_v);
 	desc.addressModeW = map_address(p_state.repeat_w);
-	desc.lodMinClamp = p_state.min_lod;
-	desc.lodMaxClamp = p_state.max_lod;
+	// WebGPU requires 0 <= lodMinClamp <= lodMaxClamp. Godot carries Vulkan's
+	// "unbounded" idiom of -1000..1000, which WebGPU rejects outright:
+	// "LOD clamp bounds contain a negative number". Clamping to 0 is equivalent -
+	// there is no such thing as a negative mip level.
+	desc.lodMinClamp = MAX(0.0f, p_state.min_lod);
+	desc.lodMaxClamp = MAX(desc.lodMinClamp, p_state.max_lod);
 
 	if (p_state.enable_compare) {
 		desc.compare = map_compare(p_state.compare_op);
@@ -3826,6 +3997,12 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 	// texture.multisampled=true to match sampler2DMS (GLSL) bindings.
 	HashMap<uint32_t, bool> wgsl_is_multisampled_texture;
 
+	// Maps (set_index << 16 | binding) → the component type the WGSL declares for
+	// this sampled texture (the "i32" in texture_2d<i32>). The BGL entry must match
+	// it exactly or pipeline creation fails; the Godot texture format is not a
+	// reliable stand-in, because Godot binds integer data through float formats.
+	HashMap<uint32_t, WGPUTextureSampleType> wgsl_tex_sample_types;
+
 	// Depth alias bindings: Tint splits mixed-usage depth textures into two globals
 	// (one Depth at binding B, one Float alias at binding B+1). Track (set,B+1) pairs
 	// so we can add extra BGL and bind group entries.
@@ -4375,32 +4552,13 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 					uint32_t key = ((uint32_t)info.grp << 16) | info.bnd;
 					wgsl_read_storage_to_sampled.insert(key);
 					{
-						WGPUTextureFormat tf = WGPUTextureFormat_RGBA8Unorm; // fallback
-						if (info.fmt == "rgba8unorm") tf = WGPUTextureFormat_RGBA8Unorm;
-						else if (info.fmt == "rgba8snorm") tf = WGPUTextureFormat_RGBA8Snorm;
-						else if (info.fmt == "rgba8uint") tf = WGPUTextureFormat_RGBA8Uint;
-						else if (info.fmt == "rgba8sint") tf = WGPUTextureFormat_RGBA8Sint;
-						else if (info.fmt == "rgba16float") tf = WGPUTextureFormat_RGBA16Float;
-						else if (info.fmt == "rgba16uint") tf = WGPUTextureFormat_RGBA16Uint;
-						else if (info.fmt == "rgba16sint") tf = WGPUTextureFormat_RGBA16Sint;
-						else if (info.fmt == "rgba32float") tf = WGPUTextureFormat_RGBA32Float;
-						else if (info.fmt == "rgba32uint") tf = WGPUTextureFormat_RGBA32Uint;
-						else if (info.fmt == "rgba32sint") tf = WGPUTextureFormat_RGBA32Sint;
-						else if (info.fmt == "rg32float") tf = WGPUTextureFormat_RG32Float;
-						else if (info.fmt == "rg32uint") tf = WGPUTextureFormat_RG32Uint;
-						else if (info.fmt == "rg32sint") tf = WGPUTextureFormat_RG32Sint;
-						else if (info.fmt == "r32float") tf = WGPUTextureFormat_R32Float;
-						else if (info.fmt == "r32uint") tf = WGPUTextureFormat_R32Uint;
-						else if (info.fmt == "r32sint") tf = WGPUTextureFormat_R32Sint;
-						else if (info.fmt == "r8unorm") tf = WGPUTextureFormat_R8Unorm;
-						else if (info.fmt == "r8snorm") tf = WGPUTextureFormat_R8Snorm;
-						else if (info.fmt == "r8uint") tf = WGPUTextureFormat_R8Uint;
-						else if (info.fmt == "r8sint") tf = WGPUTextureFormat_R8Sint;
-						else if (info.fmt == "rg8unorm") tf = WGPUTextureFormat_RG8Unorm;
-						else if (info.fmt == "rg8snorm") tf = WGPUTextureFormat_RG8Snorm;
-						else if (info.fmt == "rg8uint") tf = WGPUTextureFormat_RG8Uint;
-						else if (info.fmt == "rg8sint") tf = WGPUTextureFormat_RG8Sint;
-						else if (info.fmt == "bgra8unorm") tf = WGPUTextureFormat_BGRA8Unorm;
+						const CharString fmt_cs = info.fmt.utf8();
+						const char *fmt_name = fmt_cs.get_data();
+						WGPUTextureFormat tf = _wgsl_storage_format_from_name(fmt_name, fmt_name + fmt_cs.length());
+						if (tf == WGPUTextureFormat_Undefined) {
+							WARN_PRINT(vformat("WebGPU: unrecognised WGSL storage texture format '%s' - the bind group layout cannot match the shader.", info.fmt));
+							tf = WGPUTextureFormat_RGBA8Unorm;
+						}
 						wgsl_storage_tex_format[key] = tf;
 					}
 				}
@@ -4538,6 +4696,17 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 							uint32_t key = ((uint32_t)grp << 16) | (uint32_t)bnd;
 							wgsl_is_depth_texture[key] = true;
 						}
+						// Record the declared component type for sampled textures.
+						// Depth textures have no type parameter and storage textures
+						// carry a format instead, so both are skipped here.
+						if (strncmp(tp, "texture_depth_", 14) != 0 && strncmp(tp, "texture_storage_", 16) != 0) {
+							WGPUTextureSampleType declared = _wgsl_declared_sample_type(tp, limit);
+							if (declared != WGPUTextureSampleType_Undefined) {
+								uint32_t key = ((uint32_t)grp << 16) | (uint32_t)bnd;
+								// Later stages win, matching how the dimension above is resolved.
+								wgsl_tex_sample_types[key] = declared;
+							}
+						}
 					}
 					// Check for depth alias variable: Tint names it "*_depth_alias".
 					// The variable name is between "var " and ":".
@@ -4658,44 +4827,13 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 									uint32_t key = ((uint32_t)grp << 16) | (uint32_t)bnd;
 									// Parse format name
 									const char *fmt = lt + 1;
-									WGPUTextureFormat tf = WGPUTextureFormat_RGBA8Unorm; // fallback
-									if (strncmp(fmt, "rgba8unorm,", 11) == 0) tf = WGPUTextureFormat_RGBA8Unorm;
-									else if (strncmp(fmt, "rgba8snorm,", 11) == 0) tf = WGPUTextureFormat_RGBA8Snorm;
-									else if (strncmp(fmt, "rgba8uint,", 10) == 0) tf = WGPUTextureFormat_RGBA8Uint;
-									else if (strncmp(fmt, "rgba8sint,", 10) == 0) tf = WGPUTextureFormat_RGBA8Sint;
-									else if (strncmp(fmt, "rgba16float,", 12) == 0) tf = WGPUTextureFormat_RGBA16Float;
-									else if (strncmp(fmt, "rgba16uint,", 11) == 0) tf = WGPUTextureFormat_RGBA16Uint;
-									else if (strncmp(fmt, "rgba16sint,", 11) == 0) tf = WGPUTextureFormat_RGBA16Sint;
-									else if (strncmp(fmt, "rgba32float,", 12) == 0) tf = WGPUTextureFormat_RGBA32Float;
-									else if (strncmp(fmt, "rgba32uint,", 11) == 0) tf = WGPUTextureFormat_RGBA32Uint;
-									else if (strncmp(fmt, "rgba32sint,", 11) == 0) tf = WGPUTextureFormat_RGBA32Sint;
-									else if (strncmp(fmt, "rg32float,", 10) == 0) tf = WGPUTextureFormat_RG32Float;
-									else if (strncmp(fmt, "rg32uint,", 9) == 0) tf = WGPUTextureFormat_RG32Uint;
-									else if (strncmp(fmt, "rg32sint,", 9) == 0) tf = WGPUTextureFormat_RG32Sint;
-									else if (strncmp(fmt, "r32float,", 9) == 0) tf = WGPUTextureFormat_R32Float;
-									else if (strncmp(fmt, "r32uint,", 8) == 0) tf = WGPUTextureFormat_R32Uint;
-									else if (strncmp(fmt, "r32sint,", 8) == 0) tf = WGPUTextureFormat_R32Sint;
-									else if (strncmp(fmt, "r16float,", 9) == 0) tf = WGPUTextureFormat_R16Float;
-									else if (strncmp(fmt, "r16uint,", 8) == 0) tf = WGPUTextureFormat_R16Uint;
-									else if (strncmp(fmt, "r16sint,", 8) == 0) tf = WGPUTextureFormat_R16Sint;
-									else if (strncmp(fmt, "r16snorm,", 9) == 0) tf = WGPUTextureFormat_R16Float; // Fallback
-									else if (strncmp(fmt, "r16unorm,", 9) == 0) tf = WGPUTextureFormat_R16Float; // Fallback
-									else if (strncmp(fmt, "r8unorm,", 8) == 0) tf = WGPUTextureFormat_R8Unorm;
-									else if (strncmp(fmt, "r8snorm,", 8) == 0) tf = WGPUTextureFormat_R8Snorm;
-									else if (strncmp(fmt, "r8uint,", 7) == 0) tf = WGPUTextureFormat_R8Uint;
-									else if (strncmp(fmt, "r8sint,", 7) == 0) tf = WGPUTextureFormat_R8Sint;
-									else if (strncmp(fmt, "rg8unorm,", 9) == 0) tf = WGPUTextureFormat_RG8Unorm;
-									else if (strncmp(fmt, "rg8snorm,", 9) == 0) tf = WGPUTextureFormat_RG8Snorm;
-									else if (strncmp(fmt, "rg8uint,", 8) == 0) tf = WGPUTextureFormat_RG8Uint;
-									else if (strncmp(fmt, "rg8sint,", 8) == 0) tf = WGPUTextureFormat_RG8Sint;
-									else if (strncmp(fmt, "rg16float,", 10) == 0) tf = WGPUTextureFormat_RG16Float;
-									else if (strncmp(fmt, "rg16uint,", 9) == 0) tf = WGPUTextureFormat_RG16Uint;
-									else if (strncmp(fmt, "rg16sint,", 9) == 0) tf = WGPUTextureFormat_RG16Sint;
-									else if (strncmp(fmt, "rg16snorm,", 10) == 0) tf = WGPUTextureFormat_RG16Float; // Fallback
-									else if (strncmp(fmt, "rg16unorm,", 10) == 0) tf = WGPUTextureFormat_RG16Float; // Fallback
-									else if (strncmp(fmt, "rgba16snorm,", 12) == 0) tf = WGPUTextureFormat_RGBA16Float; // Fallback
-									else if (strncmp(fmt, "rgba16unorm,", 12) == 0) tf = WGPUTextureFormat_RGBA16Float; // Fallback
-									else if (strncmp(fmt, "bgra8unorm,", 11) == 0) tf = WGPUTextureFormat_BGRA8Unorm;
+									// "limit" bounds the declaration, so an unterminated type list cannot
+									// run the name scan off the end of the WGSL buffer.
+									WGPUTextureFormat tf = _wgsl_storage_format_from_name(fmt, limit);
+									if (tf == WGPUTextureFormat_Undefined) {
+										WARN_PRINT(vformat("WebGPU: unrecognised WGSL storage texture format '%s' - the bind group layout cannot match the shader.", String::utf8(fmt, (int)MIN((size_t)32, (size_t)(comma - fmt)))));
+										tf = WGPUTextureFormat_RGBA8Unorm;
+									}
 									wgsl_storage_tex_format[key] = tf;
 									// Parse access mode (after comma, skip space)
 									const char *acc = comma + 1;
@@ -4939,11 +5077,7 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 					  // texture is multisampled, which changes the sample type below.
 					  entry.texture.viewDimension = spirv_dim_for(
 							  wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D, &is_ms);
-					  // Multisampled float textures must use UnfilterableFloat, not Float
-					  // (filtering is illegal for MSAA textures in WebGPU).
-					  entry.texture.sampleType = is_depth
-						  ? WGPUTextureSampleType_Depth
-						  : (is_ms ? WGPUTextureSampleType_UnfilterableFloat : WGPUTextureSampleType_Float);
+					  entry.texture.sampleType = _resolve_texture_sample_type(wgsl_tex_sample_types, k, is_depth, is_ms);
 					  entry.texture.multisampled = is_ms; }
 					bge.layout_entry = entry;
 					bge.array_length = 1;
@@ -4952,6 +5086,33 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 				case RDD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE: {
 					// Combined sampler+texture split by our SPIR-V preprocessor:
 					// Sampler at binding*2+0, texture at binding*2+1 in the modified SPIR-V → matches Tint WGSL output.
+					//
+					// Exception: a multisampled combined sampler has no sampler in WGSL at
+					// all. MSAA textures can only be textureLoad'ed, so the preprocessor
+					// emits a single bare texture at the sampler's own slot. Declaring a
+					// sampler there regardless makes the layout contradict the shader
+					// ("Binding type in the shader (texture) doesn't match the type in the
+					// layout (sampler)") and every pipeline using the set is born invalid.
+					{
+						const uint32_t samp_k = ((uint32_t)set << 16) | (u.binding * 2 + 0);
+						if (wgsl_tex_dims.has(samp_k) || wgsl_is_multisampled_texture.has(samp_k)) {
+							WGPUBindGroupLayoutEntry &only_entry = entries[e_idx++];
+							only_entry = {};
+							only_entry.binding = u.binding * 2 + 0;
+							only_entry.visibility = vis_for(u.binding * 2 + 0);
+							bool is_ms = wgsl_is_multisampled_texture.has(samp_k) && wgsl_is_multisampled_texture[samp_k];
+							const bool is_depth = wgsl_is_depth_texture.has(samp_k) && wgsl_is_depth_texture[samp_k];
+							only_entry.texture.viewDimension = spirv_dim_for(
+									wgsl_tex_dims.has(samp_k) ? wgsl_tex_dims[samp_k] : WGPUTextureViewDimension_2D, &is_ms);
+							only_entry.texture.sampleType = _resolve_texture_sample_type(wgsl_tex_sample_types, samp_k, is_depth, is_ms);
+							only_entry.texture.multisampled = is_ms;
+							bge.layout_entry = only_entry;
+							bge.combined_collapsed_to_texture = true;
+							bge.array_length = 1;
+							break;
+						}
+					}
+
 					WGPUBindGroupLayoutEntry &samp_entry = entries[e_idx++];
 					samp_entry = {};
 					samp_entry.binding = u.binding * 2 + 0;
@@ -4973,11 +5134,7 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 					  // which changes the sample type below.
 					  tex_entry.texture.viewDimension = spirv_dim_for(
 							  wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D, &is_ms);
-					  // Multisampled float textures must use UnfilterableFloat
-					  // (filtering is illegal for MSAA textures in WebGPU).
-					  tex_entry.texture.sampleType = is_depth
-						  ? WGPUTextureSampleType_Depth
-						  : (is_ms ? WGPUTextureSampleType_UnfilterableFloat : WGPUTextureSampleType_Float);
+					  tex_entry.texture.sampleType = _resolve_texture_sample_type(wgsl_tex_sample_types, k, is_depth, is_ms);
 					  tex_entry.texture.multisampled = is_ms;
 					  // MSAA texture bindings with UnfilterableFloat require a NonFiltering sampler —
 					  // override the sampler for this combined binding.
@@ -4987,6 +5144,9 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 					}
 
 					bge.layout_entry = tex_entry; // Store texture entry as the primary.
+					// Keep the sampler half's declared type: it is not recoverable from
+					// layout_entry, and uniform_set_create needs it to pick a compatible sampler.
+					bge.combined_sampler_type = samp_entry.sampler.type;
 				} break;
 
 				case RDD::UNIFORM_TYPE_IMAGE: {
@@ -4999,7 +5159,7 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 						// Read-only storage texture was converted to sampled texture_2d.
 						// Create a sampled texture BGL entry instead of storage.
 						WGPUTextureFormat fmt = wgsl_storage_tex_format.has(k) ? wgsl_storage_tex_format[k] : WGPUTextureFormat_RGBA8Unorm;
-						entry.texture.sampleType = _texture_sample_type_for_format(fmt);
+						entry.texture.sampleType = _resolve_storage_sampled_type(wgsl_tex_sample_types, k, fmt);
 						entry.texture.viewDimension = wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D;
 						entry.texture.multisampled = false;
 					} else {
@@ -5163,6 +5323,12 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 			}
 		}
 
+		// entry_count assumed two entries for every combined sampler+texture. Any that
+		// collapsed to a lone texture used one, so drop the unwritten tail before the
+		// extra entries below are appended — a zeroed leftover would be an entry at
+		// binding 0 with no resource type at all.
+		entries.resize(e_idx);
+
 		// Add BGL entries for depth alias variables.
 		// Tint splits mixed-usage depth textures: original→Depth at binding B,
 		// clone→Float at binding B+1 (named "*_depth_alias").
@@ -5198,7 +5364,7 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 			WGPUBindGroupLayoutEntry shadow_entry = {};
 			shadow_entry.binding = shadow_bnd;
 			shadow_entry.visibility = WGPUShaderStage_Compute;
-			shadow_entry.texture.sampleType = _texture_sample_type_for_format(shadow_fmt);
+			shadow_entry.texture.sampleType = _resolve_storage_sampled_type(wgsl_tex_sample_types, shadow_key, shadow_fmt);
 			shadow_entry.texture.viewDimension = wgsl_tex_dims.has(shadow_key) ? wgsl_tex_dims[shadow_key] : WGPUTextureViewDimension_2D;
 			shadow_entry.texture.multisampled = false;
 			entries.push_back(shadow_entry);
@@ -5266,19 +5432,27 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 				for (int u_idx2 = 0; u_idx2 < pc_uniforms.size(); u_idx2++) {
 					const RenderingDeviceCommons::ShaderUniform &pu = pc_uniforms[u_idx2];
 					WGPUShaderStage pvis = _stages_to_wgpu_visibility((uint32_t)pu.stages);
-					if (pu.type == RDD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE) {
+					// A collapsed pair is already a single complete entry — rebuilding it
+					// as sampler+texture here would reintroduce the layout/shader conflict.
+					if (pu.type == RDD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE &&
+							shader->bind_group_infos[i].entries[u_idx2].combined_collapsed_to_texture) {
+						merged_entries.push_back(shader->bind_group_infos[i].entries[u_idx2].layout_entry);
+					} else if (pu.type == RDD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE) {
 						WGPUBindGroupLayoutEntry se = {}, te = {};
 						se.binding = pu.binding * 2 + 0; se.visibility = pvis;
+						// Must agree with the per-set BGL above, including the depth-paired
+						// case: uniform_set_create picks the sampler from that layout, and a
+						// disagreement here fails bind group creation against this one.
 						{ uint32_t k = ((uint32_t)i << 16) | (pu.binding * 2 + 0);
 						  se.sampler.type = (wgsl_is_comparison_sampler.has(k) && wgsl_is_comparison_sampler[k])
-							  ? WGPUSamplerBindingType_Comparison : WGPUSamplerBindingType_Filtering; }
+							  ? WGPUSamplerBindingType_Comparison
+							  : (wgsl_depth_paired_samplers.has(k) ? WGPUSamplerBindingType_NonFiltering
+																   : WGPUSamplerBindingType_Filtering); }
 						te.binding = pu.binding * 2 + 1; te.visibility = pvis;
 						{ uint32_t k = ((uint32_t)i << 16) | (pu.binding * 2 + 1);
 						  bool is_ms = wgsl_is_multisampled_texture.has(k) && wgsl_is_multisampled_texture[k];
 						  bool is_depth = wgsl_is_depth_texture.has(k) && wgsl_is_depth_texture[k];
-						  te.texture.sampleType = is_depth
-							  ? WGPUTextureSampleType_Depth
-							  : (is_ms ? WGPUTextureSampleType_UnfilterableFloat : WGPUTextureSampleType_Float);
+						  te.texture.sampleType = _resolve_texture_sample_type(wgsl_tex_sample_types, k, is_depth, is_ms);
 						  te.texture.viewDimension = wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D;
 						  te.texture.multisampled = is_ms;
 						  if (is_ms && !is_depth) {
@@ -5329,7 +5503,7 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 					WGPUBindGroupLayoutEntry se = {};
 					se.binding = shadow_bnd;
 					se.visibility = WGPUShaderStage_Compute;
-					se.texture.sampleType = _texture_sample_type_for_format(shadow_fmt);
+					se.texture.sampleType = _resolve_storage_sampled_type(wgsl_tex_sample_types, shadow_key, shadow_fmt);
 					se.texture.viewDimension = wgsl_tex_dims.has(shadow_key) ? wgsl_tex_dims[shadow_key] : WGPUTextureViewDimension_2D;
 					se.texture.multisampled = false;
 					merged_entries.push_back(se);
@@ -5600,9 +5774,19 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 				// Look up expected texture dimension and sample type from the shader layout.
 				WGPUTextureViewDimension swt_expected_dim = WGPUTextureViewDimension_Undefined;
 				bool swt_expected_ms = false;
+				// When the sampler half does not exist (multisampled combined sampler),
+				// the texture lives at the sampler's slot and nothing is bound at +1.
+				bool swt_collapsed = false;
 				if (p_set_index < (uint32_t)shader->bind_group_infos.size()) {
 					uint32_t tex_binding = uniform.binding * 2 + 1;
 					for (const auto &bge : shader->bind_group_infos[p_set_index].entries) {
+						if (bge.combined_collapsed_to_texture &&
+								bge.layout_entry.binding == uniform.binding * 2 + 0) {
+							swt_collapsed = true;
+							swt_expected_dim = bge.layout_entry.texture.viewDimension;
+							swt_expected_ms = (bool)bge.layout_entry.texture.multisampled;
+							break;
+						}
 						if (bge.layout_entry.binding == tex_binding) {
 							swt_expected_dim = bge.layout_entry.texture.viewDimension;
 							swt_expected_ms = (bool)bge.layout_entry.texture.multisampled;
@@ -5613,7 +5797,7 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 				for (uint32_t j = 0; j < uniform.ids.size() / 2; j++) {
 					WGPUSampler sampler = (WGPUSampler)(uniform.ids[j * 2 + 0].id);
 					WGTexture *tex = (WGTexture *)(uniform.ids[j * 2 + 1].id);
-					if (sampler) {
+					if (sampler && !swt_collapsed) {
 						WGPUBindGroupEntry se = {};
 						se.binding = uniform.binding * 2 + j * 2 + 0;
 						se.sampler = _layout_wants_nonfiltering(shader, p_set_index, se.binding)
@@ -5624,7 +5808,8 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 					}
 					if (tex && tex->default_view) {
 						WGPUBindGroupEntry te = {};
-						te.binding = uniform.binding * 2 + j * 2 + 1;
+						// Collapsed pairs put the texture where the sampler would have gone.
+						te.binding = uniform.binding * 2 + j * 2 + (swt_collapsed ? 0 : 1);
 						// Check sample-count mismatch first: if the BGL expects a multisampled
 						// texture but the bound texture isn't multisampled (or vice versa),
 						// we can't use either the real texture or a non-MS fallback. Substitute
