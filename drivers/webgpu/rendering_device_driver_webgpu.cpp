@@ -6512,9 +6512,75 @@ void RenderingDeviceDriverWebGPU::command_copy_texture(CommandBufferID p_cmd_buf
 }
 
 void RenderingDeviceDriverWebGPU::command_resolve_texture(CommandBufferID p_cmd_buffer, TextureID p_src_texture, TextureLayout p_src_texture_layout, uint32_t p_src_layer, uint32_t p_src_mipmap, TextureID p_dst_texture, TextureLayout p_dst_texture_layout, uint32_t p_dst_layer, uint32_t p_dst_mipmap) {
-	// TODO: Create a minimal render pass with MSAA texture as color attachment
-	// and the resolve target as resolveTarget. Begin and immediately end the pass.
-	WARN_PRINT_ONCE("WebGPU: command_resolve_texture not yet implemented.");
+	WGCommandBuffer *cmd = (WGCommandBuffer *)(p_cmd_buffer.id);
+	WGTexture *src = (WGTexture *)(p_src_texture.id);
+	WGTexture *dst = (WGTexture *)(p_dst_texture.id);
+	ERR_FAIL_NULL(cmd);
+	ERR_FAIL_NULL(src);
+	ERR_FAIL_NULL(dst);
+
+	// WebGPU has no standalone resolve command: the only way to resolve MSAA is a
+	// render pass whose colour attachment names a resolveTarget. A pass that draws
+	// nothing still resolves when it ends, so begin one and end it immediately.
+	//
+	// Without this the destination is simply never written. Anything rendering
+	// through an MSAA viewport (a SubViewport with msaa_3d set — the ship preview
+	// in the upgrade station) resolved into a texture that stayed black.
+	ERR_FAIL_COND_MSG(src->format != dst->format,
+			"WebGPU: cannot resolve between different texture formats.");
+	// resolveTarget is colour-only; depth MSAA goes through the resolve shaders.
+	ERR_FAIL_COND_MSG(_is_depth_format(src->format),
+			"WebGPU: cannot resolve a depth texture through a resolve target.");
+	ERR_FAIL_COND_MSG(!(src->usage & WGPUTextureUsage_RenderAttachment) ||
+					!(dst->usage & WGPUTextureUsage_RenderAttachment),
+			"WebGPU: cannot resolve a texture that lacks RenderAttachment usage.");
+
+	cmd->end_active_encoder();
+
+	// Slice views carry a base offset into the parent, so the requested
+	// layer/mipmap is relative to that base, not to the whole texture.
+	WGPUTextureViewDescriptor src_desc = {};
+	src_desc.format = src->format;
+	src_desc.dimension = WGPUTextureViewDimension_2D;
+	src_desc.baseMipLevel = src->base_mipmap + p_src_mipmap;
+	src_desc.mipLevelCount = 1;
+	src_desc.baseArrayLayer = src->base_layer + p_src_layer;
+	src_desc.arrayLayerCount = 1;
+	src_desc.aspect = WGPUTextureAspect_All;
+	WGPUTextureView src_view = wgpuTextureCreateView(src->gpu_handle(), &src_desc);
+
+	WGPUTextureViewDescriptor dst_desc = {};
+	dst_desc.format = dst->format;
+	dst_desc.dimension = WGPUTextureViewDimension_2D;
+	dst_desc.baseMipLevel = dst->base_mipmap + p_dst_mipmap;
+	dst_desc.mipLevelCount = 1;
+	dst_desc.baseArrayLayer = dst->base_layer + p_dst_layer;
+	dst_desc.arrayLayerCount = 1;
+	dst_desc.aspect = WGPUTextureAspect_All;
+	WGPUTextureView dst_view = wgpuTextureCreateView(dst->gpu_handle(), &dst_desc);
+
+	WGPURenderPassColorAttachment color_att = {};
+	color_att.view = src_view;
+	color_att.resolveTarget = dst_view;
+	color_att.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+	// Load, because the multisampled content to resolve is what is already there.
+	// Store rather than Discard: a resolve is not the end of the source's life.
+	// Forward Clustered resolves colour after the opaque pass, renders transparents
+	// into the same MSAA target with loadOp=Load, then resolves again — discarding
+	// here leaves that second pass loading undefined contents.
+	color_att.loadOp = WGPULoadOp_Load;
+	color_att.storeOp = WGPUStoreOp_Store;
+
+	WGPURenderPassDescriptor rp_desc = {};
+	rp_desc.colorAttachmentCount = 1;
+	rp_desc.colorAttachments = &color_att;
+	rp_desc.label = { "resolve", WGPU_STRLEN };
+
+	WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(cmd->encoder, &rp_desc);
+	wgpuRenderPassEncoderEnd(pass);
+	wgpuRenderPassEncoderRelease(pass);
+	wgpuTextureViewRelease(src_view);
+	wgpuTextureViewRelease(dst_view);
 }
 
 // Return the byte size of a single texel for a given WGPUTextureFormat.
