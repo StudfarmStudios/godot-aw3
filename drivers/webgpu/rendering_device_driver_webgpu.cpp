@@ -642,7 +642,8 @@ static void _wgsl_disk_cache_flush() {
 	_wgsl_disk_cache_pending = 0;
 	_wgsl_disk_cache_last_flush_usec = OS::get_singleton()->get_ticks_usec();
 	if (written > 0) {
-		EM_ASM({ console.log('[WGSLCACHE] flushed ' + $0 + ' new entries'); }, (int)written);
+		EM_ASM({ console.log('[WGSLCACHE] flushed ' + $0 + ' new entries (session: cache=' + $1 + ' precompiled=' + $2 + ' tint=' + $3 + ')'); },
+				(int)written, (int)_spv_to_wgsl_cache_hits, (int)_spv_to_wgsl_precompiled_hits, (int)_spv_to_wgsl_cache_misses);
 	}
 }
 
