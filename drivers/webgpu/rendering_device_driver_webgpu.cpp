@@ -1015,7 +1015,8 @@ RenderingDeviceDriverWebGPU::~RenderingDeviceDriverWebGPU() {
 	for (KeyValue<uint64_t, ReadbackEntry *> &kv : _readback_cache) {
 		ReadbackEntry *entry = kv.value;
 		if (entry->staging) {
-			wgpuBufferRelease(entry->staging);
+			wgpuBufferDestroy(entry->staging); // See buffer_free: released-only buffers wait on a GC that never runs.
+				wgpuBufferRelease(entry->staging);
 		}
 		if (entry->shadow) {
 			memfree(entry->shadow);
@@ -1602,6 +1603,7 @@ void RenderingDeviceDriverWebGPU::buffer_free(BufferID p_buffer) {
 			entry->cancelled = true;
 		} else {
 			if (entry->staging) {
+				wgpuBufferDestroy(entry->staging); // See buffer_free: released-only buffers wait on a GC that never runs.
 				wgpuBufferRelease(entry->staging);
 			}
 			if (entry->shadow) {
@@ -1620,6 +1622,13 @@ void RenderingDeviceDriverWebGPU::buffer_free(BufferID p_buffer) {
 	}
 
 	if (buf->handle) {
+		// Destroy, don't just release: Release only drops the wasm-side handle
+		// and leaves the GPU allocation to JS garbage collection, which cannot
+		// see GPU memory pressure and under load never runs — a fight leaked
+		// ~70k buffers/minute this way. Destroy deallocates deterministically;
+		// in-flight queue work is safe (the implementation defers the actual
+		// deallocation), and RD only frees past the frame fence anyway.
+		wgpuBufferDestroy(buf->handle);
 		wgpuBufferRelease(buf->handle);
 	}
 	if (buf->shadow_map) {
@@ -1648,6 +1657,7 @@ static void _buffer_deferred_map_cb(WGPUMapAsyncStatus p_status, WGPUStringView 
 			if (p_status == WGPUMapAsyncStatus_Success) {
 				wgpuBufferUnmap(buf->handle);
 			}
+			wgpuBufferDestroy(buf->handle); // See buffer_free: GC never reclaims released-only buffers.
 			wgpuBufferRelease(buf->handle);
 		}
 		if (buf->shadow_map) {
@@ -2046,7 +2056,8 @@ void RenderingDeviceDriverWebGPU::_readback_map_cb(WGPUMapAsyncStatus p_status, 
 			if (p_status == WGPUMapAsyncStatus_Success) {
 				wgpuBufferUnmap(entry->staging);
 			}
-			wgpuBufferRelease(entry->staging);
+			wgpuBufferDestroy(entry->staging); // See buffer_free: released-only buffers wait on a GC that never runs.
+				wgpuBufferRelease(entry->staging);
 		}
 		if (entry->shadow) {
 			memfree(entry->shadow);
@@ -2513,7 +2524,8 @@ void RenderingDeviceDriverWebGPU::texture_free(TextureID p_texture) {
 					entry->cancelled = true;
 				} else {
 					if (entry->staging) {
-						wgpuBufferRelease(entry->staging);
+						wgpuBufferDestroy(entry->staging); // See buffer_free: released-only buffers wait on a GC that never runs.
+				wgpuBufferRelease(entry->staging);
 					}
 					if (entry->shadow) {
 						memfree(entry->shadow);
@@ -2538,6 +2550,10 @@ void RenderingDeviceDriverWebGPU::texture_free(TextureID p_texture) {
 		wgpuTextureViewRelease(tex->default_view);
 	}
 	if (tex->handle && !tex->is_from_swap_chain) {
+		// Destroy, don't just release — same GC-never-runs story as
+		// buffer_free, and textures are the big allocations. Only owners
+		// reach this branch: shared views carry handle == nullptr.
+		wgpuTextureDestroy(tex->handle);
 		wgpuTextureRelease(tex->handle);
 	}
 	delete tex;
