@@ -315,6 +315,13 @@ public:
 	/// Async map callback — copies GPU data to shadow buffer.
 	static void _readback_map_cb(WGPUMapAsyncStatus p_status, WGPUStringView p_message, void *p_userdata1, void *p_userdata2);
 
+	// Coalesced staging uploads (see WGBuffer::pending_upload_spans). Buffers
+	// with pending spans, flushed with one writeBuffer per merged span right
+	// before any queue submit.
+	LocalVector<WGBuffer *> _staging_upload_queue;
+	void _stage_pending_upload(WGBuffer *p_buf, uint64_t p_offset, uint64_t p_size);
+	void _flush_pending_staging_uploads();
+
 	// -----------------------------------------------------------------------
 	// TEXTURES
 	// -----------------------------------------------------------------------

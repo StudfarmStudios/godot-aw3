@@ -69,6 +69,19 @@ struct WGBuffer {
 	uint32_t frame_idx = UINT32_MAX;
 	uint64_t per_frame_size = 0;
 	bool is_dynamic() const { return frame_idx != UINT32_MAX; }
+
+	// Coalesced staging uploads. command_copy_buffer records [start,end) spans
+	// here instead of issuing one queue.writeBuffer per copy region — that
+	// per-region flush was ~1,700 boundary-crossing calls per frame in a dense
+	// fight (60% of the main thread). _flush_pending_staging_uploads() writes
+	// the merged spans right before submit; queue ordering guarantees the data
+	// still lands before the encoder copies that read it.
+	LocalVector<Pair<uint64_t, uint64_t>> pending_upload_spans;
+
+	// Last-flushed contents, for diffed buffer_flush on dynamic persistent
+	// buffers (the 2D canvas instance buffer re-uploaded its whole >1MB slice
+	// every frame, menu included). Lazily allocated to buf->size.
+	uint8_t *flush_compare = nullptr;
 };
 
 // =============================================================================

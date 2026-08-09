@@ -1621,6 +1621,15 @@ void RenderingDeviceDriverWebGPU::buffer_free(BufferID p_buffer) {
 		return;
 	}
 
+	// A freed buffer must not linger in the pending-upload queue (dangling
+	// pointer at the next flush). RD frees deferred, so this is rare.
+	if (!buf->pending_upload_spans.is_empty()) {
+		buf->pending_upload_spans.clear();
+		_staging_upload_queue.erase(buf);
+	}
+	if (buf->flush_compare) {
+		memfree(buf->flush_compare);
+	}
 	if (buf->handle) {
 		// Destroy, don't just release: Release only drops the wasm-side handle
 		// and leaves the GPU allocation to JS garbage collection, which cannot
@@ -1812,6 +1821,41 @@ void RenderingDeviceDriverWebGPU::buffer_flush(BufferID p_buffer) {
 			flush_offset = buf->dirty_offset;
 			flush_size = buf->dirty_end - buf->dirty_offset;
 		}
+
+		// Dynamic persistent buffers (the 2D canvas instance buffer above all)
+		// mark their whole per-frame slice dirty however little of it changed,
+		// which uploaded >1MB every frame — including completely static menu
+		// frames. Diff the slice against what was last uploaded for it and
+		// write only the changed span. Safe exactly because these buffers are
+		// only ever written CPU-side through this path: no encoder copy or
+		// unmap flush can make the GPU contents diverge from flush_compare.
+		if (buf->is_dynamic() && flush_size > 0) {
+			if (!buf->flush_compare) {
+				buf->flush_compare = (uint8_t *)memalloc(buf->size);
+				memset(buf->flush_compare, 0, buf->size);
+			}
+			const uint8_t *cur = buf->shadow_map + flush_offset;
+			uint8_t *prev = buf->flush_compare + flush_offset;
+			uint64_t first = 0;
+			while (first < flush_size && cur[first] == prev[first]) {
+				first++;
+			}
+			if (first == flush_size) {
+				buf->dirty_offset = 0;
+				buf->dirty_end = 0;
+				return; // Identical to what the GPU already has.
+			}
+			uint64_t last = flush_size;
+			while (last > first && cur[last - 1] == prev[last - 1]) {
+				last--;
+			}
+			first &= ~3ULL; // writeBuffer offset/size must be 4-aligned.
+			last = MIN(flush_size, (last + 3) & ~3ULL);
+			memcpy(prev + first, cur + first, last - first);
+			flush_offset += first;
+			flush_size = last - first;
+		}
+
 		wgpuQueueWriteBuffer(queue, buf->handle, flush_offset, buf->shadow_map + flush_offset, flush_size);
 		buf->dirty_offset = 0;
 		buf->dirty_end = 0;
@@ -2099,7 +2143,9 @@ bool RenderingDeviceDriverWebGPU::buffer_get_data_direct(BufferID p_buffer, uint
 		// Initiate a new readback for this frame's data.
 		entry->map_complete = false;
 		entry->map_pending = true;
-		// Copy GPU buffer → persistent staging buffer.
+		// Copy GPU buffer → persistent staging buffer. Pending staged uploads
+		// must land first or the readback snapshots stale contents.
+		_flush_pending_staging_uploads();
 		WGPUCommandEncoderDescriptor enc_desc = {};
 		WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device, &enc_desc);
 		wgpuCommandEncoderCopyBufferToBuffer(encoder, buf->handle, 0, entry->staging, 0, entry->size);
@@ -2143,8 +2189,10 @@ bool RenderingDeviceDriverWebGPU::buffer_get_data_direct(BufferID p_buffer, uint
 	}
 
 	if (!entry->map_complete && !entry->map_pending) {
-		// Copy GPU buffer → persistent staging buffer.
+		// Copy GPU buffer → persistent staging buffer. Pending staged uploads
+		// must land first or the readback snapshots stale contents.
 		entry->map_pending = true;
+		_flush_pending_staging_uploads();
 		WGPUCommandEncoderDescriptor enc_desc = {};
 		WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device, &enc_desc);
 		wgpuCommandEncoderCopyBufferToBuffer(encoder, buf->handle, 0, entry->staging, 0, entry->size);
@@ -3504,6 +3552,10 @@ Error RenderingDeviceDriverWebGPU::command_queue_execute_and_present(CommandQueu
 	}
 
 	if (wgpu_cmd_buffers.size() > 0) {
+		// Flush coalesced staging spans before submit — the command buffers
+		// carry encoder copies that read them (see command_copy_buffer).
+		_flush_pending_staging_uploads();
+
 		// Flush batched push constant data to GPU before submitting command buffers.
 		if (push_constant_shadow_dirty_start < push_constant_shadow_dirty_end) {
 			wgpuQueueWriteBuffer(queue, push_constant_ring_buffer, push_constant_shadow_dirty_start,
@@ -6472,6 +6524,52 @@ void RenderingDeviceDriverWebGPU::command_clear_buffer(CommandBufferID p_cmd_buf
 	wgpuCommandEncoderClearBuffer(cmd->encoder, buf->handle, p_offset, size);
 }
 
+void RenderingDeviceDriverWebGPU::_stage_pending_upload(WGBuffer *p_buf, uint64_t p_offset, uint64_t p_size) {
+	if (p_buf->pending_upload_spans.is_empty()) {
+		_staging_upload_queue.push_back(p_buf);
+	}
+	// Merge with an existing span when adjacent or overlapping (tolerate small
+	// gaps — uploading a few dead bytes is cheaper than another writeBuffer).
+	const uint64_t GAP = 4096;
+	uint64_t start = p_offset;
+	uint64_t end = p_offset + p_size;
+	for (Pair<uint64_t, uint64_t> &span : p_buf->pending_upload_spans) {
+		if (start <= span.second + GAP && end + GAP >= span.first) {
+			span.first = MIN(span.first, start);
+			span.second = MAX(span.second, end);
+			return;
+		}
+	}
+	// The staging ring allocates sequentially, so span counts stay tiny; if a
+	// pathological pattern ever grows the list, collapse to one covering span
+	// rather than scanning long lists per copy.
+	if (p_buf->pending_upload_spans.size() >= 32) {
+		Pair<uint64_t, uint64_t> all = p_buf->pending_upload_spans[0];
+		for (const Pair<uint64_t, uint64_t> &span : p_buf->pending_upload_spans) {
+			all.first = MIN(all.first, span.first);
+			all.second = MAX(all.second, span.second);
+		}
+		all.first = MIN(all.first, start);
+		all.second = MAX(all.second, end);
+		p_buf->pending_upload_spans.clear();
+		p_buf->pending_upload_spans.push_back(all);
+		return;
+	}
+	p_buf->pending_upload_spans.push_back(Pair<uint64_t, uint64_t>(start, end));
+}
+
+void RenderingDeviceDriverWebGPU::_flush_pending_staging_uploads() {
+	for (WGBuffer *buf : _staging_upload_queue) {
+		for (const Pair<uint64_t, uint64_t> &span : buf->pending_upload_spans) {
+			uint64_t start = span.first & ~3ULL;
+			uint64_t end = MIN((span.second + 3) & ~3ULL, buf->size);
+			wgpuQueueWriteBuffer(queue, buf->handle, start, buf->shadow_map + start, end - start);
+		}
+		buf->pending_upload_spans.clear();
+	}
+	_staging_upload_queue.clear();
+}
+
 void RenderingDeviceDriverWebGPU::command_copy_buffer(CommandBufferID p_cmd_buffer, BufferID p_src_buffer, BufferID p_dst_buffer, VectorView<BufferCopyRegion> p_regions) {
 	WGCommandBuffer *cmd = (WGCommandBuffer *)(p_cmd_buffer.id);
 	WGBuffer *src = (WGBuffer *)(p_src_buffer.id);
@@ -6489,13 +6587,21 @@ void RenderingDeviceDriverWebGPU::command_copy_buffer(CommandBufferID p_cmd_buff
 	// the last-written value rather than the per-canvas value.  Using the
 	// encoder copy preserves the staging→dst copy order relative to draws.
 	if (src->shadow_map) {
+		// Record the spans instead of one queue.writeBuffer per region — RD
+		// issues thousands of small staging copies per frame in effect-heavy
+		// scenes, and each immediate writeBuffer pays a validated JS-boundary
+		// call (measured at 60% of the main thread). The merged spans are
+		// written by _flush_pending_staging_uploads() before submit; queue
+		// ordering still lands them ahead of the encoder copies below. The
+		// staging ring never rewrites a region within a frame, so the bytes
+		// at flush time equal the bytes at record time.
 		for (uint32_t i = 0; i < p_regions.size(); i++) {
 			const BufferCopyRegion &region = p_regions[i];
 			uint64_t size = (region.size + 3) & ~3ULL;
-			wgpuQueueWriteBuffer(queue, src->handle, region.src_offset, src->shadow_map + region.src_offset, size);
+			_stage_pending_upload(src, region.src_offset, size);
 		}
-		// The specific regions have been flushed above. Clear map_dirty so the
-		// subsequent buffer_unmap() doesn't redundantly flush the entire buffer.
+		// The regions are queued for flush. Clear map_dirty so the subsequent
+		// buffer_unmap() doesn't redundantly flush the entire buffer.
 		src->map_dirty = false;
 		// Fall through to encoder copy below.
 	}
@@ -7326,6 +7432,9 @@ void RenderingDeviceDriverWebGPU::_flush_push_constants(WGCommandBuffer *p_cmd_b
 
 		// 3. Finish + submit the current command buffer (non-blocking).
 		if (p_cmd_buf->encoder) {
+			// The buffer may carry encoder copies whose staging spans are
+			// still pending — they must land before this early submit.
+			_flush_pending_staging_uploads();
 			WGPUCommandBuffer finished = wgpuCommandEncoderFinish(p_cmd_buf->encoder, nullptr);
 			if (finished) {
 				wgpuQueueSubmit(queue, 1, &finished);
@@ -7712,7 +7821,9 @@ void RenderingDeviceDriverWebGPU::command_begin_render_pass(CommandBufferID p_cm
 				push_constant_shadow_dirty_start = UINT32_MAX;
 				push_constant_shadow_dirty_end = 0;
 			}
-			// Split: submit everything so far, start a fresh encoder.
+			// Split: submit everything so far, start a fresh encoder. Any
+			// pending staging spans feed the copies recorded so far.
+			_flush_pending_staging_uploads();
 			WGPUCommandBuffer finished = wgpuCommandEncoderFinish(cmd->encoder, nullptr);
 			if (finished) {
 				wgpuQueueSubmit(queue, 1, &finished);
