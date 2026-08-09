@@ -150,17 +150,44 @@ const GodotFS = {
 		},
 
 		// Under WasmFS the filesystem lives inside the wasm module; there is no
-		// IDBFS to mount or sync. user:// is not persisted (OPFS backend not
-		// wired yet), so is_persistent stays false and sync is a no-op.
+		// IDBFS and nothing to sync — persistence comes from mounting each
+		// persistent path on an OPFS backend, whose writes are durable as they
+		// happen. _idbfs keeps its name (is_persistent reads it) but now means
+		// "OPFS mounted". Without OPFS (insecure context, old browser) the
+		// paths fall back to in-memory directories and persistence reports off.
 		init: function (persistentPaths) {
 			GodotFS._idbfs = false;
 			if (!Array.isArray(persistentPaths)) {
 				return Promise.reject(new Error('Persistent paths must be an array'));
 			}
 			GodotFS._mount_points = persistentPaths.slice();
+			let backend = 0;
+			try {
+				if (navigator.storage && navigator.storage.getDirectory) {
+					backend = Module['_wasmfs_create_opfs_backend']();
+				}
+			} catch (e) {
+				GodotRuntime.print(`OPFS not available: ${e.message}`);
+				backend = 0;
+			}
+			let persistent = !!backend;
 			GodotFS._mount_points.forEach(function (path) {
-				GodotFS.mkdir_tree(path);
+				const idx = path.lastIndexOf('/');
+				if (idx > 0) {
+					GodotFS.mkdir_tree(path.slice(0, idx));
+				}
+				let mounted = false;
+				if (backend) {
+					const c_path = GodotRuntime.allocString(path);
+					mounted = Module['_wasmfs_create_directory'](c_path, 0o777, backend) === 0;
+					GodotRuntime.free(c_path);
+				}
+				if (!mounted) {
+					persistent = false;
+					GodotFS.mkdir_tree(path);
+				}
 			});
+			GodotFS._idbfs = persistent;
 			return Promise.resolve();
 		},
 

@@ -73,7 +73,7 @@ def get_opts():
         BoolVariable(
             "wasmfs",
             "Use Emscripten WasmFS: the filesystem runs inside the wasm module, so worker-thread file I/O "
-            "stops proxying to the browser main thread. user:// is NOT persisted yet (no IDBFS; OPFS backend unwired)",
+            "stops proxying to the browser main thread. user:// persists via OPFS instead of IDBFS",
             False,
         ),
     ]
@@ -382,6 +382,10 @@ def configure(env: "SConsEnvironment"):
     ]
     env["EXPORTED_RUNTIME_METHODS"] += ["callMain", "cwrap"] + heap_arrays
     env["EXPORTED_FUNCTIONS"] += ["_malloc", "_free"]
+    if env["wasmfs"]:
+        # GodotFS.init mounts user:// on OPFS through these (library_godot_os.js);
+        # WasmFS backends are created via C API only, there is no JS equivalent.
+        env["EXPORTED_FUNCTIONS"] += ["_wasmfs_create_opfs_backend", "_wasmfs_create_directory"]
 
     # Add code that allow exiting runtime.
     env.Append(LINKFLAGS=["-sEXIT_RUNTIME=1"])
