@@ -337,12 +337,25 @@ def configure(env: "SConsEnvironment"):
         env.Append(LINKFLAGS=["-sPROXY_TO_PTHREAD=1"])
         env.Append(CPPDEFINES=["PROXY_TO_PTHREAD_ENABLED"])
 
-    # Enable WebAssembly SIMD
+    # Enable WebAssembly SIMD. Relaxed SIMD on top lets vectorized float math
+    # emit fused relaxed_madd & co — every browser that has WebGPU (which the
+    # game requires anyway) supports it.
     if env["wasm_simd"]:
-        env.Append(CCFLAGS=["-msimd128"])
+        env.Append(CCFLAGS=["-msimd128", "-mrelaxed-simd"])
 
     # Reduce code size by generating less support code (e.g. skip NodeJS support).
     env.Append(LINKFLAGS=["-sENVIRONMENT=web,worker"])
+
+    # The game demands WebGPU + SharedArrayBuffer, so the default browser floors
+    # (Chrome 85 / Firefox 79 / Safari 15) only buy dead legacy-support code.
+    # POLYFILL/TEXTDECODER: no polyfills, TextDecoder assumed present.
+    env.Append(LINKFLAGS=[
+        "-sMIN_CHROME_VERSION=119",
+        "-sMIN_FIREFOX_VERSION=120",
+        "-sMIN_SAFARI_VERSION=170000",
+        "-sPOLYFILL=0",
+        "-sTEXTDECODER=2",
+    ])
 
     # Wrap the JavaScript support code around a closure named Godot.
     env.Append(LINKFLAGS=["-sMODULARIZE=1", "-sEXPORT_NAME='Godot'"])
