@@ -79,8 +79,9 @@ build_targets = ["#bin/godot${PROGSUFFIX}.js", "#bin/godot${PROGSUFFIX}.wasm"]
 if env["dlink_enabled"]:
     # Reset libraries. The main runtime will only link emscripten libraries, not godot ones.
     sys_env["LIBS"] = []
-    # We use IDBFS. Since Emscripten 1.39.1 it needs to be linked explicitly.
-    sys_env.Append(LIBS=["idbfs.js"])
+    if not env["wasmfs"]:
+        # We use IDBFS. Since Emscripten 1.39.1 it needs to be linked explicitly.
+        sys_env.Append(LIBS=["idbfs.js"])
     # Configure it as a main module (dynamic linking support).
     sys_env["CCFLAGS"].remove("-sSIDE_MODULE=2")
     sys_env["LINKFLAGS"].remove("-sSIDE_MODULE=2")
@@ -98,8 +99,9 @@ if env["dlink_enabled"]:
     wasm = env.add_program("#bin/godot.side${PROGSUFFIX}.wasm", web_files)
     build = sys + [wasm[0]]
 else:
-    # We use IDBFS. Since Emscripten 1.39.1 it needs to be linked explicitly.
-    sys_env.Append(LIBS=["idbfs.js"])
+    if not env["wasmfs"]:
+        # We use IDBFS. Since Emscripten 1.39.1 it needs to be linked explicitly.
+        sys_env.Append(LIBS=["idbfs.js"])
     build = sys_env.add_program(build_targets, web_files + ["web_runtime.cpp"])
 
 sys_env.Depends(build[0], sys_env["JS_LIBS"])

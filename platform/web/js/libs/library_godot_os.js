@@ -110,7 +110,11 @@ autoAddDeps(GodotConfig, '$GodotConfig');
 mergeInto(LibraryManager.library, GodotConfig);
 
 const GodotFS = {
+#if WASMFS
+	$GodotFS__deps: ['$FS', '$GodotRuntime'],
+#else
 	$GodotFS__deps: ['$FS', '$IDBFS', '$GodotRuntime'],
+#endif
 	$GodotFS__postset: [
 		'Module["initFS"] = GodotFS.init;',
 		'Module["copyToFS"] = GodotFS.copy_to_fs;',
@@ -126,6 +130,59 @@ const GodotFS = {
 			return GodotFS._idbfs ? 1 : 0;
 		},
 
+#if WASMFS
+		// WasmFS's JS API has no mkdirTree, and its errors don't carry the
+		// legacy errno shape — create each segment and let an actual failure
+		// surface on the write that follows.
+		mkdir_tree: function (dir) {
+			let cur = '';
+			dir.split('/').forEach(function (part) {
+				if (part === '') {
+					return;
+				}
+				cur += `/${part}`;
+				try {
+					FS.mkdir(cur);
+				} catch (e) {
+					// Already exists.
+				}
+			});
+		},
+
+		// Under WasmFS the filesystem lives inside the wasm module; there is no
+		// IDBFS to mount or sync. user:// is not persisted (OPFS backend not
+		// wired yet), so is_persistent stays false and sync is a no-op.
+		init: function (persistentPaths) {
+			GodotFS._idbfs = false;
+			if (!Array.isArray(persistentPaths)) {
+				return Promise.reject(new Error('Persistent paths must be an array'));
+			}
+			GodotFS._mount_points = persistentPaths.slice();
+			GodotFS._mount_points.forEach(function (path) {
+				GodotFS.mkdir_tree(path);
+			});
+			return Promise.resolve();
+		},
+
+		deinit: function () {
+			GodotFS._mount_points = [];
+			GodotFS._idbfs = false;
+			GodotFS._syncing = false;
+		},
+
+		sync: function () {
+			return Promise.resolve();
+		},
+
+		// Copies a buffer to the internal file system. Creating directories recursively.
+		copy_to_fs: function (path, buffer) {
+			const idx = path.lastIndexOf('/');
+			if (idx > 0) {
+				GodotFS.mkdir_tree(path.slice(0, idx));
+			}
+			FS.writeFile(path, new Uint8Array(buffer));
+		},
+#else
 		// Initialize godot file system, setting up persistent paths.
 		// Returns a promise that resolves when the FS is ready.
 		// We keep track of mount_points, so that we can properly close the IDBFS
@@ -223,6 +280,7 @@ const GodotFS = {
 			}
 			FS.writeFile(path, new Uint8Array(buffer));
 		},
+#endif
 	},
 };
 mergeInto(LibraryManager.library, GodotFS);

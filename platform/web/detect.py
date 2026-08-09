@@ -70,6 +70,12 @@ def get_opts():
             ["dlmalloc", "mimalloc", "emmalloc"],
             ignorecase=2,
         ),
+        BoolVariable(
+            "wasmfs",
+            "Use Emscripten WasmFS: the filesystem runs inside the wasm module, so worker-thread file I/O "
+            "stops proxying to the browser main thread. user:// is NOT persisted yet (no IDBFS; OPFS backend unwired)",
+            False,
+        ),
     ]
 
 
@@ -351,6 +357,14 @@ def configure(env: "SConsEnvironment"):
     env.Append(LINKFLAGS=["-sALLOW_MEMORY_GROWTH=1"])
 
     env.Append(LINKFLAGS=["-sMALLOC=%s" % env["malloc"]])
+
+    if env["wasmfs"]:
+        # The JS FS proxies every worker-thread file op to the browser main
+        # thread; WasmFS implements the syscalls in wasm so pck reads from
+        # ResourceLoader/WorkerThreadPool threads run where they are issued.
+        # FORCE_FILESYSTEM keeps the reduced JS FS API (FS.writeFile & co)
+        # that the shell needs for the pck copy-in.
+        env.Append(LINKFLAGS=["-sWASMFS=1", "-sFORCE_FILESYSTEM=1"])
 
     # Ensure malloc returns NULL on failure instead of aborting. Emscripten
     # sets this automatically when ALLOW_MEMORY_GROWTH=1, but being explicit
