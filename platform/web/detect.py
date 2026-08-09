@@ -63,6 +63,13 @@ def get_opts():
             False,
         ),
         BoolVariable("wasm_simd", "Use WebAssembly SIMD to improve CPU performance", True),
+        EnumVariable(
+            "malloc",
+            "Memory allocator. dlmalloc serializes all threads on one lock; mimalloc has per-thread heaps",
+            "dlmalloc",
+            ["dlmalloc", "mimalloc", "emmalloc"],
+            ignorecase=2,
+        ),
     ]
 
 
@@ -342,6 +349,8 @@ def configure(env: "SConsEnvironment"):
     # when using WebAssembly (in comparison to asm.js) and works well for
     # us since we don't know requirements at compile-time.
     env.Append(LINKFLAGS=["-sALLOW_MEMORY_GROWTH=1"])
+
+    env.Append(LINKFLAGS=["-sMALLOC=%s" % env["malloc"]])
 
     # Ensure malloc returns NULL on failure instead of aborting. Emscripten
     # sets this automatically when ALLOW_MEMORY_GROWTH=1, but being explicit
