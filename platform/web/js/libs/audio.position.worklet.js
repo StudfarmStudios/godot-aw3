@@ -28,6 +28,15 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
+/**
+ * Number of render quanta between position messages on the fallback path.
+ * A quantum is 128 frames, so a processor renders ~344 of them per second and
+ * every playing sound has a processor of its own. The main thread only ever
+ * samples the position once a frame, so posting every quantum was two orders
+ * of magnitude more traffic than anyone could read.
+ */
+const MESSAGE_INTERVAL_QUANTA = 8;
+
 class GodotPositionReportingProcessor extends AudioWorkletProcessor {
 	static get parameterDescriptors() {
 		return [
@@ -44,18 +53,48 @@ class GodotPositionReportingProcessor extends AudioWorkletProcessor {
 	constructor(...args) {
 		super(...args);
 		this.position = 0;
+		this.quantaSincePost = 0;
+
+		// When the page can share memory, the position goes into a buffer the
+		// main thread reads on demand and no messages are posted at all.
+		const options = args[0] ?? {};
+		const processorOptions = options['processorOptions'] ?? {};
+		const positionBuffer = processorOptions['positionBuffer'] ?? null;
+		/** @type {Int32Array?} */
+		this.frames = positionBuffer != null ? new Int32Array(positionBuffer) : null;
+
+		this.port.onmessage = (event) => {
+			switch (event.data['type']) {
+			case 'clear':
+				this._setPosition(0);
+				break;
+			default:
+				// Do nothing.
+			}
+		};
+	}
+
+	_setPosition(position) {
+		this.position = position;
+		if (this.frames != null) {
+			Atomics.store(this.frames, 0, position);
+		}
 	}
 
 	process(inputs, _outputs, parameters) {
 		if (parameters['reset'][0] > 0) {
-			this.position = 0;
+			this._setPosition(0);
 		}
 
 		if (inputs.length > 0) {
 			const input = inputs[0];
 			if (input.length > 0) {
-				this.position += input[0].length;
-				this.port.postMessage({ type: 'position', data: this.position });
+				this._setPosition(this.position + input[0].length);
+				this.quantaSincePost++;
+				if (this.frames == null && this.quantaSincePost >= MESSAGE_INTERVAL_QUANTA) {
+					this.quantaSincePost = 0;
+					this.port.postMessage({ 'type': 'position', 'data': this.position });
+				}
 			}
 		}
 

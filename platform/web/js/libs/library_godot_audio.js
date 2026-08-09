@@ -121,10 +121,20 @@ class Sample {
 
 	/**
 	 * Gets the audio buffer of the sample.
+	 *
+	 * The buffer is shared with every source playing this sample instead of
+	 * being copied per playback: an `AudioBuffer` is never written to after
+	 * registration, and the Web Audio API explicitly allows a single buffer to
+	 * feed any number of `AudioBufferSourceNode`s. Copying cost a full memcpy
+	 * of the sample (plus a fresh allocation of the same size) every time a
+	 * sound was triggered.
 	 * @returns {AudioBuffer}
 	 */
 	getAudioBuffer() {
-		return this._duplicateAudioBuffer();
+		if (this._audioBuffer == null) {
+			throw new Error('couldn\'t get a null audioBuffer');
+		}
+		return this._audioBuffer;
 	}
 
 	/**
@@ -144,56 +154,48 @@ class Sample {
 		this.setAudioBuffer(null);
 		GodotAudio.Sample.delete(this.id);
 	}
-
-	/**
-	 * Returns a duplicate of the stored audio buffer.
-	 * @returns {AudioBuffer}
-	 */
-	_duplicateAudioBuffer() {
-		if (this._audioBuffer == null) {
-			throw new Error('couldn\'t duplicate a null audioBuffer');
-		}
-		/** @type {Array<Float32Array>} */
-		const channels = new Array(this._audioBuffer.numberOfChannels);
-		for (let i = 0; i < this._audioBuffer.numberOfChannels; i++) {
-			const channel = new Float32Array(this._audioBuffer.getChannelData(i));
-			channels[i] = channel;
-		}
-		const buffer = GodotAudio.ctx.createBuffer(
-			this.numberOfChannels,
-			this._audioBuffer.length,
-			this._audioBuffer.sampleRate
-		);
-		for (let i = 0; i < channels.length; i++) {
-			buffer.copyToChannel(channels[i], i, 0);
-		}
-		return buffer;
-	}
 }
 
 /**
  * Represents a `SampleNode` linked to a `Bus`.
+ *
+ * Instances are pooled. The splitter/gain/merger graph below is the same for
+ * every sample — 8 `AudioNode`s and 12 connections — and building it per
+ * playback was one of the costs of triggering a sound, so a released
+ * `SampleNodeBus` keeps its graph and is handed to the next playback with only
+ * its output reconnected.
  * @class
  */
 class SampleNodeBus {
 	/**
-	 * Creates a new `SampleNodeBus`.
+	 * Returns a `SampleNodeBus` sending to the given bus, reusing a pooled one
+	 * when available.
 	 * @param {Bus} bus The bus related to the new `SampleNodeBus`.
 	 * @returns {SampleNodeBus}
 	 */
 	static create(bus) {
-		return new GodotAudio.SampleNodeBus(bus);
+		const sampleNodeBus = GodotAudio.sampleNodeBusPool.pop()
+			?? new GodotAudio.SampleNodeBus();
+		sampleNodeBus._attach(bus);
+		return sampleNodeBus;
 	}
 
 	/**
-	 * `SampleNodeBus` constructor.
-	 * @param {Bus} bus The bus related to the new `SampleNodeBus`.
+	 * `SampleNodeBus` constructor. The instance is not usable until `_attach`
+	 * has bound it to a `Bus`.
 	 */
-	constructor(bus) {
+	constructor() {
 		const NUMBER_OF_WEB_CHANNELS = 6;
 
 		/** @type {Bus} */
-		this._bus = bus;
+		this._bus = null;
+		/**
+		 * Volumes currently applied to the gain nodes, to skip redundant
+		 * `AudioParam` writes. `NaN` never compares equal, so the first
+		 * `setVolume` of a given instance always goes through.
+		 * @type {Float32Array}
+		 */
+		this._appliedVolume = new Float32Array(GodotAudio.MAX_VOLUME_CHANNELS).fill(NaN);
 
 		/** @type {ChannelSplitterNode} */
 		this._channelSplitter = GodotAudio.ctx.createChannelSplitter(NUMBER_OF_WEB_CHANNELS);
@@ -254,8 +256,16 @@ class SampleNodeBus {
 				GodotAudio.WebChannel.CHANNEL_L,
 				GodotAudio.WebChannel.CHANNEL_LFE
 			);
+	}
 
-		this._channelMerger.connect(this._bus.getInputNode());
+	/**
+	 * Binds this `SampleNodeBus` to a `Bus`, connecting its output to it.
+	 * @param {Bus} bus The bus this `SampleNodeBus` sends to.
+	 * @returns {void}
+	 */
+	_attach(bus) {
+		this._bus = bus;
+		this._channelMerger.connect(bus.getInputNode());
 	}
 
 	/**
@@ -275,46 +285,86 @@ class SampleNodeBus {
 	}
 
 	/**
-	 * Sets the volume for each (split) channel.
-	 * @param {Float32Array} volume Volume array from the engine for each channel.
-	 * @returns {void}
+	 * Reads one engine channel out of a volume vector.
+	 *
+	 * `GodotChannel` addresses more channels than a volume vector holds, so the
+	 * channels past its end are silent. Reading them explicitly matters now
+	 * that vectors for several buses arrive in one array: an unguarded
+	 * `volume[offset + channel]` would pick up the *next* bus's volumes instead
+	 * of running off the end.
+	 * @param {Float32Array} volume Volume array from the engine.
+	 * @param {number} offset Index this bus's volumes start at.
+	 * @param {number} channel `GodotChannel` value to read.
+	 * @returns {number}
 	 */
-	setVolume(volume) {
-		if (volume.length !== GodotAudio.MAX_VOLUME_CHANNELS) {
-			throw new Error(
-				`Volume length isn't "${GodotAudio.MAX_VOLUME_CHANNELS}", is ${volume.length} instead`
-			);
+	static _volumeAt(volume, offset, channel) {
+		if (channel >= GodotAudio.MAX_VOLUME_CHANNELS) {
+			return 0;
 		}
-		this._l.gain.value = volume[GodotAudio.GodotChannel.CHANNEL_L] ?? 0;
-		this._r.gain.value = volume[GodotAudio.GodotChannel.CHANNEL_R] ?? 0;
-		this._sl.gain.value = volume[GodotAudio.GodotChannel.CHANNEL_SL] ?? 0;
-		this._sr.gain.value = volume[GodotAudio.GodotChannel.CHANNEL_SR] ?? 0;
-		this._c.gain.value = volume[GodotAudio.GodotChannel.CHANNEL_C] ?? 0;
-		this._lfe.gain.value = volume[GodotAudio.GodotChannel.CHANNEL_LFE] ?? 0;
+		return volume[offset + channel] ?? 0;
 	}
 
 	/**
-	 * Clears the current `SampleNodeBus` instance.
+	 * Sets the volume for each (split) channel.
+	 *
+	 * Volumes are refreshed every frame for every positional sound, and are
+	 * unchanged most of those frames, so identical values are dropped rather
+	 * than written to the gain nodes again.
+	 * @param {Float32Array} volume Volume array from the engine for each channel.
+	 * @param {number} [offset=0] Index this bus's volumes start at.
+	 * @returns {void}
+	 */
+	setVolume(volume, offset = 0) {
+		if (volume.length - offset < GodotAudio.MAX_VOLUME_CHANNELS) {
+			throw new Error(
+				`Volume length isn't "${GodotAudio.MAX_VOLUME_CHANNELS}", is ${volume.length - offset} instead`
+			);
+		}
+
+		const applied = this._appliedVolume;
+		let changed = false;
+		for (let i = 0; i < GodotAudio.MAX_VOLUME_CHANNELS; i++) {
+			if (applied[i] !== volume[offset + i]) {
+				applied[i] = volume[offset + i];
+				changed = true;
+			}
+		}
+		if (!changed) {
+			return;
+		}
+
+		const GodotChannel = GodotAudio.GodotChannel;
+		this._l.gain.value = GodotAudio.SampleNodeBus._volumeAt(volume, offset, GodotChannel.CHANNEL_L);
+		this._r.gain.value = GodotAudio.SampleNodeBus._volumeAt(volume, offset, GodotChannel.CHANNEL_R);
+		this._sl.gain.value = GodotAudio.SampleNodeBus._volumeAt(volume, offset, GodotChannel.CHANNEL_SL);
+		this._sr.gain.value = GodotAudio.SampleNodeBus._volumeAt(volume, offset, GodotChannel.CHANNEL_SR);
+		this._c.gain.value = GodotAudio.SampleNodeBus._volumeAt(volume, offset, GodotChannel.CHANNEL_C);
+		this._lfe.gain.value = GodotAudio.SampleNodeBus._volumeAt(volume, offset, GodotChannel.CHANNEL_LFE);
+	}
+
+	/**
+	 * Releases the current `SampleNodeBus` instance back to the pool.
+	 *
+	 * Only the connection to the `Bus` is undone: the internal splitter → gain
+	 * → merger edges stay wired up for the next playback. The source feeding
+	 * the splitter has already been disconnected by its `SampleNode`.
 	 * @returns {void}
 	 */
 	clear() {
 		this._bus = null;
-		this._channelSplitter.disconnect();
-		this._channelSplitter = null;
-		this._l.disconnect();
-		this._l = null;
-		this._r.disconnect();
-		this._r = null;
-		this._sl.disconnect();
-		this._sl = null;
-		this._sr.disconnect();
-		this._sr = null;
-		this._c.disconnect();
-		this._c = null;
-		this._lfe.disconnect();
-		this._lfe = null;
 		this._channelMerger.disconnect();
-		this._channelMerger = null;
+		this._appliedVolume.fill(NaN);
+		if (GodotAudio.sampleNodeBusPool.length < GodotAudio.SAMPLE_NODE_BUS_POOL_SIZE) {
+			GodotAudio.sampleNodeBusPool.push(this);
+			return;
+		}
+		this._channelSplitter.disconnect();
+		this._l.disconnect();
+		this._r.disconnect();
+		this._sl.disconnect();
+		this._sr.disconnect();
+		this._c.disconnect();
+		this._lfe.disconnect();
 	}
 }
 
@@ -416,6 +466,8 @@ class SampleNode {
 	 * @param {SampleNodeOptions | undefined} options Optional params.
 	 */
 	constructor(params, options = {}) {
+		const sample = GodotAudio.Sample.getSample(params.streamObjectId);
+
 		/** @type {string} */
 		this.id = params.id;
 		/** @type {string} */
@@ -437,22 +489,35 @@ class SampleNode {
 		/** @type {number} */
 		this._playbackRate = 44100;
 		/** @type {LoopMode} */
-		this.loopMode = options.loopMode ?? this.getSample().loopMode ?? 'disabled';
+		this.loopMode = options.loopMode ?? sample.loopMode ?? 'disabled';
 		/** @type {number} */
 		this._pitchScale = options.pitchScale ?? 1;
+		/**
+		 * Rate of the sample being played, kept here so reporting the playback
+		 * position doesn't have to go back to the `Sample` registry.
+		 * @type {number}
+		 */
+		this._sampleRate = sample.sampleRate;
 		/** @type {number} */
 		this._sourceStartTime = 0;
+		/**
+		 * Playback rate currently written to the source, to skip redundant
+		 * `AudioParam` writes when the engine re-sends an unchanged pitch every
+		 * frame. `NaN` never compares equal, so the first sync always applies.
+		 * @type {number}
+		 */
+		this._appliedPlaybackRate = NaN;
 		/** @type {Map<Bus, SampleNodeBus>} */
 		this._sampleNodeBuses = new Map();
 		/** @type {AudioBufferSourceNode | null} */
 		this._source = GodotAudio.ctx.createBufferSource();
 
 		this._onended = null;
-		/** @type {AudioWorkletNode | null} */
-		this._positionWorklet = null;
+		/** @type {PositionReporter | null} */
+		this._positionReporter = null;
 
 		this.setPlaybackRate(options.playbackRate ?? 44100);
-		this._source.buffer = this.getSample().getAudioBuffer();
+		this._source.buffer = sample.getAudioBuffer();
 
 		this._addEndedListener();
 
@@ -480,6 +545,12 @@ class SampleNode {
 	 * @returns {number}
 	 */
 	getPlaybackPosition() {
+		if (this._positionReporter != null) {
+			const frames = this._positionReporter.getFrames();
+			if (frames != null) {
+				return (frames / this._sampleRate) + this.offset;
+			}
+		}
 		return this._playbackPosition;
 	}
 
@@ -582,19 +653,18 @@ class SampleNode {
 	}
 
 	/**
-	 * Sets the volumes of the `SampleNode` for each buses passed in parameters.
-	 * @param {Array<Bus>} buses
+	 * Sets the volumes of the `SampleNode` for each bus passed in parameters.
+	 *
+	 * `volumes` holds `MAX_VOLUME_CHANNELS` values per bus back to back and is
+	 * read in place: this runs every frame for every positional sound, so it
+	 * allocates nothing.
+	 * @param {ArrayLike<number>} busIndexes Indexes of the buses to update.
 	 * @param {Float32Array} volumes
 	 */
-	setVolumes(buses, volumes) {
-		for (let busIdx = 0; busIdx < buses.length; busIdx++) {
-			const sampleNodeBus = this.getSampleNodeBus(buses[busIdx]);
-			sampleNodeBus.setVolume(
-				volumes.slice(
-					busIdx * GodotAudio.MAX_VOLUME_CHANNELS,
-					(busIdx * GodotAudio.MAX_VOLUME_CHANNELS) + GodotAudio.MAX_VOLUME_CHANNELS
-				)
-			);
+	setVolumes(busIndexes, volumes) {
+		for (let busIdx = 0; busIdx < busIndexes.length; busIdx++) {
+			const sampleNodeBus = this.getSampleNodeBus(GodotAudio.Bus.getBus(busIndexes[busIdx]));
+			sampleNodeBus.setVolume(volumes, busIdx * GodotAudio.MAX_VOLUME_CHANNELS);
 		}
 	}
 
@@ -621,44 +691,39 @@ class SampleNode {
 		if (this.isCanceled) {
 			return;
 		}
-		this._source.connect(this.getPositionWorklet());
+		this._source.connect(this.getPositionReporter().getNode());
 		if (start) {
 			this.start();
 		}
 	}
 
 	/**
-	 * Get a AudioWorkletProcessor
-	 * @returns {AudioWorkletNode}
+	 * Get the `PositionReporter` tapping this node's source, acquiring one from
+	 * the pool if this node doesn't have one yet.
+	 * @returns {PositionReporter}
 	 */
-	getPositionWorklet() {
-		if (this._positionWorklet != null) {
-			return this._positionWorklet;
+	getPositionReporter() {
+		if (this._positionReporter != null) {
+			return this._positionReporter;
 		}
-		if (GodotAudio.audioPositionWorkletNodes.length > 0) {
-			this._positionWorklet = GodotAudio.audioPositionWorkletNodes.pop();
-		} else {
-			this._positionWorklet = new AudioWorkletNode(
-				GodotAudio.ctx,
-				'godot-position-reporting-processor'
-			);
-		}
+		this._positionReporter = GodotAudio.PositionReporter.create();
 		this._playbackPosition = this.offset;
-		this._positionWorklet.port.onmessage = (event) => {
-			switch (event.data['type']) {
-			case 'position':
-				this._playbackPosition = (parseInt(event.data.data, 10) / this.getSample().sampleRate) + this.offset;
-				break;
-			default:
-				// Do nothing.
-			}
-		};
+		if (!this._positionReporter.isShared()) {
+			// No shared memory to read from: fall back to the processor posting
+			// its frame counter over the message port.
+			this._positionReporter.getNode().port.onmessage = (event) => {
+				switch (event.data['type']) {
+				case 'position':
+					this._playbackPosition = (event.data['data'] / this._sampleRate) + this.offset;
+					break;
+				default:
+					// Do nothing.
+				}
+			};
+		}
+		this._positionReporter.acquire();
 
-		const resetParameter = this._positionWorklet.parameters.get('reset');
-		resetParameter.setValueAtTime(1, GodotAudio.ctx.currentTime);
-		resetParameter.setValueAtTime(0, GodotAudio.ctx.currentTime + 1);
-
-		return this._positionWorklet;
+		return this._positionReporter;
 	}
 
 	/**
@@ -685,11 +750,9 @@ class SampleNode {
 		}
 		this._sampleNodeBuses.clear();
 
-		if (this._positionWorklet) {
-			this._positionWorklet.disconnect();
-			this._positionWorklet.port.onmessage = null;
-			GodotAudio.audioPositionWorkletNodes.push(this._positionWorklet);
-			this._positionWorklet = null;
+		if (this._positionReporter != null) {
+			this._positionReporter.release();
+			this._positionReporter = null;
 		}
 
 		GodotAudio.SampleNode.delete(this.id);
@@ -705,10 +768,21 @@ class SampleNode {
 
 	/**
 	 * Syncs the `AudioNode` playback rate based on the `SampleNode` playback rate and pitch scale.
+	 *
+	 * The engine re-sends the pitch of every positional sound every frame, so
+	 * an unchanged rate is not written to the source again.
 	 * @returns {void}
 	 */
 	_syncPlaybackRate() {
-		this._source.playbackRate.value = this.getPlaybackRate() * this.getPitchScale();
+		if (this._source == null) {
+			return;
+		}
+		const playbackRate = this.getPlaybackRate() * this.getPitchScale();
+		if (playbackRate === this._appliedPlaybackRate) {
+			return;
+		}
+		this._appliedPlaybackRate = playbackRate;
+		this._source.playbackRate.value = playbackRate;
 	}
 
 	/**
@@ -722,6 +796,10 @@ class SampleNode {
 		}
 		this._source = GodotAudio.ctx.createBufferSource();
 		this._source.buffer = this.getSample().getAudioBuffer();
+		// The new source starts out at rate 1, so what the old one had applied
+		// says nothing about it.
+		this._appliedPlaybackRate = NaN;
+		this._syncPlaybackRate();
 
 		// Make sure that we connect the new source to the sample node bus.
 		for (const sampleNodeBus of this._sampleNodeBuses.values()) {
@@ -732,9 +810,13 @@ class SampleNode {
 		const pauseTime = this.isPaused
 			? this.pauseTime
 			: 0;
-		if (this._positionWorklet != null) {
-			this._positionWorklet.port.postMessage({ type: 'clear' });
-			this._source.connect(this._positionWorklet);
+		if (this._positionReporter != null) {
+			// Same reporter, same processor: only the count restarts. Holding
+			// its `reset` parameter high again would stall the position for as
+			// long as the hold lasts, on every loop.
+			this._positionReporter.resetPosition();
+			this._playbackPosition = this.offset;
+			this._source.connect(this._positionReporter.getNode());
 		}
 		this._source.start(this.startTime, this.offset + pauseTime);
 		this.isStarted = true;
@@ -793,6 +875,131 @@ class SampleNode {
 			}
 		};
 		this._source.addEventListener('ended', this._onended);
+	}
+}
+
+/**
+ * Tap that reports how far a `SampleNode`'s source has played.
+ *
+ * Pairs the position-reporting `AudioWorkletNode` with the buffer its
+ * processor writes the frame counter into. When the page can share memory the
+ * counter lives in a `SharedArrayBuffer` the main thread reads on demand;
+ * otherwise the processor posts it, which is why it is worth avoiding — a
+ * processor renders ~344 quanta per second, and every playing sound has one.
+ *
+ * Instances are pooled, since `AudioWorkletNode`s are expensive to create.
+ * @class
+ */
+class PositionReporter {
+	/**
+	 * Returns a `PositionReporter`, reusing a pooled one when available.
+	 * @returns {PositionReporter}
+	 */
+	static create() {
+		return GodotAudio.positionReporterPool.pop() ?? new GodotAudio.PositionReporter();
+	}
+
+	/**
+	 * Returns whether the processor can report through shared memory.
+	 * @returns {boolean}
+	 */
+	static canShareMemory() {
+		return typeof SharedArrayBuffer !== 'undefined' && globalThis['crossOriginIsolated'] === true;
+	}
+
+	/**
+	 * `PositionReporter` constructor. Creates the worklet node and, when
+	 * possible, the shared counter it writes to.
+	 */
+	constructor() {
+		/** @type {Int32Array?} */
+		this._frames = null;
+
+		const options = {};
+		if (GodotAudio.PositionReporter.canShareMemory()) {
+			const buffer = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+			this._frames = new Int32Array(buffer);
+			options['processorOptions'] = { 'positionBuffer': buffer };
+		}
+
+		/** @type {AudioWorkletNode} */
+		this._node = new AudioWorkletNode(
+			GodotAudio.ctx,
+			'godot-position-reporting-processor',
+			options
+		);
+	}
+
+	/**
+	 * Returns the worklet node to connect a source to.
+	 * @returns {AudioWorkletNode}
+	 */
+	getNode() {
+		return this._node;
+	}
+
+	/**
+	 * Returns whether the frame counter is read from shared memory rather than
+	 * received over the message port.
+	 * @returns {boolean}
+	 */
+	isShared() {
+		return this._frames != null;
+	}
+
+	/**
+	 * Returns the number of frames the processor has seen, or `null` when it
+	 * reports over the message port instead.
+	 * @returns {number?}
+	 */
+	getFrames() {
+		if (this._frames == null) {
+			return null;
+		}
+		return Atomics.load(this._frames, 0);
+	}
+
+	/**
+	 * Restarts the count from zero, on both sides: the shared counter the main
+	 * thread reads, and the processor's own running total.
+	 * @returns {void}
+	 */
+	resetPosition() {
+		if (this._frames != null) {
+			Atomics.store(this._frames, 0, 0);
+		}
+		this._node.port.postMessage({ 'type': 'clear' });
+	}
+
+	/**
+	 * Prepares the reporter for a new playback.
+	 *
+	 * On top of clearing the count, this holds the processor's `reset`
+	 * parameter high, which zeroes its counter on the audio thread every
+	 * quantum for as long as it is held — the only reset that takes effect
+	 * without waiting on the message port, and what keeps a reporter that was
+	 * just taken from the pool from reporting the position of the sound that
+	 * used it last.
+	 * @returns {void}
+	 */
+	acquire() {
+		this.resetPosition();
+
+		const resetParameter = this._node.parameters.get('reset');
+		resetParameter.setValueAtTime(1, GodotAudio.ctx.currentTime);
+		resetParameter.setValueAtTime(0, GodotAudio.ctx.currentTime + 1);
+	}
+
+	/**
+	 * Disconnects the node and returns it to the pool.
+	 * @returns {void}
+	 */
+	release() {
+		this._node.disconnect();
+		this._node.port.onmessage = null;
+		if (GodotAudio.positionReporterPool.length < GodotAudio.POSITION_REPORTER_POOL_SIZE) {
+			GodotAudio.positionReporterPool.push(this);
+		}
 	}
 }
 
@@ -1131,6 +1338,18 @@ const _GodotAudio = {
 		MAX_VOLUME_CHANNELS: 8,
 
 		/**
+		 * Max number of idle `SampleNodeBus`es kept for reuse. Bounded so a
+		 * one-off burst of sounds doesn't hold on to node graphs forever;
+		 * anything past it is torn down on release as before.
+		 */
+		SAMPLE_NODE_BUS_POOL_SIZE: 64,
+
+		/**
+		 * Max number of idle `PositionReporter`s kept for reuse.
+		 */
+		POSITION_REPORTER_POOL_SIZE: 64,
+
+		/**
 		 * Represents the index of each sound channel relative to the engine.
 		 */
 		GodotChannel: Object.freeze({
@@ -1165,7 +1384,20 @@ const _GodotAudio = {
 		Sample,
 
 		// `SampleNodeBus` class
+		/**
+		 * Idle `SampleNodeBus`es, kept wired up for the next playback.
+		 * @type {Array<SampleNodeBus>}
+		 */
+		sampleNodeBusPool: null,
 		SampleNodeBus,
+
+		// `PositionReporter` class
+		/**
+		 * Idle `PositionReporter`s, kept for the next playback.
+		 * @type {Array<PositionReporter>}
+		 */
+		positionReporterPool: null,
+		PositionReporter,
 
 		// `SampleNode` class
 		/**
@@ -1211,8 +1443,6 @@ const _GodotAudio = {
 
 		/** @type {Promise} */
 		audioPositionWorkletPromise: null,
-		/** @type {Array<AudioWorkletNode>} */
-		audioPositionWorkletNodes: null,
 
 		/**
 		 * Converts linear volume to Db.
@@ -1239,7 +1469,8 @@ const _GodotAudio = {
 			GodotAudio.sampleNodes = new Map();
 			GodotAudio.buses = [];
 			GodotAudio.busSolo = null;
-			GodotAudio.audioPositionWorkletNodes = [];
+			GodotAudio.sampleNodeBusPool = [];
+			GodotAudio.positionReporterPool = [];
 
 			const opts = {};
 			// If mix_rate is 0, let the browser choose.
@@ -1419,7 +1650,7 @@ const _GodotAudio = {
 		/**
 		 * Triggered when a sample node volumes need to be updated.
 		 * @param {string} playbackObjectId Id of the sample playback
-		 * @param {Array<number>} busIndexes Indexes of the buses that need to be updated
+		 * @param {ArrayLike<number>} busIndexes Indexes of the buses that need to be updated
 		 * @param {Float32Array} volumes Array of the volumes
 		 * @returns {void}
 		 */
@@ -1428,8 +1659,7 @@ const _GodotAudio = {
 			if (sampleNode == null) {
 				return;
 			}
-			const buses = busIndexes.map((busIndex) => GodotAudio.Bus.getBus(busIndex));
-			sampleNode.setVolumes(buses, volumes);
+			sampleNode.setVolumes(busIndexes, volumes);
 		},
 
 		/**
@@ -1823,16 +2053,14 @@ const _GodotAudio = {
 		/** @type {string} */
 		const playbackObjectId = GodotRuntime.parseString(playbackObjectIdStrPtr);
 
-		/** @type {Uint32Array} */
+		// Both stay heap views and are read in place: this runs once per
+		// positional sound per frame.
+		/** @type {Int32Array} */
 		const buses = GodotRuntime.heapSub(HEAP32, busesPtr, busesSize);
 		/** @type {Float32Array} */
 		const volumes = GodotRuntime.heapSub(HEAPF32, volumesPtr, volumesSize);
 
-		GodotAudio.sample_set_volumes_linear(
-			playbackObjectId,
-			Array.from(buses),
-			volumes
-		);
+		GodotAudio.sample_set_volumes_linear(playbackObjectId, buses, volumes);
 	},
 
 	godot_audio_sample_bus_set_count__proxy: 'sync',
