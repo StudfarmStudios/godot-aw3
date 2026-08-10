@@ -32,11 +32,21 @@ namespace GodotPlugins.Game
         {
             try
             {
-                DllImportResolver dllImportResolver = new GodotDllImportResolver(godotDllHandle).OnResolveDllImport;
-
                 var coreApiAssembly = typeof(global::Godot.GodotObject).Assembly;
 
-                NativeLibrary.SetDllImportResolver(coreApiAssembly, dllImportResolver);
+                // Not on WebAssembly: there the resolver has nothing to answer
+                // (its job is mapping ""__Internal"" onto the running process,
+                // which Mono cannot do in a statically linked wasm build), and
+                // registering it makes P/Invoke resolution re-entrant — the
+                // runtime calls the resolver, whose own first call resolves its
+                // P/Invoke patch targets, which calls the resolver again, until
+                // the stack is gone. Web P/Invokes come from the generated
+                // pinvoke table, with no managed step in the middle.
+                if (!OperatingSystem.IsBrowser())
+                {
+                    DllImportResolver dllImportResolver = new GodotDllImportResolver(godotDllHandle).OnResolveDllImport;
+                    NativeLibrary.SetDllImportResolver(coreApiAssembly, dllImportResolver);
+                }
 
                 NativeFuncs.Initialize(unmanagedCallbacks, unmanagedCallbacksSize);
 

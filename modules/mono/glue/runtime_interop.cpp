@@ -1570,10 +1570,6 @@ void godotsharp_object_to_string(Object *p_ptr, godot_string *r_str) {
 			String("<" + p_ptr->get_class() + "#" + itos(p_ptr->get_instance_id()) + ">"));
 }
 
-#ifdef __cplusplus
-}
-#endif
-
 int64_t godotsharp_string_size(const String *p_self) {
 	return p_self->size();
 }
@@ -1621,6 +1617,10 @@ int64_t godotsharp_packed_color_array_size(const PackedColorArray *p_self) {
 int64_t godotsharp_array_size(const Array *p_self) {
 	return p_self->size();
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 // The order in this array must match the declaration order of
 // the methods in 'GodotSharp/Core/NativeInterop/NativeFuncs.cs'.

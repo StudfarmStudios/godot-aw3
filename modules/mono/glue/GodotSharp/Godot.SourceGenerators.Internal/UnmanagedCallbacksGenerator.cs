@@ -156,6 +156,33 @@ using Godot.NativeInterop;
             methodCallArguments.Clear();
             methodSourceAfterCall.Clear();
 
+            // On WebAssembly the engine, the Mono runtime and this managed code
+            // are one binary, so a callback can also be reached as a plain
+            // P/Invoke — and that is worth far more than tidiness: Mono's AOT
+            // compiler refuses to compile the marshalling wrapper for a calli
+            // through an unmanaged function pointer ("Skip (disabled)", one per
+            // signature), so every call through _unmanagedCallbacks runs on the
+            // interpreter, while a P/Invoke wrapper is compiled ahead of time
+            // like any other method.
+            //
+            // The module name has to be listed in $(_WasmPInvokeModules) so the
+            // symbol lands in the generated pinvoke table, which is what the
+            // runtime's dl fallback resolves against. It deliberately is not
+            // "__Internal": Mono answers that name with dlopen(self), which a
+            // statically linked wasm build cannot provide.
+            //
+            // OperatingSystem.IsBrowser() is a compile-time constant per
+            // runtime, so exactly one of the two branches survives and no
+            // platform pays for the other.
+            bool canPInvoke = CanCallDirectly(callback);
+            if (canPInvoke)
+            {
+                source.Append($"    [global::System.Runtime.InteropServices.DllImport(\"godot\", EntryPoint = \"{callback.Name}\")]\n");
+                source.Append($"    private static extern {callback.ReturnType.FullQualifiedNameIncludeGlobal()} {callback.Name}__pinvoke(");
+                AppendUnmanagedParameterList(source, callback);
+                source.Append(");\n\n");
+            }
+
             source.Append("    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]\n");
             source.Append($"    {SyntaxFacts.GetText(callback.DeclaredAccessibility)} ");
 
@@ -229,19 +256,35 @@ using Godot.NativeInterop;
             source.Append("    {\n");
 
             source.Append(methodSource);
-            source.Append("        ");
 
-            if (!callback.ReturnsVoid)
+            string indirectCall = $"_unmanagedCallbacks.{callback.Name}({methodCallArguments})";
+            string directCall = $"{callback.Name}__pinvoke({methodCallArguments})";
+
+            if (callback.ReturnsVoid)
             {
-                if (methodSourceAfterCall.Length != 0)
-                    source.Append($"{callback.ReturnType.FullQualifiedNameIncludeGlobal()} ret = ");
+                if (canPInvoke)
+                {
+                    source.Append("        if (global::System.OperatingSystem.IsBrowser())\n");
+                    source.Append($"            {directCall};\n");
+                    source.Append("        else\n");
+                    source.Append($"            {indirectCall};\n");
+                }
                 else
-                    source.Append("return ");
+                {
+                    source.Append($"        {indirectCall};\n");
+                }
             }
-
-            source.Append($"_unmanagedCallbacks.{callback.Name}(");
-            source.Append(methodCallArguments);
-            source.Append(");\n");
+            else
+            {
+                source.Append("        ");
+                source.Append(methodSourceAfterCall.Length != 0
+                    ? $"{callback.ReturnType.FullQualifiedNameIncludeGlobal()} ret = "
+                    : "return ");
+                source.Append(canPInvoke
+                    ? $"global::System.OperatingSystem.IsBrowser() ? {directCall} : {indirectCall}"
+                    : indirectCall);
+                source.Append(";\n");
+            }
 
             if (methodSourceAfterCall.Length != 0)
             {
@@ -384,6 +427,70 @@ using Godot.NativeInterop;
 
         context.AddSource($"{symbol.FullQualifiedNameOmitGlobal().SanitizeQualifiedNameForUniqueHint()}.generated",
             SourceText.From(source.ToString(), Encoding.UTF8));
+    }
+
+    /// <summary>
+    /// Can this callback also be declared as a plain P/Invoke? Only if every
+    /// parameter and the return type reach native code as-is: anything the
+    /// interop marshaller would have to convert (bool, char, string, a class)
+    /// would not match the calling convention the callbacks struct uses, so
+    /// those keep the function-pointer path on every platform.
+    /// </summary>
+    private static bool CanCallDirectly(IMethodSymbol callback)
+    {
+        if (!callback.ReturnsVoid && !IsDirectlyPassable(callback.ReturnType))
+            return false;
+
+        // Returning one of the interop structs by value is a shape the wasm
+        // SDK's P/Invoke table generator rejects ("WASM0001: Unsupported
+        // parameter type"), and a rejected entry is worse than no P/Invoke at
+        // all: the symbol is missing from the table, the first call throws, and
+        // logging that exception calls back in here and recurses until the
+        // stack is gone. Leave those on the function-pointer path.
+        if (!callback.ReturnsVoid && IsGodotInteropStruct(callback.ReturnType))
+            return false;
+
+        foreach (var parameter in callback.Parameters)
+        {
+            // By-ref parameters we cannot turn into a pointer are passed by-ref
+            // and pinned, which is marshalling again.
+            if (IsByRefParameter(parameter) &&
+                !IsGodotInteropStruct(parameter.Type) && !parameter.Type.IsValueType)
+                return false;
+
+            if (!IsDirectlyPassable(parameter.Type))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsDirectlyPassable(ITypeSymbol type) =>
+        type.IsUnmanagedType &&
+        type.SpecialType is not (SpecialType.System_Boolean or SpecialType.System_Char);
+
+    /// <summary>
+    /// The parameter list of the unmanaged signature — the same shape
+    /// <see cref="GenerateUnmanagedCallbacksStruct"/> gives the
+    /// <c>delegate* unmanaged</c> field, so both calls take the same arguments.
+    /// </summary>
+    private static void AppendUnmanagedParameterList(StringBuilder source, IMethodSymbol callback)
+    {
+        for (int i = 0; i < callback.Parameters.Length; i++)
+        {
+            var parameter = callback.Parameters[i];
+
+            if (IsByRefParameter(parameter))
+                AppendPointerType(source, parameter.Type);
+            else
+                source.Append(parameter.Type.FullQualifiedNameIncludeGlobal());
+
+            source.Append(' ');
+            source.Append(parameter.Name);
+
+            if (i < callback.Parameters.Length - 1)
+                source.Append(", ");
+        }
     }
 
     private static bool IsGodotInteropStruct(ITypeSymbol type) =>
