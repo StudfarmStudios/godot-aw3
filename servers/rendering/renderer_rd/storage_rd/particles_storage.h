@@ -201,6 +201,13 @@ private:
 		RID particle_instance_buffer;
 		RID frame_params_buffer;
 
+		// Which rasterizer frame last uploaded the FULL frame params (the 6 KB
+		// collider/attractor arrays included). Later sub-steps of the same
+		// frame only rewrite the scalar header — the arrays cannot change
+		// between sub-steps, and a saturated brawl re-uploading them per
+		// sub-step was megabytes of staging traffic per rendered frame.
+		uint64_t frame_params_full_upload_frame = UINT64_MAX;
+
 		uint32_t userdata_count = 0;
 
 		RID particles_material_uniform_set;
@@ -346,6 +353,13 @@ private:
 		LocalVector<float> pose_update_buffer;
 
 	} particles_shader;
+
+	// _particles_process split in two, so update_particles() can phase-separate
+	// a whole round of systems: every system's buffer updates first (one
+	// transfer batch), then every system's dispatch (one compute batch) —
+	// instead of a transfer/compute alternation per system per sub-step.
+	void _particles_process_prepare(Particles *p_particles, double p_delta, ParticlesShader::PushConstant &r_push_constant, int &r_process_amount);
+	void _particles_process_dispatch(Particles *p_particles, const ParticlesShader::PushConstant &p_push_constant, int p_process_amount);
 
 	SelfList<Particles>::List particle_update_list;
 

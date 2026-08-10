@@ -30,6 +30,11 @@
 
 #include "particles_storage.h"
 
+#include "core/os/os.h"
+
+// AW_PARTICLE_STATS counters (render thread only).
+static uint64_t full_uploads_count = 0;
+static uint64_t partial_uploads_count = 0;
 #include "servers/rendering/renderer_rd/effects/sort_effects.h"
 #include "servers/rendering/renderer_rd/renderer_compositor_rd.h"
 #include "servers/rendering/renderer_rd/storage_rd/texture_storage.h"
@@ -783,8 +788,14 @@ void ParticlesStorage::particles_set_canvas_sdf_collision(RID p_particles, bool 
 }
 
 void ParticlesStorage::_particles_process(Particles *p_particles, double p_delta) {
+	ParticlesShader::PushConstant push_constant;
+	int process_amount = 0;
+	_particles_process_prepare(p_particles, p_delta, push_constant, process_amount);
+	_particles_process_dispatch(p_particles, push_constant, process_amount);
+}
+
+void ParticlesStorage::_particles_process_prepare(Particles *p_particles, double p_delta, ParticlesShader::PushConstant &r_push_constant, int &r_process_amount) {
 	TextureStorage *texture_storage = TextureStorage::get_singleton();
-	MaterialStorage *material_storage = MaterialStorage::get_singleton();
 
 	if (p_particles->particles_material_uniform_set.is_null() || !RD::get_singleton()->uniform_set_is_valid(p_particles->particles_material_uniform_set)) {
 		thread_local LocalVector<RD::Uniform> uniforms;
@@ -1132,7 +1143,7 @@ void ParticlesStorage::_particles_process(Particles *p_particles, double p_delta
 		}
 	}
 
-	ParticlesShader::PushConstant push_constant;
+	ParticlesShader::PushConstant &push_constant = r_push_constant;
 
 	int process_amount = p_particles->amount;
 
@@ -1192,7 +1203,36 @@ void ParticlesStorage::_particles_process(Particles *p_particles, double p_delta
 		p_particles->trail_params[0] = p_particles->frame_history[0];
 	}
 
-	RD::get_singleton()->buffer_update(p_particles->frame_params_buffer, 0, sizeof(ParticlesFrameParams) * p_particles->trail_params.size(), p_particles->trail_params.ptr());
+	// The collider/attractor arrays are ~6 KB of the ~6.3 KB params struct and
+	// cannot change between one frame's sub-steps — only the scalar header
+	// (phase, delta, cycle, frame counter...) does. Upload the full struct once
+	// per system per frame, and just the header for the further sub-steps: the
+	// shader reads the exact same values it always did, and the measured
+	// ~11 MB/frame of tiny staging writes in the saturated brawl collapses by
+	// ~40x. Systems with live colliders or attractors (and trail systems,
+	// which index whole entries per pose) keep full uploads.
+	uint64_t frames_drawn = RSG::rasterizer->get_frame_number();
+	bool full_upload = p_particles->frame_params_full_upload_frame != frames_drawn
+			|| p_particles->trail_params.size() > 1
+			|| frame_params.collider_count > 0 || frame_params.attractor_count > 0;
+	if (full_upload) {
+		RD::get_singleton()->buffer_update(p_particles->frame_params_buffer, 0, sizeof(ParticlesFrameParams) * p_particles->trail_params.size(), p_particles->trail_params.ptr());
+		p_particles->frame_params_full_upload_frame = frames_drawn;
+		full_uploads_count++;
+	} else {
+		RD::get_singleton()->buffer_update(p_particles->frame_params_buffer, 0, offsetof(ParticlesFrameParams, attractors), p_particles->trail_params.ptr());
+		partial_uploads_count++;
+	}
+
+	r_process_amount = process_amount;
+}
+
+void ParticlesStorage::_particles_process_dispatch(Particles *p_particles, const ParticlesShader::PushConstant &p_push_constant, int p_process_amount) {
+	MaterialStorage *material_storage = MaterialStorage::get_singleton();
+
+	// Local mutable copy: the trail path re-pushes with trail_pass toggled.
+	ParticlesShader::PushConstant push_constant = p_push_constant;
+	int process_amount = p_process_amount;
 
 	ParticleProcessMaterialData *m = static_cast<ParticleProcessMaterialData *>(material_storage->material_get_data(p_particles->process_material, MaterialStorage::SHADER_TYPE_PARTICLES));
 	if (!m) {
@@ -1447,6 +1487,27 @@ void ParticlesStorage::update_particles() {
 	RENDER_TIMESTAMP("Update GPUParticles");
 	uint32_t frame = RSG::rasterizer->get_frame_number();
 	bool uses_motion_vectors = RSG::viewport->get_num_viewports_with_motion_vectors() > 0 || (RendererCompositorStorage::get_singleton()->get_num_compositor_effects_with_motion_vectors() > 0);
+
+	// Deferred main-loop sub-steps, processed in interleaved rounds after the
+	// per-system setup below. Running each system's whole sub-step chain back
+	// to back hands the graph a read-after-write hazard between every pair of
+	// consecutive commands, so a frame with hundreds of live systems becomes
+	// thousands of serialized micro-dispatches — and on MoltenVK a Metal
+	// encoder break for each. Interleaving keeps every system's own sequence
+	// intact while making adjacent commands independent, which lets the graph
+	// merge their barriers. Measured on the one-screen brawl (24 bots), where
+	// "Update GPUParticles" was 86-94% of the GPU frame.
+	struct PendingParticles {
+		Particles *particles = nullptr;
+		float frame_time = 0.0f;
+		int32_t steps = 0;
+		int fixed_fps = 0;
+		ParticlesShader::PushConstant push_constant;
+		int process_amount = 0;
+	};
+	thread_local LocalVector<PendingParticles> pending;
+	pending.clear();
+
 	while (particle_update_list.first()) {
 		//use transform feedback to process particles
 
@@ -1603,7 +1664,12 @@ void ParticlesStorage::update_particles() {
 		particles->request_process_time = 0.0;
 		particles->request_process_time_residual = 0.0;
 
+		// The exact arithmetic of the fixed-timestep loop, WITHOUT the
+		// _particles_process calls — those run in the interleaved rounds below.
 		float time_scale = MAX(particles->speed_scale, 0.0);
+		PendingParticles pp;
+		pp.particles = particles;
+		pp.fixed_fps = fixed_fps;
 		if (fixed_fps > 0) {
 			float frame_time = 1.0 / fixed_fps;
 			float delta = (float)RendererCompositorRD::get_singleton()->get_frame_delta_time();
@@ -1614,15 +1680,107 @@ void ParticlesStorage::update_particles() {
 			}
 			todo = particles->frame_remainder + delta * time_scale;
 
-			while (todo >= frame_time || particles->clear) {
-				_particles_process(particles, frame_time);
+			bool needs_clear = particles->clear;
+			while (todo >= frame_time || needs_clear) {
+				pp.steps++;
 				todo -= frame_time;
+				needs_clear = false;
 			}
 
 			particles->frame_remainder = todo;
+			pp.frame_time = frame_time;
+
+			// Sub-step consolidation. A system authored at 120 Hz on a 15 fps
+			// frame wants 8 dispatches, and the dispatch — not the math — is
+			// what a frame full of live systems dies of: measured on the
+			// one-screen brawl, ~3000 sub-step dispatches were ~46 ms of a
+			// 66 ms frame while capping every system's thread count moved
+			// nothing. The simulation supports arbitrary deltas by
+			// construction (fixed_fps == 0 passes the raw frame delta), so
+			// excess steps fold into fewer, larger ones covering the exact
+			// same simulated time. At 60 fps a 120 Hz system takes 2 steps
+			// and the clamp never engages — fidelity is untouched anywhere
+			// the frame rate is healthy, and where it engages the
+			// alternative was the slideshow itself. Trail systems index
+			// their pose history per step, so they keep their full count.
+			// Default 2: the highest authored fixed_fps in the game is 120, which
+			// takes exactly 2 natural steps at 60 fps — so this cap is BIT-EXACT
+			// wherever the frame rate is healthy and only coarsens dt when the
+			// frame has already collapsed. Measured K-ladder at 24 bots:
+			// unclamped 66.5 ms (1790 substeps), K=4 63.9, K=2 50.9, K=1 33.9 —
+			// the cost tracks sub-step chain depth, not threads or bytes.
+			// AW_PARTICLE_MAX_SUBSTEPS overrides (0 = unclamped).
+			static const int32_t max_steps = OS::get_singleton()->get_environment("AW_PARTICLE_MAX_SUBSTEPS").is_valid_int()
+					? int32_t(OS::get_singleton()->get_environment("AW_PARTICLE_MAX_SUBSTEPS").to_int())
+					: 2;
+			if (max_steps > 0 && pp.steps > max_steps && !(particles->trails_enabled && particles->trail_bind_poses.size() > 1)) {
+				pp.frame_time = pp.frame_time * float(pp.steps) / float(max_steps);
+				pp.steps = max_steps;
+			}
 		} else {
-			_particles_process(particles, RendererCompositorRD::get_singleton()->get_frame_delta_time() * time_scale);
+			pp.frame_time = RendererCompositorRD::get_singleton()->get_frame_delta_time() * time_scale;
+			pp.steps = 1;
 		}
+		pending.push_back(pp);
+	}
+
+	// AW_PARTICLE_STATS=1: print how much work the frame actually schedules,
+	// once a second. The bisect ladder kept producing arms whose effect was
+	// invisible from the outside (a hide that never took hold, a clamp that
+	// may not engage) — this is the ground truth the guessing lacked.
+	static bool stats_enabled = OS::get_singleton()->get_environment("AW_PARTICLE_STATS") == "1";
+	if (stats_enabled) {
+		static uint64_t last_report_usec = 0;
+		static uint64_t acc_frames = 0, acc_systems = 0, acc_steps = 0;
+		acc_frames++;
+		acc_systems += pending.size();
+		for (const PendingParticles &pp : pending) {
+			acc_steps += MAX(pp.steps, 0);
+		}
+		uint64_t now_usec = OS::get_singleton()->get_ticks_usec();
+		if (now_usec - last_report_usec > 1000000) {
+			print_line(vformat("[PSTAT] systems/frame=%.0f substeps/frame=%.0f full_up/frame=%.0f partial_up/frame=%.0f (over %d frames)",
+					double(acc_systems) / MAX(uint64_t(1), acc_frames),
+					double(acc_steps) / MAX(uint64_t(1), acc_frames),
+					double(full_uploads_count) / MAX(uint64_t(1), acc_frames),
+					double(partial_uploads_count) / MAX(uint64_t(1), acc_frames), int(acc_frames)));
+			last_report_usec = now_usec;
+			acc_frames = acc_systems = acc_steps = 0;
+			full_uploads_count = partial_uploads_count = 0;
+		}
+	}
+
+	// Interleaved rounds, phase-separated: for each round, first every pending
+	// system's CPU work and buffer updates (one adjacent batch of transfers),
+	// then every system's dispatch (one adjacent batch of compute). Each system
+	// still receives its exact sequence of deltas in order — what changes is
+	// that the command stream stops alternating transfer/compute per system,
+	// which is what forced an encoder break per sub-step on MoltenVK.
+	{
+		bool any_pending = true;
+		while (any_pending) {
+			any_pending = false;
+			for (PendingParticles &pp : pending) {
+				if (pp.steps > 0) {
+					_particles_process_prepare(pp.particles, pp.frame_time, pp.push_constant, pp.process_amount);
+				}
+			}
+			for (PendingParticles &pp : pending) {
+				if (pp.steps > 0) {
+					_particles_process_dispatch(pp.particles, pp.push_constant, pp.process_amount);
+					pp.steps--;
+					any_pending = any_pending || pp.steps > 0;
+				}
+			}
+		}
+	}
+
+	// Per-system tail: motion-vector bookkeeping and the copy to the instance
+	// buffer. These are mutually independent too, so they cluster the same way.
+	for (PendingParticles &pp : pending) {
+		Particles *particles = pp.particles;
+		int fixed_fps = pp.fixed_fps;
+
 		// Ensure that memory is initialized (the code above should ensure that _particles_process is always called at least once upon clearing).
 		DEV_ASSERT(!particles->clear);
 
