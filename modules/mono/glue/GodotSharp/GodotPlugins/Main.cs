@@ -95,10 +95,21 @@ namespace GodotPlugins
             {
                 _editorHint = editorHint.ToBool();
 
-                _dllImportResolver = new GodotDllImportResolver(godotDllHandle).OnResolveDllImport;
+                // No resolver on WebAssembly, and not merely because it has
+                // nothing to answer there (its whole job is mapping "__Internal"
+                // to the running process, which Mono cannot do in a statically
+                // linked wasm build anyway). Registering it makes P/Invoke
+                // resolution re-entrant: the runtime calls the resolver, whose
+                // own first call has to resolve its own P/Invoke patch targets,
+                // which calls the resolver again — recursion until the stack is
+                // gone. Web P/Invokes resolve from the generated pinvoke table
+                // instead, with no managed step in the middle.
+                if (!OperatingSystem.IsBrowser())
+                    _dllImportResolver = new GodotDllImportResolver(godotDllHandle).OnResolveDllImport;
 
                 SharedAssemblies.Add(CoreApiAssembly.GetName());
-                NativeLibrary.SetDllImportResolver(CoreApiAssembly, _dllImportResolver);
+                if (_dllImportResolver != null)
+                    NativeLibrary.SetDllImportResolver(CoreApiAssembly, _dllImportResolver);
 
                 AlcReloadCfg.Configure(alcReloadEnabled: _editorHint);
                 NativeFuncs.Initialize(unmanagedCallbacks, unmanagedCallbacksSize);
@@ -107,7 +118,8 @@ namespace GodotPlugins
                 {
                     _editorApiAssembly = Assembly.Load("GodotSharpEditor");
                     SharedAssemblies.Add(_editorApiAssembly.GetName());
-                    NativeLibrary.SetDllImportResolver(_editorApiAssembly, _dllImportResolver);
+                    if (_dllImportResolver != null)
+                        NativeLibrary.SetDllImportResolver(_editorApiAssembly, _dllImportResolver);
                 }
 
                 *pluginsCallbacks = new()
@@ -175,7 +187,8 @@ namespace GodotPlugins
 
                 var (assembly, _) = LoadPlugin(assemblyPath, isCollectible: false);
 
-                NativeLibrary.SetDllImportResolver(assembly, _dllImportResolver!);
+                if (_dllImportResolver != null)
+                    NativeLibrary.SetDllImportResolver(assembly, _dllImportResolver);
 
                 var method = assembly.GetType("GodotTools.GodotSharpEditor")?
                     .GetMethod("InternalCreateInstance",

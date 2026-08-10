@@ -79,7 +79,11 @@ namespace Godot.NativeInterop
         internal static partial void godotsharp_internal_refcounted_disposed(IntPtr ptr, IntPtr gcHandleToFree,
             godot_bool isFinalizer);
 
-        internal static partial Error godotsharp_internal_signal_awaiter_connect(IntPtr source,
+        // Returns int32: the native function returns int32_t, while `Error`'s
+        // underlying type is long. Marshalling it as Error reads 64 bits of a
+        // 32-bit return - harmless by luck through a function pointer, a hard
+        // "function signature mismatch" trap as a wasm P/Invoke.
+        internal static partial int godotsharp_internal_signal_awaiter_connect(IntPtr source,
             in godot_string_name signal,
             IntPtr target, IntPtr awaiterHandlePtr);
 
@@ -425,7 +429,11 @@ namespace Godot.NativeInterop
 
         public static partial void godotsharp_array_remove_at(ref godot_array p_self, int p_index);
 
-        public static partial Error godotsharp_array_resize(ref godot_array p_self, int p_new_size);
+        // Returns int32: the native function returns int32_t, while `Error`'s
+        // underlying type is long. Marshalling it as Error reads 64 bits of a
+        // 32-bit return - harmless by luck through a function pointer, a hard
+        // "function signature mismatch" trap as a wasm P/Invoke.
+        public static partial int godotsharp_array_resize(ref godot_array p_self, int p_new_size);
 
         public static partial void godotsharp_array_reverse(ref godot_array p_self);
 
