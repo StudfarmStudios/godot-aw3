@@ -944,6 +944,15 @@ RenderingDeviceDriverWebGPU::~RenderingDeviceDriverWebGPU() {
 		wgpuBindGroupLayoutRelease(push_constant_bind_group_layout);
 		push_constant_bind_group_layout = nullptr;
 	}
+	if (upload_ring) {
+		wgpuBufferDestroy(upload_ring);
+		wgpuBufferRelease(upload_ring);
+		upload_ring = nullptr;
+	}
+	if (upload_ring_cpu) {
+		memfree(upload_ring_cpu);
+		upload_ring_cpu = nullptr;
+	}
 	if (push_constant_ring_buffer) {
 		wgpuBufferRelease(push_constant_ring_buffer);
 		push_constant_ring_buffer = nullptr;
@@ -3567,6 +3576,11 @@ Error RenderingDeviceDriverWebGPU::command_queue_execute_and_present(CommandQueu
 
 		uint64_t _submit_t0 = OS::get_singleton()->get_ticks_usec();
 		wgpuQueueSubmit(queue, wgpu_cmd_buffers.size(), wgpu_cmd_buffers.ptr());
+		// The frame's copies are now queued behind this submit; anything the
+		// next frame writes into the ring lands after them in queue order,
+		// so the cursor can wrap to zero without fencing.
+		upload_ring_used = 0;
+		upload_ring_flushed = 0;
 		uint64_t _submit_dt = OS::get_singleton()->get_ticks_usec() - _submit_t0;
 		if (_submit_dt > 20000) {
 			print_line(vformat("[SUBMITTIME] %.1fms cmds=%d", _submit_dt / 1000.0, (int)wgpu_cmd_buffers.size()));
@@ -6528,37 +6542,32 @@ void RenderingDeviceDriverWebGPU::_stage_pending_upload(WGBuffer *p_buf, uint64_
 	if (p_buf->pending_upload_spans.is_empty()) {
 		_staging_upload_queue.push_back(p_buf);
 	}
-	// Merge with an existing span when adjacent or overlapping (tolerate small
-	// gaps — uploading a few dead bytes is cheaper than another writeBuffer).
-	const uint64_t GAP = 4096;
+	// One covering span per buffer. A 4KB gap tolerance still left ~1,000
+	// writeBuffer calls per dense frame (71.8% of the main thread) — each call
+	// costs far more than the dead bytes between spans. RD's staging ring
+	// allocates monotonically within a frame, so min/max over the touched
+	// region tracks real usage closely; untouched holes re-upload bytes the
+	// GPU buffer already holds, which is harmless.
 	uint64_t start = p_offset;
 	uint64_t end = p_offset + p_size;
-	for (Pair<uint64_t, uint64_t> &span : p_buf->pending_upload_spans) {
-		if (start <= span.second + GAP && end + GAP >= span.first) {
-			span.first = MIN(span.first, start);
-			span.second = MAX(span.second, end);
-			return;
-		}
-	}
-	// The staging ring allocates sequentially, so span counts stay tiny; if a
-	// pathological pattern ever grows the list, collapse to one covering span
-	// rather than scanning long lists per copy.
-	if (p_buf->pending_upload_spans.size() >= 32) {
-		Pair<uint64_t, uint64_t> all = p_buf->pending_upload_spans[0];
-		for (const Pair<uint64_t, uint64_t> &span : p_buf->pending_upload_spans) {
-			all.first = MIN(all.first, span.first);
-			all.second = MAX(all.second, span.second);
-		}
-		all.first = MIN(all.first, start);
-		all.second = MAX(all.second, end);
-		p_buf->pending_upload_spans.clear();
-		p_buf->pending_upload_spans.push_back(all);
+	if (p_buf->pending_upload_spans.is_empty()) {
+		p_buf->pending_upload_spans.push_back(Pair<uint64_t, uint64_t>(start, end));
 		return;
 	}
-	p_buf->pending_upload_spans.push_back(Pair<uint64_t, uint64_t>(start, end));
+	Pair<uint64_t, uint64_t> &span = p_buf->pending_upload_spans[0];
+	span.first = MIN(span.first, start);
+	span.second = MAX(span.second, end);
 }
 
 void RenderingDeviceDriverWebGPU::_flush_pending_staging_uploads() {
+	// Ring first: one writeBuffer covering everything staged since the last
+	// flush, whichever destinations it feeds.
+	if (upload_ring_used > upload_ring_flushed) {
+		wgpuQueueWriteBuffer(queue, upload_ring, upload_ring_flushed,
+				upload_ring_cpu + upload_ring_flushed, upload_ring_used - upload_ring_flushed);
+		upload_ring_flushed = upload_ring_used;
+	}
+	// Overflow fallback: buffers that didn't fit the ring this frame.
 	for (WGBuffer *buf : _staging_upload_queue) {
 		for (const Pair<uint64_t, uint64_t> &span : buf->pending_upload_spans) {
 			uint64_t start = span.first & ~3ULL;
@@ -6568,6 +6577,24 @@ void RenderingDeviceDriverWebGPU::_flush_pending_staging_uploads() {
 		buf->pending_upload_spans.clear();
 	}
 	_staging_upload_queue.clear();
+}
+
+bool RenderingDeviceDriverWebGPU::_upload_ring_ensure() {
+	if (upload_ring) {
+		return true;
+	}
+	// Sized for one dense frame's staged bytes (~21 MB measured at 24 bots)
+	// with headroom; a frame that exceeds it spills to the span fallback.
+	upload_ring_size = 48ULL * 1024 * 1024;
+	WGPUBufferDescriptor desc = {};
+	desc.size = upload_ring_size;
+	desc.usage = WGPUBufferUsage_CopySrc | WGPUBufferUsage_CopyDst;
+	upload_ring = wgpuDeviceCreateBuffer(device, &desc);
+	if (!upload_ring) {
+		return false;
+	}
+	upload_ring_cpu = (uint8_t *)memalloc(upload_ring_size);
+	return true;
 }
 
 void RenderingDeviceDriverWebGPU::command_copy_buffer(CommandBufferID p_cmd_buffer, BufferID p_src_buffer, BufferID p_dst_buffer, VectorView<BufferCopyRegion> p_regions) {
@@ -6586,27 +6613,39 @@ void RenderingDeviceDriverWebGPU::command_copy_buffer(CommandBufferID p_cmd_buff
 	// all take effect before any draw, so every canvas in the frame would see
 	// the last-written value rather than the per-canvas value.  Using the
 	// encoder copy preserves the staging→dst copy order relative to draws.
+	cmd->end_active_encoder();
+
 	if (src->shadow_map) {
-		// Record the spans instead of one queue.writeBuffer per region — RD
-		// issues thousands of small staging copies per frame in effect-heavy
-		// scenes, and each immediate writeBuffer pays a validated JS-boundary
-		// call (measured at 60% of the main thread). The merged spans are
-		// written by _flush_pending_staging_uploads() before submit; queue
-		// ordering still lands them ahead of the encoder copies below. The
-		// staging ring never rewrites a region within a frame, so the bytes
-		// at flush time equal the bytes at record time.
+		// CPU-staged source: route the bytes through the scratch upload ring.
+		// Every region memcpys into upload_ring_cpu at a bump offset and the
+		// encoder copy reads ring→dest; the flush before submit uploads the
+		// ring's used range in ONE writeBuffer. Per-region immediate writes
+		// measured 60-72% of the main thread in dense fights; per-buffer
+		// covering spans halved the calls but doubled the bytes — the ring
+		// costs exact bytes and a single call. Queue ordering keeps the
+		// upload ahead of the copies, and the cursor only resets after the
+		// end-of-frame submit, so in-flight reuse cannot occur.
+		const bool ring_ok = _upload_ring_ensure();
 		for (uint32_t i = 0; i < p_regions.size(); i++) {
 			const BufferCopyRegion &region = p_regions[i];
 			uint64_t size = (region.size + 3) & ~3ULL;
-			_stage_pending_upload(src, region.src_offset, size);
+			if (ring_ok && upload_ring_used + size <= upload_ring_size) {
+				uint64_t r = upload_ring_used;
+				memcpy(upload_ring_cpu + r, src->shadow_map + region.src_offset, size);
+				upload_ring_used += size;
+				wgpuCommandEncoderCopyBufferToBuffer(cmd->encoder, upload_ring, r, dst->handle, region.dst_offset, size);
+			} else {
+				// Ring full (or unavailable): legacy span path via the
+				// source staging buffer's own GPU handle.
+				_stage_pending_upload(src, region.src_offset, size);
+				wgpuCommandEncoderCopyBufferToBuffer(cmd->encoder, src->handle, region.src_offset, dst->handle, region.dst_offset, size);
+			}
 		}
-		// The regions are queued for flush. Clear map_dirty so the subsequent
+		// Staged one way or the other. Clear map_dirty so the subsequent
 		// buffer_unmap() doesn't redundantly flush the entire buffer.
 		src->map_dirty = false;
-		// Fall through to encoder copy below.
+		return;
 	}
-
-	cmd->end_active_encoder();
 
 	for (uint32_t i = 0; i < p_regions.size(); i++) {
 		const BufferCopyRegion &region = p_regions[i];

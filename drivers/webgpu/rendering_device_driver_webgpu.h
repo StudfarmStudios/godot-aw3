@@ -322,6 +322,20 @@ public:
 	void _stage_pending_upload(WGBuffer *p_buf, uint64_t p_offset, uint64_t p_size);
 	void _flush_pending_staging_uploads();
 
+	// Scratch upload ring: command_copy_buffer copies each staged region's
+	// bytes into upload_ring_cpu at a bump-allocated offset and records the
+	// encoder copy as ring→dest, so the flush is ONE writeBuffer of exactly
+	// the used range instead of per-span writes (spans cost calls, covering
+	// spans cost bytes; the ring costs neither). Cursor resets after the
+	// end-of-frame submit — queue ordering makes reuse safe without fences.
+	// Overflow falls back to the per-span path above.
+	WGPUBuffer upload_ring = nullptr;
+	uint8_t *upload_ring_cpu = nullptr;
+	uint64_t upload_ring_size = 0;
+	uint64_t upload_ring_used = 0;
+	uint64_t upload_ring_flushed = 0;
+	bool _upload_ring_ensure();
+
 	// -----------------------------------------------------------------------
 	// TEXTURES
 	// -----------------------------------------------------------------------
