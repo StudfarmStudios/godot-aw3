@@ -1409,7 +1409,26 @@ void ParticlesStorage::_particles_update_buffers(Particles *particles) {
 
 	if (userdata_count != particles->userdata_count) {
 		// Mismatch userdata, re-create all buffers.
+		//
+		// But carry the manual-emission queue across: its layout
+		// (ParticleEmissionBuffer::Data) does not depend on userdata_count,
+		// and this path runs on the system's FIRST processed frame whenever
+		// the process material's shader finished compiling after the system
+		// was created — which is exactly when a burst fed in through
+		// particles_emit() is still waiting in the queue. Freeing it here
+		// silently dropped every emission made before the first frame (a
+		// one-shot burst into a fresh system lost all of it; continuous
+		// feeders lost their first frame).
+		Vector<uint8_t> queued_emissions;
+		if (particles->emission_buffer != nullptr && particles->emission_buffer->particle_count > 0) {
+			queued_emissions = particles->emission_buffer_data;
+		}
 		_particles_free_data(particles);
+		if (queued_emissions.size()) {
+			particles->emission_buffer_data = queued_emissions;
+			particles->emission_buffer = reinterpret_cast<ParticleEmissionBuffer *>(particles->emission_buffer_data.ptrw());
+			particles->emission_storage_buffer = RD::get_singleton()->storage_buffer_create(particles->emission_buffer_data.size(), particles->emission_buffer_data);
+		}
 	} else if (enable_motion_vectors) {
 		// Only motion vectors are required, release the transforms buffer and uniform set.
 		if (particles->particle_instance_buffer.is_valid()) {
