@@ -61,6 +61,22 @@ uint64_t RenderingDeviceDriver::api_trait_get(ApiTrait p_trait) {
 			// path below - this is queried per frame, so the miss showed up as ~11k
 			// "Method/function failed" lines in a 100-second desktop run.
 			return false;
+		// The traits below are WebGPU bridge-overhead optimizations: each is
+		// defined as "if non-zero, take the WebGPU path", so every other driver
+		// wants 0. Answering here rather than falling through to the error path
+		// matters because they are queried per frame (some per draw) - on a
+		// Vulkan device they produced a solid wall of "Method/function failed"
+		// lines, and on a device that logs to slow storage the ERR_PRINT itself
+		// costs more than the work being decided.
+		case API_TRAIT_TEXTURE_GET_DATA_VIA_DRIVER:
+		case API_TRAIT_TEXTURE_INITIALIZE_DIRECT_WRITE:
+		case API_TRAIT_BUFFER_CREATE_MAPPED_AT_CREATION:
+		case API_TRAIT_STAGING_BUFFER_MAX_SIZE_MB:
+		case API_TRAIT_SKELETON_BUFFER_DIRECT_WRITE:
+		case API_TRAIT_FORCE_OMNI_DUAL_PARABOLOID:
+		case API_TRAIT_BATCH_INSTANCE_DRAWS:
+		case API_TRAIT_FIRST_INSTANCE_INDEX:
+			return 0;
 		default:
 			ERR_FAIL_V(0);
 	}
