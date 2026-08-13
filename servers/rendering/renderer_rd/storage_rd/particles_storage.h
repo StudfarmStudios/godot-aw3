@@ -359,6 +359,7 @@ private:
 	// transfer batch), then every system's dispatch (one compute batch) —
 	// instead of a transfer/compute alternation per system per sub-step.
 	void _particles_process_prepare(Particles *p_particles, double p_delta, ParticlesShader::PushConstant &r_push_constant, int &r_process_amount);
+	void _particles_ensure_material_uniform_set(Particles *p_particles);
 	void _particles_process_dispatch(Particles *p_particles, const ParticlesShader::PushConstant &p_push_constant, int p_process_amount);
 
 	SelfList<Particles>::List particle_update_list;

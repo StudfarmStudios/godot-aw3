@@ -44,6 +44,9 @@ void RenderingDeviceDriverMetal::FenceEvent::signal(MTL::CommandBuffer *p_cb) {
 	if (p_cb) {
 		value++;
 		p_cb->encodeSignalEvent(event.get(), value);
+#ifdef DEBUG_ENABLED
+		last_signal_cb = NS::RetainPtr(p_cb);
+#endif
 	}
 }
 
@@ -51,7 +54,13 @@ Error RenderingDeviceDriverMetal::FenceEvent::wait(uint32_t p_timeout_ms) {
 	bool signaled = event->waitUntilSignaledValue(value, p_timeout_ms);
 	if (!signaled) {
 #ifdef DEBUG_ENABLED
-		ERR_PRINT("timeout waiting for fence");
+		const int64_t cb_status = last_signal_cb ? (int64_t)last_signal_cb->status() : -1;
+		String cb_error;
+		if (last_signal_cb && last_signal_cb->error()) {
+			cb_error = String(", command buffer error: ") + last_signal_cb->error()->localizedDescription()->utf8String();
+		}
+		ERR_PRINT(vformat("timeout waiting for fence: awaiting value %d, event signaledValue %d, signaling command buffer status %d%s",
+				(int64_t)value, (int64_t)event->signaledValue(), cb_status, cb_error));
 #endif
 		return ERR_TIMEOUT;
 	}

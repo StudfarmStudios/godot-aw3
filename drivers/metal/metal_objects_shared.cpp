@@ -35,6 +35,9 @@
 #include <os/signpost.h>
 #include <simd/simd.h>
 
+#ifdef DEBUG_ENABLED
+#include <chrono>
+#endif
 #include <shared_mutex>
 #include <string>
 
@@ -754,7 +757,18 @@ class MDImmediateLibrary final : public MDLibrary {
 
 	void _check_and_wait() {
 		std::unique_lock<std::mutex> lock(_cv_mutex);
+#ifdef DEBUG_ENABLED
+		uint32_t waited_seconds = 0;
+		while (!_cv.wait_for(lock, std::chrono::seconds(5), [this] { return _complete; })) {
+			waited_seconds += 5;
+			ERR_PRINT(vformat("Metal shader compilation has been waiting for %d seconds", (int64_t)waited_seconds));
+		}
+		if (waited_seconds > 0) {
+			ERR_PRINT(vformat("Metal shader compilation completed after approximately %d seconds", (int64_t)waited_seconds));
+		}
+#else
 		_cv.wait(lock, [this] { return _complete; });
+#endif
 	}
 
 public:

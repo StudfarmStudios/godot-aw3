@@ -122,6 +122,32 @@ void MDCommandBuffer::commit() {
 			_frame_state.rs->commit();
 		}
 	}
+#ifdef DEBUG_ENABLED
+	commandBuffer->addCompletedHandler([](MTL::CommandBuffer *p_cb) {
+		if (p_cb->status() != MTL::CommandBufferStatusError) {
+			return;
+		}
+
+		NS::Error *cb_err = p_cb->error();
+		const char *label = p_cb->label() ? p_cb->label()->utf8String() : "(unlabeled)";
+		ERR_PRINT(vformat("Metal command buffer '%s' completed with error: %s", label,
+				cb_err ? cb_err->localizedDescription()->utf8String() : "(no NSError)"));
+		if (!cb_err || !cb_err->userInfo()) {
+			return;
+		}
+
+		NS::Array *infos = static_cast<NS::Array *>(cb_err->userInfo()->object(MTL::CommandBufferEncoderInfoErrorKey));
+		if (!infos) {
+			return;
+		}
+		for (NS::UInteger i = 0; i < infos->count(); i++) {
+			MTL::CommandBufferEncoderInfo *info = infos->object<MTL::CommandBufferEncoderInfo>(i);
+			const char *encoder_label = info && info->label() ? info->label()->utf8String() : "(unlabeled)";
+			ERR_PRINT(vformat("  encoder[%d] '%s' errorState=%d (0=unknown 1=completed 2=affected 3=pending 4=faulted)",
+					(int64_t)i, encoder_label, info ? (int64_t)info->errorState() : -1));
+		}
+	});
+#endif
 	commandBuffer->commit();
 	commandBuffer.reset();
 	state_begin = false;
@@ -130,7 +156,17 @@ void MDCommandBuffer::commit() {
 MTL::CommandBuffer *MDCommandBuffer::command_buffer() {
 	DEV_ASSERT(state_begin);
 	if (commandBuffer.get() == nullptr) {
+#ifdef DEBUG_ENABLED
+		NS::SharedPtr<MTL::CommandBufferDescriptor> descriptor = NS::TransferPtr(MTL::CommandBufferDescriptor::alloc()->init());
+		descriptor->setErrorOptions(MTL::CommandBufferErrorOptionEncoderExecutionStatus);
+		commandBuffer = NS::RetainPtr(queue->commandBuffer(descriptor.get()));
+		static uint64_t command_buffer_counter = 0;
+		char label[48];
+		snprintf(label, sizeof(label), "Godot Metal CB %llu", (unsigned long long)command_buffer_counter++);
+		commandBuffer->setLabel(NS::String::string(label, NS::UTF8StringEncoding));
+#else
 		commandBuffer = NS::RetainPtr(queue->commandBuffer());
+#endif
 		if (use_barriers) {
 			commandBuffer->useResidencySet(_frame_state.rs.get());
 		}

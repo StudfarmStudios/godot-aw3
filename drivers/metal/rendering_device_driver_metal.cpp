@@ -2500,6 +2500,16 @@ void RenderingDeviceDriverMetal::_copy_queue_flush() {
 
 	copy_queue_blit_encoder.get()->endEncoding();
 	copy_queue_blit_encoder.reset();
+#ifdef DEBUG_ENABLED
+	copy_queue_command_buffer->setLabel(MTLSTR("Godot Copy Queue CB"));
+	copy_queue_command_buffer->addCompletedHandler([](MTL::CommandBuffer *p_cb) {
+		if (p_cb->status() == MTL::CommandBufferStatusError) {
+			NS::Error *cb_err = p_cb->error();
+			ERR_PRINT(vformat("Metal copy queue command buffer completed with error: %s",
+					cb_err ? cb_err->localizedDescription()->utf8String() : "(no NSError)"));
+		}
+	});
+#endif
 	copy_queue_command_buffer.get()->commit();
 	copy_queue_command_buffer.get()->waitUntilCompleted();
 	copy_queue_command_buffer.reset();

@@ -52,6 +52,9 @@ class API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0)) RenderingDeviceDriverMet
 	struct FenceEvent : Fence {
 		NS::SharedPtr<MTL::SharedEvent> event;
 		uint64_t value = 0;
+#ifdef DEBUG_ENABLED
+		NS::SharedPtr<MTL::CommandBuffer> last_signal_cb;
+#endif
 		FenceEvent(NS::SharedPtr<MTL::SharedEvent> p_event) :
 				event(p_event) {}
 		void signal(MTL::CommandBuffer *p_cb) override;

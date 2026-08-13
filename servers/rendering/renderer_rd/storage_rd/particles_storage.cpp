@@ -1227,6 +1227,60 @@ void ParticlesStorage::_particles_process_prepare(Particles *p_particles, double
 	r_process_amount = process_amount;
 }
 
+void ParticlesStorage::_particles_ensure_material_uniform_set(Particles *p_particles) {
+	if (!p_particles->particles_material_uniform_set.is_null() && RD::get_singleton()->uniform_set_is_valid(p_particles->particles_material_uniform_set)) {
+		return;
+	}
+
+	thread_local LocalVector<RD::Uniform> uniforms;
+	uniforms.clear();
+
+	{
+		RD::Uniform u;
+		u.uniform_type = RD::UNIFORM_TYPE_STORAGE_BUFFER;
+		u.binding = 0;
+		u.append_id(p_particles->frame_params_buffer);
+		uniforms.push_back(u);
+	}
+	{
+		RD::Uniform u;
+		u.uniform_type = RD::UNIFORM_TYPE_STORAGE_BUFFER;
+		u.binding = 1;
+		u.append_id(p_particles->particle_buffer);
+		uniforms.push_back(u);
+	}
+	{
+		RD::Uniform u;
+		u.uniform_type = RD::UNIFORM_TYPE_STORAGE_BUFFER;
+		u.binding = 2;
+		if (p_particles->emission_storage_buffer.is_valid()) {
+			u.append_id(p_particles->emission_storage_buffer);
+		} else {
+			_particles_ensure_unused_emission_buffer(p_particles);
+			u.append_id(p_particles->unused_emission_storage_buffer);
+		}
+		uniforms.push_back(u);
+	}
+	{
+		RD::Uniform u;
+		u.uniform_type = RD::UNIFORM_TYPE_STORAGE_BUFFER;
+		u.binding = 3;
+		Particles *sub_emitter = particles_owner.get_or_null(p_particles->sub_emitter);
+		if (sub_emitter) {
+			if (sub_emitter->emission_buffer == nullptr) {
+				_particles_allocate_emission_buffer(sub_emitter);
+			}
+			u.append_id(sub_emitter->emission_storage_buffer);
+		} else {
+			_particles_ensure_unused_emission_buffer(p_particles);
+			u.append_id(p_particles->unused_emission_storage_buffer);
+		}
+		uniforms.push_back(u);
+	}
+
+	p_particles->particles_material_uniform_set = RD::get_singleton()->uniform_set_create(uniforms, particles_shader.default_shader_rd, 1);
+}
+
 void ParticlesStorage::_particles_process_dispatch(Particles *p_particles, const ParticlesShader::PushConstant &p_push_constant, int p_process_amount) {
 	MaterialStorage *material_storage = MaterialStorage::get_singleton();
 
@@ -1240,6 +1294,13 @@ void ParticlesStorage::_particles_process_dispatch(Particles *p_particles, const
 	}
 
 	ERR_FAIL_NULL(m);
+
+	// Preparing another system can allocate this system's sub-emission buffer,
+	// invalidating set 1 between the phase-separated prepare and dispatch loops.
+	// Recreate it at the last possible moment so dispatch never observes that gap.
+	_particles_ensure_material_uniform_set(p_particles);
+	ERR_FAIL_COND_MSG(p_particles->particles_material_uniform_set.is_null() || !RD::get_singleton()->uniform_set_is_valid(p_particles->particles_material_uniform_set),
+			"Failed to create the particle material uniform set before dispatch.");
 
 	p_particles->has_collision_cache = m->shader_data->uses_collision;
 
