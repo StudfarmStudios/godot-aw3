@@ -346,33 +346,89 @@ const Engine = (function () {
 					desc.requiredFeatures = (desc.requiredFeatures || []).concat([optionalFeatures[i]]);
 				}
 			}
-			// Request higher limits that Godot's renderer needs.
-			// The adapter may support more than the default; request what it offers.
+			// The limits Godot's renderer needs, as concrete numbers rather than
+			// whatever the adapter happens to offer.
+			//
+			// Asking for `adapter.limits` sounds free and is not: it makes the
+			// device's shape follow the browser's graphics backend. Four real
+			// adapters, three of which render correctly:
+			//
+			//               samplers  storage buf  uniform buf  storage tex
+			//   Dawn/Metal        16           10           12            8   ok
+			//   wgpu/Metal        16            8           12           32   ok
+			//   Dawn/D3D12        16           16           12            8   ok
+			//   wgpu/D3D12        64           64           64           64   2D only
+			//
+			// Every working configuration lands in the same neighbourhood; the
+			// one that renders the HUD and no 3D asked for 64 of everything. It
+			// is not the backend — Dawn on D3D12 is fine — and not the browser:
+			// wgpu on Metal is fine too. Dawn reports a curated set that barely
+			// moves between backends, while wgpu passes the native API's caps
+			// through, which coincides with Dawn on Metal and diverges wildly on
+			// D3D12. The per-stage counts are what separate the two groups.
+			//
+			// That the samplers column reads 16 everywhere but there is no
+			// accident: alias_anisotropic_samplers in spirv_preprocess.cpp exists
+			// to get the scene shader under exactly that cap, and it runs
+			// unconditionally, so the shaders never wanted more than 16 anyway.
+			//
+			// Note which limits do NOT separate the groups, and so are not
+			// evidence of anything: maxSampledTexturesPerShaderStage (wgpu/Metal
+			// reports 64 and works) and maxBindGroups (likewise 8). Nor do
+			// features — wgpu/Metal renders correctly while missing every feature
+			// the broken adapter misses except shader-f16, which is never emitted
+			// (see has_feature in rendering_device_driver_webgpu.cpp).
+			//
+			// Each value below is the smallest seen on a configuration that
+			// renders correctly, so lowering one is a behaviour change rather
+			// than a tidy-up. maxSampledTexturesPerShaderStage stays at 48
+			// because that is the Forward+ threshold in
+			// renderer_compositor_rd.cpp — below it the engine drops to Mobile,
+			// which is the intended behaviour on a small adapter and is what
+			// inject-seed.py picks the shader seed by.
+			var neededLimits = [
+				['maxBindGroups', 4],
+				['maxBufferSize', 1073741824],
+				['maxColorAttachments', 8],
+				['maxSampledTexturesPerShaderStage', 48],
+				['maxSamplersPerShaderStage', 16],
+				['maxStorageBufferBindingSize', 1073741824],
+				['maxStorageBuffersPerShaderStage', 8],
+				['maxStorageTexturesPerShaderStage', 8],
+				['maxUniformBufferBindingSize', 65536],
+				['maxUniformBuffersPerShaderStage', 12],
+				// Newer split limits. Dawn enforces these per stage in addition to the
+				// combined ones above, so raising only the combined limit is not enough,
+				// and the vertex-stage pair defaults to zero — without an explicit ask
+				// there are no vertex-stage storage buffers at all.
+				['maxStorageBuffersInFragmentStage', 8],
+				['maxStorageBuffersInVertexStage', 8],
+				['maxStorageTexturesInFragmentStage', 8],
+				['maxStorageTexturesInVertexStage', 8],
+			];
 			var adapterLimits = adapter.limits || {};
 			desc.requiredLimits = desc.requiredLimits || {};
-			var limitsToMax = [
-				'maxStorageBuffersPerShaderStage',
-				'maxStorageBufferBindingSize',
-				'maxBufferSize',
-				'maxUniformBufferBindingSize',
-				'maxUniformBuffersPerShaderStage',
-				'maxSampledTexturesPerShaderStage',
-				'maxSamplersPerShaderStage',
-				'maxStorageTexturesPerShaderStage',
-				'maxColorAttachments',
-				'maxBindGroups',
-				// Newer split limits. Dawn enforces these per stage in addition to the
-				// combined ones above, so raising only the combined limit is not enough.
-				'maxStorageBuffersInFragmentStage',
-				'maxStorageBuffersInVertexStage',
-				'maxStorageTexturesInFragmentStage',
-				'maxStorageTexturesInVertexStage',
-			];
-			for (var li = 0; li < limitsToMax.length; li++) {
-				var key = limitsToMax[li];
-				if (adapterLimits[key] !== undefined) {
-					desc.requiredLimits[key] = adapterLimits[key];
+			var shortfalls = [];
+			for (var li = 0; li < neededLimits.length; li++) {
+				var key = neededLimits[li][0];
+				var want = neededLimits[li][1];
+				var available = adapterLimits[key];
+				if (available === undefined) {
+					continue;
 				}
+				// Every limit here is "higher is better", so an adapter that cannot
+				// reach one is asked for its own maximum instead of being failed at
+				// requestDevice. The engine then degrades — Mobile renderer, smaller
+				// buffers — rather than not starting at all.
+				if (Number(available) < want) {
+					shortfalls.push(key + ' ' + available + ' < ' + want);
+					desc.requiredLimits[key] = available;
+				} else {
+					desc.requiredLimits[key] = want;
+				}
+			}
+			if (shortfalls.length > 0) {
+				console.warn('[Godot] WebGPU adapter below requested limits: ' + shortfalls.join(', '));
 			}
 			return adapter.requestDevice(desc).then(function (device) {
 				// Monitor device loss (non-blocking — just log).
