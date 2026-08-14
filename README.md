@@ -19,7 +19,7 @@ Upstream Godot is otherwise unchanged; see [`GODOT_README.md`](GODOT_README.md).
 |---|---|
 | Static-linked Mono for web | [ComplexRobot/godot](https://github.com/ComplexRobot/godot) `dotnet/mono-static-linking` — upstream draft [godotengine/godot#106125](https://github.com/godotengine/godot/pull/106125) |
 | AW3's web/.NET fixes | this fork, commit "Web/.NET export fixes for AW3" |
-| WebGPU backend | [dwalter/godotwebgpu](https://github.com/dwalter/godotwebgpu) `webgpu-4.6.2` @ `f329e39`, imported onto 4.7.1 |
+| WebGPU backend | [dwalter/godotwebgpu](https://github.com/dwalter/godotwebgpu) `webgpu-4.6.2` @ `f329e39`, imported onto 4.7.1 and then expanded for Forward+ and other more highend rendering features |
 | SDL platform port | this fork, written for AW3 against 4.7 (previously carried in the AW3 repo as `tools/godot-sdl-platform`) |
 
 The WebGPU work was written against 4.6.2, and Godot's 4.6 release branch is not
