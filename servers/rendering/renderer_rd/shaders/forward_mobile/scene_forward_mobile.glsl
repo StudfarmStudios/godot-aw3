@@ -1521,6 +1521,7 @@ void main() {
 			} else {
 				decal_albedo = textureLod(sampler2D(decal_atlas_srgb, decal_sampler), uv_local.xz * decals.data[decal_index].albedo_rect.zw + decals.data[decal_index].albedo_rect.xy, 0.0);
 			}
+			decal_albedo.rgb = decal_srgb_to_linear(decal_albedo.rgb);
 			decal_albedo *= decals.data[decal_index].modulate;
 			decal_albedo.a *= fade;
 			albedo = hvec3(mix(vec3(albedo), decal_albedo.rgb, decal_albedo.a * decals.data[decal_index].albedo_mix));
@@ -1555,11 +1556,13 @@ void main() {
 
 		if (decals.data[decal_index].emission_rect != vec4(0.0)) {
 			//emission is additive, so its independent from albedo
+			vec3 decal_emission;
 			if (sc_decal_use_mipmaps()) {
-				emission += hvec3(textureGrad(sampler2D(decal_atlas_srgb, decal_sampler), uv_local.xz * decals.data[decal_index].emission_rect.zw + decals.data[decal_index].emission_rect.xy, ddx * decals.data[decal_index].emission_rect.zw, ddy * decals.data[decal_index].emission_rect.zw).xyz * decals.data[decal_index].emission_energy * fade);
+				decal_emission = textureGrad(sampler2D(decal_atlas_srgb, decal_sampler), uv_local.xz * decals.data[decal_index].emission_rect.zw + decals.data[decal_index].emission_rect.xy, ddx * decals.data[decal_index].emission_rect.zw, ddy * decals.data[decal_index].emission_rect.zw).xyz;
 			} else {
-				emission += hvec3(textureLod(sampler2D(decal_atlas_srgb, decal_sampler), uv_local.xz * decals.data[decal_index].emission_rect.zw + decals.data[decal_index].emission_rect.xy, 0.0).xyz * decals.data[decal_index].emission_energy * fade);
+				decal_emission = textureLod(sampler2D(decal_atlas_srgb, decal_sampler), uv_local.xz * decals.data[decal_index].emission_rect.zw + decals.data[decal_index].emission_rect.xy, 0.0).xyz;
 			}
+			emission += hvec3(decal_srgb_to_linear(decal_emission) * decals.data[decal_index].emission_energy * fade);
 		}
 	}
 #endif //!MODE_RENDER_DEPTH

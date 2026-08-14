@@ -2020,7 +2020,7 @@ void RenderForwardMobile::_update_render_base_uniform_set() {
 			u.append_id(decal_atlas);
 			uniforms.push_back(u);
 		}
-		{
+		if (RD::get_singleton()->limit_get(RD::LIMIT_MAX_TEXTURES_PER_SHADER_STAGE) > 16) {
 			RD::Uniform u;
 			u.binding = 11;
 			u.uniform_type = RD::UNIFORM_TYPE_TEXTURE;
@@ -3815,6 +3815,12 @@ RenderForwardMobile::RenderForwardMobile() {
 		defines += "\n#define USE_DOUBLE_PRECISION \n";
 	}
 #endif
+	if (RD::get_singleton()->limit_get(RD::LIMIT_MAX_TEXTURES_PER_SHADER_STAGE) <= 16) {
+		// WebGPU guarantees 16 sampled textures per shader stage. Reuse the
+		// linear decal atlas view on minimum-limit devices so lightmapped
+		// materials fit, and decode decal color textures in the shader instead.
+		defines += "\n#define USE_MANUAL_DECAL_SRGB\n";
+	}
 
 	scene_shader.init(defines);
 

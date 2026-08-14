@@ -313,7 +313,20 @@ layout(set = 0, binding = 9, std140) restrict readonly buffer LightmapCaptures {
 lightmap_captures;
 
 layout(set = 0, binding = 10) uniform texture2D decal_atlas;
+
+#ifdef USE_MANUAL_DECAL_SRGB
+#define decal_atlas_srgb decal_atlas
+#else
 layout(set = 0, binding = 11) uniform texture2D decal_atlas_srgb;
+#endif
+
+vec3 decal_srgb_to_linear(vec3 p_color) {
+#ifdef USE_MANUAL_DECAL_SRGB
+	return mix(pow((p_color + vec3(0.055)) * (1.0 / 1.055), vec3(2.4)), p_color * (1.0 / 12.92), lessThan(p_color, vec3(0.04045)));
+#else
+	return p_color;
+#endif
+}
 
 layout(set = 0, binding = 12, std430) restrict readonly buffer Decals {
 	DecalData data[];
