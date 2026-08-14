@@ -50,6 +50,7 @@
 
 #include "metal3_objects.h"
 
+#include "core/config/engine.h"
 #include "drivers/metal/metal_utils.h"
 #include "drivers/metal/pixel_formats.h"
 #include "drivers/metal/rendering_device_driver_metal3.h"
@@ -132,20 +133,20 @@ void MDCommandBuffer::commit() {
 		const char *label = p_cb->label() ? p_cb->label()->utf8String() : "(unlabeled)";
 		ERR_PRINT(vformat("Metal command buffer '%s' completed with error: %s", label,
 				cb_err ? cb_err->localizedDescription()->utf8String() : "(no NSError)"));
-		if (!cb_err || !cb_err->userInfo()) {
-			return;
+		if (cb_err && cb_err->userInfo()) {
+			NS::Array *infos = static_cast<NS::Array *>(cb_err->userInfo()->object(MTL::CommandBufferEncoderInfoErrorKey));
+			if (infos) {
+				for (NS::UInteger i = 0; i < infos->count(); i++) {
+					MTL::CommandBufferEncoderInfo *info = infos->object<MTL::CommandBufferEncoderInfo>(i);
+					const char *encoder_label = info && info->label() ? info->label()->utf8String() : "(unlabeled)";
+					ERR_PRINT(vformat("  encoder[%d] '%s' errorState=%d (0=unknown 1=completed 2=affected 3=pending 4=faulted)",
+							(int64_t)i, encoder_label, info ? (int64_t)info->errorState() : -1));
+				}
+			}
 		}
 
-		NS::Array *infos = static_cast<NS::Array *>(cb_err->userInfo()->object(MTL::CommandBufferEncoderInfoErrorKey));
-		if (!infos) {
-			return;
-		}
-		for (NS::UInteger i = 0; i < infos->count(); i++) {
-			MTL::CommandBufferEncoderInfo *info = infos->object<MTL::CommandBufferEncoderInfo>(i);
-			const char *encoder_label = info && info->label() ? info->label()->utf8String() : "(unlabeled)";
-			ERR_PRINT(vformat("  encoder[%d] '%s' errorState=%d (0=unknown 1=completed 2=affected 3=pending 4=faulted)",
-					(int64_t)i, encoder_label, info ? (int64_t)info->errorState() : -1));
-		}
+		CRASH_COND_MSG(Engine::get_singleton()->is_abort_on_gpu_errors_enabled(),
+				"Metal command buffer failed. Crashing because --gpu-abort is enabled.");
 	});
 #endif
 	commandBuffer->commit();

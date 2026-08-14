@@ -30,6 +30,7 @@
 
 #include "rendering_device_driver_metal3.h"
 
+#include "core/config/engine.h"
 #include "core/config/project_settings.h"
 #include "core/os/os.h"
 #include "core/string/ustring.h"
@@ -61,6 +62,8 @@ Error RenderingDeviceDriverMetal::FenceEvent::wait(uint32_t p_timeout_ms) {
 		}
 		ERR_PRINT(vformat("timeout waiting for fence: awaiting value %d, event signaledValue %d, signaling command buffer status %d%s",
 				(int64_t)value, (int64_t)event->signaledValue(), cb_status, cb_error));
+		CRASH_COND_MSG(Engine::get_singleton()->is_abort_on_gpu_errors_enabled(),
+				"Metal fence timed out. Crashing before command pools or GPU resources can be reused because --gpu-abort is enabled.");
 #endif
 		return ERR_TIMEOUT;
 	}

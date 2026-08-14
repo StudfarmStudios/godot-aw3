@@ -2507,6 +2507,8 @@ void RenderingDeviceDriverMetal::_copy_queue_flush() {
 			NS::Error *cb_err = p_cb->error();
 			ERR_PRINT(vformat("Metal copy queue command buffer completed with error: %s",
 					cb_err ? cb_err->localizedDescription()->utf8String() : "(no NSError)"));
+			CRASH_COND_MSG(Engine::get_singleton()->is_abort_on_gpu_errors_enabled(),
+					"Metal copy queue command buffer failed. Crashing because --gpu-abort is enabled.");
 		}
 	});
 #endif

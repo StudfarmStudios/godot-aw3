@@ -2589,6 +2589,11 @@ void RenderForwardMobile::_render_list_template(RenderingDevice::DrawListID p_dr
 
 		pipeline_key.primitive_type = surf->primitive;
 		RID xforms_uniform_set = surf->owner->transforms_uniform_set;
+		if ((surf->owner->base_flags & INSTANCE_DATA_FLAG_PARTICLES) &&
+				(!xforms_uniform_set.is_valid() || !RD::get_singleton()->uniform_set_is_valid(xforms_uniform_set))) {
+			xforms_uniform_set = particles_storage->particles_get_instance_buffer_uniform_set(surf->owner->data->base, scene_shader.default_shader_rd, TRANSFORMS_UNIFORM_SET);
+			surf->owner->transforms_uniform_set = xforms_uniform_set;
+		}
 
 		switch (p_params->pass_mode) {
 			case PASS_MODE_COLOR:
