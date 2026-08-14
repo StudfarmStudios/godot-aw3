@@ -792,6 +792,10 @@ class SampleNode {
 	 */
 	_restart() {
 		if (this._source != null) {
+			if (this._onended != null) {
+				this._source.removeEventListener('ended', this._onended);
+				this._onended = null;
+			}
 			this._source.disconnect();
 		}
 		this._source = GodotAudio.ctx.createBufferSource();
@@ -850,14 +854,19 @@ class SampleNode {
 	 * @returns {void}
 	 */
 	_addEndedListener() {
-		if (this._onended != null) {
-			this._source.removeEventListener('ended', this._onended);
-		}
-
 		/** @type {SampleNode} */
 		// eslint-disable-next-line consistent-this
 		const self = this;
-		this._onended = (_) => {
+		const source = this._source;
+		const onended = (_) => {
+			// AudioBufferSourceNode is single-use. Detach its callback as soon as
+			// it fires instead of leaving the dead source and its SampleNode
+			// closure for the browser GC to discover and sweep later.
+			source.removeEventListener('ended', onended);
+			if (self._source === source) {
+				self._onended = null;
+			}
+
 			if (self.isPaused) {
 				return;
 			}
@@ -874,7 +883,8 @@ class SampleNode {
 				// do nothing
 			}
 		};
-		this._source.addEventListener('ended', this._onended);
+		this._onended = onended;
+		source.addEventListener('ended', onended);
 	}
 }
 
