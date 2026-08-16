@@ -2722,6 +2722,34 @@ bool Viewport::_gui_control_has_focus(const Control *p_control, bool p_ignore_hi
 }
 
 void Viewport::_gui_control_grab_focus(Control *p_control, bool p_hide_focus) {
+	Window *base_window = get_base_window();
+	if (base_window->is_multi_viewport_focus_enabled()) {
+		// Each Viewport owns one independent focused Control. Focusing a different
+		// Viewport must not clear sibling split-screen menus.
+		if (gui.key_focus && gui.key_focus != p_control) {
+			gui_release_focus();
+		}
+
+		// Keep the containing SubViewportContainer focused in its parent Viewport so
+		// non-positional input is routed to this Viewport before the GUI phase.
+		if (Object::cast_to<SubViewport>(this)) {
+			SubViewportContainer *container = Object::cast_to<SubViewportContainer>(get_parent());
+			if (container) {
+				container->grab_focus();
+			}
+		}
+	} else {
+		if (gui.key_focus && gui.key_focus == p_control) {
+			// Only worry about the focus visibility change.
+			if (p_hide_focus != gui.hide_focus && _can_hide_focus_state()) {
+				gui.hide_focus = p_hide_focus;
+				p_control->queue_redraw();
+			}
+			return;
+		}
+		get_tree()->call_group("_viewports", "_gui_remove_focus_for_window", base_window);
+	}
+
 	if (gui.key_focus && gui.key_focus == p_control) {
 		// Only worry about the focus visibility change.
 		if (p_hide_focus != gui.hide_focus && _can_hide_focus_state()) {
@@ -2731,7 +2759,6 @@ void Viewport::_gui_control_grab_focus(Control *p_control, bool p_hide_focus) {
 		return;
 	}
 
-	get_tree()->call_group("_viewports", "_gui_remove_focus_for_window", get_base_window());
 	if (p_control->is_inside_tree() && p_control->get_viewport() == this) {
 		gui.key_focus = p_control;
 		if (_can_hide_focus_state()) {

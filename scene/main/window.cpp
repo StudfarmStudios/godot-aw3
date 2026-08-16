@@ -3323,6 +3323,16 @@ void Window::_mouse_leave_viewport() {
 	}
 }
 
+void Window::set_multi_viewport_focus(bool p_enable) {
+	ERR_MAIN_THREAD_GUARD;
+	multi_viewport_focus = p_enable;
+}
+
+bool Window::is_multi_viewport_focus_enabled() const {
+	ERR_READ_THREAD_GUARD_V(false);
+	return multi_viewport_focus;
+}
+
 void Window::_update_displayed_title() {
 	displayed_title = atr(title);
 
@@ -3459,6 +3469,9 @@ void Window::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_keep_title_visible", "title_visible"), &Window::set_keep_title_visible);
 	ClassDB::bind_method(D_METHOD("get_keep_title_visible"), &Window::get_keep_title_visible);
 
+	ClassDB::bind_method(D_METHOD("set_multi_viewport_focus", "enable"), &Window::set_multi_viewport_focus);
+	ClassDB::bind_method(D_METHOD("is_multi_viewport_focus_enabled"), &Window::is_multi_viewport_focus_enabled);
+
 	ClassDB::bind_method(D_METHOD("set_content_scale_factor", "factor"), &Window::set_content_scale_factor);
 	ClassDB::bind_method(D_METHOD("get_content_scale_factor"), &Window::get_content_scale_factor);
 
@@ -3589,6 +3602,7 @@ void Window::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "min_size", PROPERTY_HINT_NONE, "suffix:px"), "set_min_size", "get_min_size");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "max_size", PROPERTY_HINT_NONE, "suffix:px"), "set_max_size", "get_max_size");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "keep_title_visible"), "set_keep_title_visible", "get_keep_title_visible");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "multi_viewport_focus"), "set_multi_viewport_focus", "is_multi_viewport_focus_enabled");
 
 	ADD_GROUP("Content Scale", "content_scale_");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "content_scale_size"), "set_content_scale_size", "get_content_scale_size");

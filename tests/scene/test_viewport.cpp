@@ -163,6 +163,46 @@ public:
 	}
 };
 
+TEST_CASE("[SceneTree][Viewport] Independent focus across SubViewports") {
+	Window *root = SceneTree::get_singleton()->get_root();
+	SubViewport *viewport_a = memnew(SubViewport);
+	SubViewport *viewport_b = memnew(SubViewport);
+	Control *control_a = memnew(Control);
+	Control *control_b = memnew(Control);
+	control_a->set_focus_mode(Control::FOCUS_ALL);
+	control_b->set_focus_mode(Control::FOCUS_ALL);
+
+	root->add_child(viewport_a);
+	root->add_child(viewport_b);
+	viewport_a->add_child(control_a);
+	viewport_b->add_child(control_b);
+
+	SUBCASE("Default behavior keeps one focus per Window") {
+		root->set_multi_viewport_focus(false);
+		control_a->grab_focus();
+		CHECK(control_a->has_focus());
+		control_b->grab_focus();
+		CHECK_FALSE(control_a->has_focus());
+		CHECK(control_b->has_focus());
+	}
+
+	SUBCASE("Opt-in behavior keeps one focus per Viewport") {
+		root->set_multi_viewport_focus(true);
+		control_a->grab_focus();
+		control_b->grab_focus();
+		CHECK(control_a->has_focus());
+		CHECK(control_b->has_focus());
+	}
+
+	root->set_multi_viewport_focus(false);
+	viewport_a->gui_release_focus();
+	viewport_b->gui_release_focus();
+	root->remove_child(viewport_a);
+	root->remove_child(viewport_b);
+	memdelete(viewport_a);
+	memdelete(viewport_b);
+}
+
 TEST_CASE("[SceneTree][Viewport] Controls and InputEvent handling") {
 	DragStart *node_a = memnew(DragStart);
 	NotificationControlViewport *node_b = memnew(NotificationControlViewport);
