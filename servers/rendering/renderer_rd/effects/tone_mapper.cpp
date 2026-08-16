@@ -177,6 +177,7 @@ void ToneMapper::tonemapper(RID p_source_color, RID p_dst_framebuffer, const Ton
 	tonemap.push_constant.pixel_size[1] = 1.0 / p_settings.texture_size.y;
 
 	tonemap.push_constant.flags |= p_settings.convert_to_srgb ? TONEMAP_FLAG_CONVERT_TO_SRGB : 0;
+	tonemap.push_constant.flags |= p_settings.force_opaque ? TONEMAP_FLAG_FORCE_OPAQUE : 0;
 
 	if (p_settings.view_count > 1) {
 		// Use USE_MULTIVIEW versions

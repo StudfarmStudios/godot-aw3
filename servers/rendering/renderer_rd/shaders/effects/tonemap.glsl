@@ -62,6 +62,7 @@ layout(set = 3, binding = 0) uniform sampler3D source_color_correction;
 #define FLAG_USE_FXAA (1 << 4)
 #define FLAG_USE_8_BIT_DEBANDING (1 << 5)
 #define FLAG_CONVERT_TO_SRGB (1 << 6)
+#define FLAG_FORCE_OPAQUE (1 << 7)
 
 layout(push_constant, std430) uniform Params {
 	vec3 bcs;
@@ -949,6 +950,10 @@ void main() {
 	if (bool(params.flags & FLAG_USE_8_BIT_DEBANDING)) {
 		// Divide by 255 to align to 8-bit quantization.
 		color.rgb += screen_space_dither(gl_FragCoord.xy, 255.0);
+	}
+
+	if (bool(params.flags & FLAG_FORCE_OPAQUE)) {
+		color.a = 1.0;
 	}
 
 	frag_color = color;

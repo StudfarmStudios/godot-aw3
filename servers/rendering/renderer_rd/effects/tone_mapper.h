@@ -75,6 +75,7 @@ private:
 		TONEMAP_FLAG_USE_FXAA = (1 << 4),
 		TONEMAP_FLAG_USE_8_BIT_DEBANDING = (1 << 5),
 		TONEMAP_FLAG_CONVERT_TO_SRGB = (1 << 6),
+		TONEMAP_FLAG_FORCE_OPAQUE = (1 << 7),
 	};
 
 	enum FlagsMobile {
@@ -207,6 +208,7 @@ public:
 		bool bilinear_filtering = true;
 
 		bool convert_to_srgb = false;
+		bool force_opaque = false;
 	};
 
 	void tonemapper(RID p_source_color, RID p_dst_framebuffer, const TonemapSettings &p_settings);
