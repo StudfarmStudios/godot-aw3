@@ -33,6 +33,7 @@
 #include "core/object/worker_thread_pool.h"
 #include "core/os/condition_variable.h"
 #include "core/os/mutex.h"
+#include "core/os/thread.h"
 #include "core/templates/local_vector.h"
 #include "core/templates/simple_type.h"
 #include "core/templates/tuple.h"
@@ -170,6 +171,27 @@ class CommandQueueMT {
 		if (unlikely(flush_read_ptr)) {
 			// Another thread is flushing.
 			lock.temp_unlock(); // Not really temp.
+#ifdef WEB_ENABLED
+			// ...and on the browser main thread we must not wait for it. Atomics.wait is
+			// forbidden there, so emscripten emulates the futex by spinning on
+			// emscripten_get_now(); because the thread then never yields to the event
+			// loop, the other flusher's completion can never be delivered. That is a hard
+			// deadlock which stops the whole tab — renderer included — with no error and
+			// nothing outstanding to show for it.
+			//
+			// Skipping the wait is safe: the other thread is already draining the queue
+			// and will run the commands pushed so far. _flush() only pushes work along;
+			// callers that actually need a result use push_and_sync()/push_and_ret(),
+			// which still synchronise.
+			//
+			// Seen as: PhysicsServer3DWrapMT::body_set_state -> _flush -> sync ->
+			// pthread_cond_wait, whenever a frame queues enough physics commands to make
+			// a second thread flush concurrently (Godot's threaded physics on web).
+			if (Thread::is_main_thread()) {
+				flushing = false;
+				return;
+			}
+#endif
 			sync();
 			flushing = false;
 			return;
