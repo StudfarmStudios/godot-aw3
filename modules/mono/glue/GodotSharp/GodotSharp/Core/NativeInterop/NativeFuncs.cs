@@ -47,8 +47,8 @@ namespace Godot.NativeInterop
         public static partial IntPtr godotsharp_method_bind_get_method_with_compatibility(
             in godot_string_name p_classname, in godot_string_name p_methodname, ulong p_hash);
 
-        public static partial delegate* unmanaged<godot_bool, IntPtr> godotsharp_get_class_constructor(
-            in godot_string_name p_classname);
+        public static partial void godotsharp_get_class_constructor(
+            in godot_string_name p_classname, delegate* unmanaged<godot_bool, IntPtr>* r_dest);
 
         public static partial IntPtr godotsharp_engine_get_singleton(in godot_string p_name);
 
@@ -132,32 +132,32 @@ namespace Godot.NativeInterop
 
         public static partial void godotsharp_node_path_as_string(out godot_string r_dest, scoped in godot_node_path p_np);
 
-        public static partial godot_packed_byte_array godotsharp_packed_byte_array_new_mem_copy(byte* p_src,
-            int p_length);
+        public static partial void godotsharp_packed_byte_array_new_mem_copy(byte* p_src,
+            int p_length, godot_packed_byte_array* r_dest);
 
-        public static partial godot_packed_int32_array godotsharp_packed_int32_array_new_mem_copy(int* p_src,
-            int p_length);
+        public static partial void godotsharp_packed_int32_array_new_mem_copy(int* p_src,
+            int p_length, godot_packed_int32_array* r_dest);
 
-        public static partial godot_packed_int64_array godotsharp_packed_int64_array_new_mem_copy(long* p_src,
-            int p_length);
+        public static partial void godotsharp_packed_int64_array_new_mem_copy(long* p_src,
+            int p_length, godot_packed_int64_array* r_dest);
 
-        public static partial godot_packed_float32_array godotsharp_packed_float32_array_new_mem_copy(float* p_src,
-            int p_length);
+        public static partial void godotsharp_packed_float32_array_new_mem_copy(float* p_src,
+            int p_length, godot_packed_float32_array* r_dest);
 
-        public static partial godot_packed_float64_array godotsharp_packed_float64_array_new_mem_copy(double* p_src,
-            int p_length);
+        public static partial void godotsharp_packed_float64_array_new_mem_copy(double* p_src,
+            int p_length, godot_packed_float64_array* r_dest);
 
-        public static partial godot_packed_vector2_array godotsharp_packed_vector2_array_new_mem_copy(Vector2* p_src,
-            int p_length);
+        public static partial void godotsharp_packed_vector2_array_new_mem_copy(Vector2* p_src,
+            int p_length, godot_packed_vector2_array* r_dest);
 
-        public static partial godot_packed_vector3_array godotsharp_packed_vector3_array_new_mem_copy(Vector3* p_src,
-            int p_length);
+        public static partial void godotsharp_packed_vector3_array_new_mem_copy(Vector3* p_src,
+            int p_length, godot_packed_vector3_array* r_dest);
 
-        public static partial godot_packed_vector4_array godotsharp_packed_vector4_array_new_mem_copy(Vector4* p_src,
-            int p_length);
+        public static partial void godotsharp_packed_vector4_array_new_mem_copy(Vector4* p_src,
+            int p_length, godot_packed_vector4_array* r_dest);
 
-        public static partial godot_packed_color_array godotsharp_packed_color_array_new_mem_copy(Color* p_src,
-            int p_length);
+        public static partial void godotsharp_packed_color_array_new_mem_copy(Color* p_src,
+            int p_length, godot_packed_color_array* r_dest);
 
         public static partial void godotsharp_packed_string_array_add(ref godot_packed_string_array r_dest,
             in godot_string p_element);
@@ -168,8 +168,9 @@ namespace Godot.NativeInterop
         internal static partial godot_bool godotsharp_callable_get_data_for_marshalling(scoped in godot_callable p_callable,
             out IntPtr r_delegate_handle, out IntPtr r_trampoline, out IntPtr r_object, out godot_string_name r_name);
 
-        internal static partial godot_variant godotsharp_callable_call(scoped in godot_callable p_callable,
-            godot_variant** p_args, int p_arg_count, out godot_variant_call_error p_call_error);
+        internal static partial void godotsharp_callable_call(scoped in godot_callable p_callable,
+            godot_variant** p_args, int p_arg_count, out godot_variant_call_error p_call_error,
+            godot_variant* r_dest);
 
         internal static partial void godotsharp_callable_call_deferred(in godot_callable p_callable,
             godot_variant** p_args, int p_arg_count);
@@ -189,8 +190,9 @@ namespace Godot.NativeInterop
         public static partial void godotsharp_method_bind_ptrcall(IntPtr p_method_bind, IntPtr p_instance, void** p_args,
             void* p_ret);
 
-        public static partial godot_variant godotsharp_method_bind_call(IntPtr p_method_bind, IntPtr p_instance,
-            godot_variant** p_args, int p_arg_count, out godot_variant_call_error p_call_error);
+        public static partial void godotsharp_method_bind_call(IntPtr p_method_bind, IntPtr p_instance,
+            godot_variant** p_args, int p_arg_count, out godot_variant_call_error p_call_error,
+            godot_variant* r_dest);
 
         // variant.h
 
@@ -290,38 +292,38 @@ namespace Godot.NativeInterop
 
         public static partial void godotsharp_variant_as_string_name(scoped in godot_variant p_self, godot_string_name* r_dest);
 
-        public static partial godot_node_path godotsharp_variant_as_node_path(scoped in godot_variant p_self);
+        public static partial void godotsharp_variant_as_node_path(scoped in godot_variant p_self, godot_node_path* r_dest);
 
         public static partial Rid godotsharp_variant_as_rid(scoped in godot_variant p_self);
 
-        public static partial godot_callable godotsharp_variant_as_callable(scoped in godot_variant p_self);
+        public static partial void godotsharp_variant_as_callable(scoped in godot_variant p_self, godot_callable* r_dest);
 
-        public static partial godot_signal godotsharp_variant_as_signal(scoped in godot_variant p_self);
+        public static partial void godotsharp_variant_as_signal(scoped in godot_variant p_self, godot_signal* r_dest);
 
-        public static partial godot_dictionary godotsharp_variant_as_dictionary(scoped in godot_variant p_self);
+        public static partial void godotsharp_variant_as_dictionary(scoped in godot_variant p_self, godot_dictionary* r_dest);
 
-        public static partial godot_array godotsharp_variant_as_array(scoped in godot_variant p_self);
+        public static partial void godotsharp_variant_as_array(scoped in godot_variant p_self, godot_array* r_dest);
 
-        public static partial godot_packed_byte_array godotsharp_variant_as_packed_byte_array(scoped in godot_variant p_self);
+        public static partial void godotsharp_variant_as_packed_byte_array(scoped in godot_variant p_self, godot_packed_byte_array* r_dest);
 
-        public static partial godot_packed_int32_array godotsharp_variant_as_packed_int32_array(scoped in godot_variant p_self);
+        public static partial void godotsharp_variant_as_packed_int32_array(scoped in godot_variant p_self, godot_packed_int32_array* r_dest);
 
-        public static partial godot_packed_int64_array godotsharp_variant_as_packed_int64_array(scoped in godot_variant p_self);
+        public static partial void godotsharp_variant_as_packed_int64_array(scoped in godot_variant p_self, godot_packed_int64_array* r_dest);
 
-        public static partial godot_packed_float32_array godotsharp_variant_as_packed_float32_array(scoped in godot_variant p_self);
+        public static partial void godotsharp_variant_as_packed_float32_array(scoped in godot_variant p_self, godot_packed_float32_array* r_dest);
 
-        public static partial godot_packed_float64_array godotsharp_variant_as_packed_float64_array(scoped in godot_variant p_self);
+        public static partial void godotsharp_variant_as_packed_float64_array(scoped in godot_variant p_self, godot_packed_float64_array* r_dest);
 
-        public static partial godot_packed_string_array godotsharp_variant_as_packed_string_array(scoped in godot_variant p_self);
+        public static partial void godotsharp_variant_as_packed_string_array(scoped in godot_variant p_self, godot_packed_string_array* r_dest);
 
-        public static partial godot_packed_vector2_array godotsharp_variant_as_packed_vector2_array(scoped in godot_variant p_self);
+        public static partial void godotsharp_variant_as_packed_vector2_array(scoped in godot_variant p_self, godot_packed_vector2_array* r_dest);
 
-        public static partial godot_packed_vector3_array godotsharp_variant_as_packed_vector3_array(scoped in godot_variant p_self);
+        public static partial void godotsharp_variant_as_packed_vector3_array(scoped in godot_variant p_self, godot_packed_vector3_array* r_dest);
 
-        public static partial godot_packed_vector4_array godotsharp_variant_as_packed_vector4_array(
-            in godot_variant p_self);
+        public static partial void godotsharp_variant_as_packed_vector4_array(
+            in godot_variant p_self, godot_packed_vector4_array* r_dest);
 
-        public static partial godot_packed_color_array godotsharp_variant_as_packed_color_array(scoped in godot_variant p_self);
+        public static partial void godotsharp_variant_as_packed_color_array(scoped in godot_variant p_self, godot_packed_color_array* r_dest);
 
         public static partial godot_bool godotsharp_variant_equals(scoped in godot_variant p_a, scoped in godot_variant p_b);
 
@@ -645,5 +647,19 @@ namespace Godot.NativeInterop
         public static partial long godotsharp_packed_color_array_size(in godot_packed_color_array p_self);
 
         public static partial long godotsharp_array_size(in godot_array p_self);
+
+        // Appended last, to stay aligned with the array at the bottom of
+        // glue/runtime_interop.cpp. Performs the indirect call into a class
+        // constructor on the native side so managed code never issues a calli
+        // through an unmanaged function pointer (which Mono's AOT compiler
+        // refuses to compile a wrapper for, sending the call to the interpreter).
+        public static partial void godotsharp_invoke_class_constructor(IntPtr p_ctor,
+            godot_bool p_notify_postinitialize, IntPtr* r_dest);
+
+        public static partial void godotsharp_invoke_property_info_adder(IntPtr p_func,
+            IntPtr p_script_ptr, godot_string* p_class_name, void* p_props, int p_count);
+
+        public static partial void godotsharp_invoke_default_value_adder(IntPtr p_func,
+            IntPtr p_script_ptr, void* p_def_vals, int p_count);
     }
 }

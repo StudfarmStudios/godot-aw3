@@ -124,6 +124,7 @@
     <Compile Include="Core\ReflectionUtils.cs" />
     <Compile Include="Core\Rid.cs" />
     <Compile Include="Core\NativeInterop\NativeFuncs.cs" />
+    <Compile Include="Core\NativeInterop\NativeFuncs.ByValue.cs" />
     <Compile Include="Core\NativeInterop\InteropStructs.cs" />
     <Compile Include="Core\NativeInterop\Marshaling.cs" />
     <Compile Include="Core\Signal.cs" />

@@ -56,7 +56,14 @@ namespace Godot
                 Debug.Assert(nativeCtor != null);
 
                 // Need postinitialization.
-                NativePtr = nativeCtor(godot_bool.True);
+                // The indirect call happens on the native side: a calli through
+                // an unmanaged function pointer is the one shape Mono's AOT
+                // compiler always skips, so invoking nativeCtor directly here
+                // would put every engine-object construction on the interpreter.
+                IntPtr constructed;
+                NativeFuncs.godotsharp_invoke_class_constructor((IntPtr)nativeCtor,
+                    godot_bool.True, &constructed);
+                NativePtr = constructed;
 
                 InteropUtils.TieManagedToUnmanaged(this, NativePtr,
                     nativeName, refCounted, GetType(), cachedType);

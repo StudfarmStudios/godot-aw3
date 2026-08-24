@@ -1071,7 +1071,11 @@ namespace Godot.Bridge
 
                     using godot_string currentClassName = Marshaling.ConvertStringToNative(ReflectionUtils.ConstructTypeName(type));
 
-                    addPropInfoFunc(scriptPtr, &currentClassName, interopProperties, length);
+                    // Dispatched natively rather than as a calli: Mono's AOT
+                    // compiler skips wrappers for indirect unmanaged calls, so
+                    // calling addPropInfoFunc here would run on the interpreter.
+                    NativeFuncs.godotsharp_invoke_property_info_adder((IntPtr)addPropInfoFunc,
+                        scriptPtr, &currentClassName, interopProperties, length);
 
                     // We're borrowing the native value of the StringName entries.
                     // The dictionary needs to be kept alive until `addPropInfoFunc` returns.
@@ -1257,7 +1261,10 @@ namespace Godot.Bridge
                         i++;
                     }
 
-                    addDefValFunc(scriptPtr, interopDefaultValues, length);
+                    // Dispatched natively, for the same reason as
+                    // addPropInfoFunc above.
+                    NativeFuncs.godotsharp_invoke_default_value_adder((IntPtr)addDefValFunc,
+                        scriptPtr, interopDefaultValues, length);
 
                     // We're borrowing the native value of the StringName and Variant entries.
                     // The dictionary needs to be kept alive until `addDefValFunc` returns.
