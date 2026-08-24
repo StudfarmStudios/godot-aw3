@@ -922,10 +922,15 @@ void RendererCanvasRenderRD::canvas_render_items(RID p_to_render_target, Item *p
 	state.prev_instance_data_index = state.instance_data_index;
 
 	state.instance_data = nullptr;
-	if (state.instance_data_index > 0) {
+	if (state.instance_data_index > state.instance_data_flushed_index) {
 		// If there was any remaining instance data, it must be flushed.
 		RID buf = state.instance_buffers._get(0);
-		RD::get_singleton()->buffer_flush(buf);
+		RD::get_singleton()->buffer_flush(buf,
+				uint64_t(state.instance_data_flushed_index) * sizeof(InstanceData),
+				uint64_t(state.instance_data_index - state.instance_data_flushed_index) * sizeof(InstanceData));
+		state.instance_data_flushed_index = state.instance_data_index;
+	}
+	if (state.instance_data_index > 0) {
 		state.instance_data_index = 0;
 	}
 }
@@ -3296,7 +3301,9 @@ void RendererCanvasRenderRD::_add_to_batch(bool &r_batch_broken, Batch *&r_curre
 	memcpy(&state.instance_data[state.instance_data_index], &state.intermediary_instance_data, sizeof(InstanceData));
 	state.instance_data_index++;
 	if (state.instance_data_index >= state.max_instances_per_buffer) {
-		RD::get_singleton()->buffer_flush(r_current_batch->instance_buffer);
+		RD::get_singleton()->buffer_flush(r_current_batch->instance_buffer,
+				uint64_t(state.instance_data_flushed_index) * sizeof(InstanceData),
+				uint64_t(state.instance_data_index - state.instance_data_flushed_index) * sizeof(InstanceData));
 		state.instance_data = nullptr;
 		_allocate_instance_buffer();
 		state.instance_data_index = 0;
@@ -3309,6 +3316,7 @@ void RendererCanvasRenderRD::_add_to_batch(bool &r_batch_broken, Batch *&r_curre
 void RendererCanvasRenderRD::_allocate_instance_buffer() {
 	state.instance_buffers.prepare_for_upload();
 	state.instance_data = reinterpret_cast<InstanceData *>(state.instance_buffers.map_raw_for_upload(0));
+	state.instance_data_flushed_index = 0;
 }
 
 void RendererCanvasRenderRD::_prepare_batch_texture_info(RID p_texture, TextureState &p_state, TextureInfo *p_info) {

@@ -612,6 +612,8 @@ class RendererCanvasRenderRD : public RendererCanvasRender {
 		InstanceData *instance_data = nullptr;
 		/// The index of the next instance to be added to <c>instance_data</c>.
 		uint32_t instance_data_index = 0;
+		/// The first instance in the current buffer that has not been flushed yet.
+		uint32_t instance_data_flushed_index = 0;
 		/// Save the previous instance data to allow us to append .
 		InstanceData *prev_instance_data = nullptr;
 		uint32_t prev_instance_data_index = 0;

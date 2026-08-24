@@ -1789,13 +1789,10 @@ uint8_t *RenderingDeviceDriverWebGPU::buffer_persistent_map_advance(BufferID p_b
 	// Task 7.5: For dynamic persistent buffers, rotate to the next slice and
 	// return a pointer into that slice. Godot writes one frame's worth of data
 	// here, and the GPU reads from `frame_idx * per_frame_size` via dynamic offset.
+	// buffer_flush() receives the exact logical range written within this slice.
 	if (buf->is_dynamic() && buf->per_frame_size > 0 && frame_count > 1) {
 		buf->frame_idx = (buf->frame_idx + 1) % frame_count;
 		uint64_t slice_offset = (uint64_t)buf->frame_idx * buf->per_frame_size;
-		// Set dirty range to just this frame's slice so buffer_flush() only
-		// writes per_frame_size bytes instead of the entire multi-frame buffer.
-		buf->dirty_offset = slice_offset;
-		buf->dirty_end = slice_offset + buf->per_frame_size;
 		return buf->shadow_map + slice_offset;
 	}
 	return buf->shadow_map;
@@ -1819,25 +1816,31 @@ uint64_t RenderingDeviceDriverWebGPU::buffer_get_dynamic_offsets(Span<BufferID> 
 	return mask;
 }
 
-void RenderingDeviceDriverWebGPU::buffer_flush(BufferID p_buffer) {
+void RenderingDeviceDriverWebGPU::buffer_flush(BufferID p_buffer, uint64_t p_offset, uint64_t p_size) {
 	WGBuffer *buf = (WGBuffer *)(p_buffer.id);
 	if (buf && buf->shadow_map) {
-		// Flush only the dirty range if one was set (e.g., by
-		// buffer_persistent_map_advance), otherwise fall back to full buffer.
-		uint64_t flush_offset = 0;
-		uint64_t flush_size = buf->size;
-		if (buf->dirty_end > buf->dirty_offset) {
-			flush_offset = buf->dirty_offset;
-			flush_size = buf->dirty_end - buf->dirty_offset;
+		const uint64_t logical_size = buf->is_dynamic() ? buf->per_frame_size : buf->size;
+		ERR_FAIL_COND(p_offset > logical_size);
+		const uint64_t requested_size = p_size > 0 ? p_size : logical_size - p_offset;
+		ERR_FAIL_COND(requested_size > logical_size - p_offset);
+		if (requested_size == 0) {
+			return;
 		}
 
-		// Dynamic persistent buffers (the 2D canvas instance buffer above all)
-		// mark their whole per-frame slice dirty however little of it changed,
-		// which uploaded >1MB every frame — including completely static menu
-		// frames. Diff the slice against what was last uploaded for it and
-		// write only the changed span. Safe exactly because these buffers are
-		// only ever written CPU-side through this path: no encoder copy or
-		// unmap flush can make the GPU contents diverge from flush_compare.
+		// queue.writeBuffer requires 4-byte-aligned offsets and sizes. Expand
+		// partial updates outwards; the shadow map contains the authoritative
+		// neighboring bytes, so including them does not change buffer contents.
+		const uint64_t range_start = p_offset & ~3ULL;
+		const uint64_t range_end = MIN((p_offset + requested_size + 3) & ~3ULL, logical_size);
+		const uint64_t flush_size = range_end - range_start;
+		const uint64_t slice_offset = buf->is_dynamic() ? (uint64_t)buf->frame_idx * buf->per_frame_size : 0;
+		const uint64_t flush_offset = slice_offset + range_start;
+
+		// Dynamic persistent buffers are CPU-written through this path. Compare
+		// only the populated range supplied by the renderer, rather than scanning
+		// the entire capacity to find its last changed byte. This preserves the
+		// static-frame upload skip without walking megabytes of unused tail data
+		// in active scenes.
 		if (buf->is_dynamic() && flush_size > 0) {
 			if (!buf->flush_compare) {
 				buf->flush_compare = (uint8_t *)memalloc(buf->size);
@@ -1845,24 +1848,12 @@ void RenderingDeviceDriverWebGPU::buffer_flush(BufferID p_buffer) {
 			}
 			const uint8_t *cur = buf->shadow_map + flush_offset;
 			uint8_t *prev = buf->flush_compare + flush_offset;
-			uint64_t first = 0;
-			while (first < flush_size && cur[first] == prev[first]) {
-				first++;
-			}
-			if (first == flush_size) {
+			if (memcmp(cur, prev, flush_size) == 0) {
 				buf->dirty_offset = 0;
 				buf->dirty_end = 0;
 				return; // Identical to what the GPU already has.
 			}
-			uint64_t last = flush_size;
-			while (last > first && cur[last - 1] == prev[last - 1]) {
-				last--;
-			}
-			first &= ~3ULL; // writeBuffer offset/size must be 4-aligned.
-			last = MIN(flush_size, (last + 3) & ~3ULL);
-			memcpy(prev + first, cur + first, last - first);
-			flush_offset += first;
-			flush_size = last - first;
+			memcpy(prev, cur, flush_size);
 		}
 
 		wgpuQueueWriteBuffer(queue, buf->handle, flush_offset, buf->shadow_map + flush_offset, flush_size);

@@ -1092,7 +1092,7 @@ Error RenderingDevice::_buffer_update(Buffer *p_buffer, RID p_buffer_id, uint32_
 
 		memcpy(dst_data + p_offset, p_data, p_size);
 		direct_copy_count++;
-		buffer_flush(p_buffer_id);
+		buffer_flush(p_buffer_id, p_offset, p_size);
 		return OK;
 	}
 
@@ -1487,12 +1487,18 @@ uint8_t *RenderingDevice::buffer_persistent_map_advance(RID p_buffer) {
 	return driver->buffer_persistent_map_advance(buffer->driver_id, frames_drawn);
 }
 
-void RenderingDevice::buffer_flush(RID p_buffer) {
+void RenderingDevice::buffer_flush(RID p_buffer, uint64_t p_offset, uint64_t p_size) {
 	ERR_RENDER_THREAD_GUARD();
 
 	Buffer *buffer = _get_buffer_from_owner(p_buffer);
 	ERR_FAIL_NULL_MSG(buffer, "Buffer argument is not a valid buffer of any type.");
-	driver->buffer_flush(buffer->driver_id);
+	ERR_FAIL_COND_MSG(p_offset > buffer->size, "Buffer flush offset is larger than the buffer.");
+	const uint64_t flush_size = p_size > 0 ? p_size : buffer->size - p_offset;
+	ERR_FAIL_COND_MSG(flush_size > buffer->size - p_offset, "Buffer flush range is larger than the buffer.");
+	if (flush_size == 0) {
+		return;
+	}
+	driver->buffer_flush(buffer->driver_id, p_offset, flush_size);
 }
 
 RID RenderingDevice::storage_buffer_create(uint32_t p_size_bytes, Span<uint8_t> p_data, BitField<StorageBufferUsage> p_usage, BitField<BufferCreationBits> p_creation_bits) {

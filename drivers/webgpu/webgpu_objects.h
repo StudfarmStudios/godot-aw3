@@ -78,9 +78,8 @@ struct WGBuffer {
 	// still lands before the encoder copies that read it.
 	LocalVector<Pair<uint64_t, uint64_t>> pending_upload_spans;
 
-	// Last-flushed contents, for diffed buffer_flush on dynamic persistent
-	// buffers (the 2D canvas instance buffer re-uploaded its whole >1MB slice
-	// every frame, menu included). Lazily allocated to buf->size.
+	// Last-flushed contents, for skipping unchanged populated ranges in
+	// buffer_flush on dynamic persistent buffers. Lazily allocated to buf->size.
 	uint8_t *flush_compare = nullptr;
 };
 
