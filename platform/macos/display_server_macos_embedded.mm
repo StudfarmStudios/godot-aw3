@@ -59,6 +59,9 @@
 #if defined(METAL_ENABLED)
 #import "drivers/metal/rendering_context_driver_metal.h"
 #endif
+#if defined(WEBGPU_ENABLED)
+#include "drivers/webgpu/rendering_context_driver_webgpu.h"
+#endif
 #endif // RD_ENABLED
 
 // Keep Quartz after rendering includes, as it includes system GL.h
@@ -96,6 +99,11 @@ DisplayServerMacOSEmbedded::DisplayServerMacOSEmbedded(const String &p_rendering
 #if defined(METAL_ENABLED)
 	if (rendering_driver == "metal") {
 		rendering_context = memnew(RenderingContextDriverMetal);
+	}
+#endif
+#if defined(WEBGPU_ENABLED)
+	if (rendering_driver == "webgpu") {
+		rendering_context = memnew(RenderingContextDriverWebGPU);
 	}
 #endif
 
@@ -161,6 +169,9 @@ DisplayServerMacOSEmbedded::DisplayServerMacOSEmbedded(const String &p_rendering
 #ifdef METAL_ENABLED
 			RenderingContextDriverMetal::WindowPlatformData metal;
 #endif
+#ifdef WEBGPU_ENABLED
+			RenderingContextDriverWebGPU::WindowPlatformData webgpu;
+#endif
 		} wpd;
 #ifdef VULKAN_ENABLED
 		if (rendering_driver == "vulkan") {
@@ -170,6 +181,11 @@ DisplayServerMacOSEmbedded::DisplayServerMacOSEmbedded(const String &p_rendering
 #ifdef METAL_ENABLED
 		if (rendering_driver == "metal") {
 			wpd.metal.layer = (__bridge CA::MetalLayer *)layer;
+		}
+#endif
+#ifdef WEBGPU_ENABLED
+		if (rendering_driver == "webgpu") {
+			wpd.webgpu.metal_layer = (__bridge void *)layer;
 		}
 #endif
 		Error err = rendering_context->window_create(window_id_counter, &wpd);
@@ -262,6 +278,9 @@ Vector<String> DisplayServerMacOSEmbedded::get_rendering_drivers_func() {
 #endif
 #if defined(METAL_ENABLED)
 	drivers.push_back("metal");
+#endif
+#if defined(WEBGPU_ENABLED)
+	drivers.push_back("webgpu");
 #endif
 #if defined(GLES3_ENABLED)
 	drivers.push_back("opengl3");

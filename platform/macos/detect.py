@@ -48,6 +48,7 @@ def get_opts():
         ("SWIFT_FRONTEND", "Path to the swift-frontend binary", ""),
         ("MACOS_SDK_PATH", "Path to the macOS SDK", ""),
         ("vulkan_sdk_path", "Path to the Vulkan SDK", ""),
+        ("dawn_sdk_path", "Path to an installed Dawn SDK with a static webgpu_dawn library", os.getenv("DAWN_SDK_PATH", "")),
         EnumVariable("macports_clang", "Build using Clang from MacPorts", "no", ["no", "5.0", "devel"], ignorecase=2),
         BoolVariable("use_ubsan", "Use LLVM/GCC compiler undefined behavior sanitizer (UBSAN)", False),
         BoolVariable("use_asan", "Use LLVM/GCC compiler address sanitizer (ASAN)", False),
@@ -88,7 +89,7 @@ def get_flags():
         "arch": detect_arch(),
         "use_volk": False,
         "metal": True,
-        "supported": ["library", "metal", "mono"],
+        "supported": ["library", "metal", "mono", "webgpu"],
     }
 
 
@@ -316,6 +317,24 @@ def configure(env: "SConsEnvironment"):
         extra_frameworks.add("MetalKit")
         extra_frameworks.add("MetalFX")
         env.Prepend(CPPPATH=["#thirdparty/spirv-cross"])
+
+    if env["webgpu"]:
+        dawn_sdk_path = os.path.abspath(env["dawn_sdk_path"]) if env["dawn_sdk_path"] else ""
+        dawn_header = os.path.join(dawn_sdk_path, "include", "webgpu", "webgpu.h")
+        dawn_library = os.path.join(dawn_sdk_path, "lib", "libwebgpu_dawn.a")
+        if not dawn_sdk_path or not os.path.isfile(dawn_header) or not os.path.isfile(dawn_library):
+            print_error(
+                "The native WebGPU rendering driver requires a static Dawn SDK. "
+                "Set 'dawn_sdk_path' to a CMake install prefix containing "
+                "include/webgpu/webgpu.h and lib/libwebgpu_dawn.a."
+            )
+            sys.exit(255)
+
+        env.AppendUnique(CPPDEFINES=["WEBGPU_ENABLED", "RD_ENABLED"])
+        env.Prepend(CPPPATH=[os.path.join(dawn_sdk_path, "include")])
+        env.Prepend(LIBPATH=[os.path.join(dawn_sdk_path, "lib")])
+        env.Append(LIBS=["webgpu_dawn"])
+        extra_frameworks.add("Metal")
 
     if env["vulkan"]:
         env.AppendUnique(CPPDEFINES=["VULKAN_ENABLED", "RD_ENABLED"])

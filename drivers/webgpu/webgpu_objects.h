@@ -32,6 +32,7 @@
 
 #ifdef WEBGPU_ENABLED
 
+#include "core/os/mutex.h"
 #include "servers/rendering/rendering_device_driver.h"
 
 #include <webgpu/webgpu.h>
@@ -259,6 +260,10 @@ struct WGFramebuffer {
 // =============================================================================
 
 struct WGPipelineWrapper {
+	// Dawn may deliver asynchronous pipeline callbacks from an internal worker
+	// thread on native platforms. Protect readiness, handles, and orphaning so
+	// the rendering thread can poll/free a wrapper without racing that callback.
+	Mutex mutex;
 	enum Type { RENDER, COMPUTE };
 	Type type = RENDER;
 	union {
@@ -490,6 +495,7 @@ struct WGCommandBuffer {
 struct WGFence {
 	bool signaled = false;
 	uint64_t submission_id = 0;
+	WGPUFuture completion_future = WGPU_FUTURE_INIT;
 	bool work_done_pending = false; // True while wgpuQueueOnSubmittedWorkDone callback is in flight.
 	bool freed = false;             // Freed while callback pending; callback will delete.
 };

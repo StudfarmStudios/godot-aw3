@@ -49,7 +49,9 @@
 #include "tint_wrapper.h"
 
 #include <webgpu/webgpu.h>
+#ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
+#endif
 #include <cstdio> // snprintf; only reached transitively in threaded builds.
 #include <cstdlib>
 #include <cstring>
@@ -59,7 +61,7 @@
 // These are disabled by default for production builds.
 // #define WEBGPU_VERBOSE
 
-#ifdef WEBGPU_VERBOSE
+#if defined(WEBGPU_VERBOSE) && defined(__EMSCRIPTEN__)
 #define WEBGPU_DIAG(...) EM_ASM(__VA_ARGS__)
 #define WEBGPU_DIAG_INT(...) EM_ASM_INT(__VA_ARGS__)
 #else
@@ -100,30 +102,38 @@ static void _render_pipeline_async_callback(WGPUCreatePipelineAsyncStatus p_stat
 		return;
 	}
 	bool is_strip_variant = (uintptr_t)p_userdata2 == 1;
+	bool destroy_wrapper = false;
 
-	if (p_status == WGPUCreatePipelineAsyncStatus_Success && p_pipeline != nullptr) {
-		if (is_strip_variant) {
-			pw->render_handle_u16 = p_pipeline;
-		} else {
-			pw->render_handle = p_pipeline;
+	{
+		MutexLock lock(pw->mutex);
+		if (p_status == WGPUCreatePipelineAsyncStatus_Success && p_pipeline != nullptr) {
+			if (is_strip_variant) {
+				pw->render_handle_u16 = p_pipeline;
+			} else {
+				pw->render_handle = p_pipeline;
+			}
+		} else if (!is_strip_variant) {
+			// The Uint16 strip variant is optional; the main pipeline is not.
+			pw->failed = true;
+			ERR_PRINT(vformat("WebGPU: asynchronous render pipeline creation failed: %s",
+					p_message.data ? String::utf8(p_message.data, (int)p_message.length) : String("unknown")));
 		}
-	} else if (!is_strip_variant) {
-		// The Uint16 strip variant is optional; the main pipeline is not.
-		pw->failed = true;
-		ERR_PRINT(vformat("WebGPU: asynchronous render pipeline creation failed: %s",
-				p_message.data ? String::utf8(p_message.data, (int)p_message.length) : String("unknown")));
+
+		if (pw->pending_creations > 0) {
+			pw->pending_creations--;
+		}
+		if (pw->pending_creations == 0) {
+			destroy_wrapper = pw->orphaned;
+			if (!destroy_wrapper) {
+				pw->ready = !pw->failed && pw->render_handle != nullptr;
+			}
+		}
 	}
 
-	if (pw->pending_creations > 0) {
-		pw->pending_creations--;
-	}
-	if (pw->pending_creations == 0) {
-		if (pw->orphaned) {
-			// pipeline_free ran while this creation was in flight.
-			_pipeline_wrapper_destroy(pw);
-			return;
-		}
-		pw->ready = !pw->failed && pw->render_handle != nullptr;
+	if (destroy_wrapper) {
+		// pipeline_free ran while creation was in flight. Destroy after releasing
+		// the wrapper mutex because destruction deletes the mutex itself.
+		_pipeline_wrapper_destroy(pw);
 	}
 }
 
@@ -137,21 +147,28 @@ static void _compute_pipeline_async_callback(WGPUCreatePipelineAsyncStatus p_sta
 	if (pw == nullptr) {
 		return;
 	}
+	bool destroy_wrapper = false;
 
-	if (p_status == WGPUCreatePipelineAsyncStatus_Success && p_pipeline != nullptr) {
-		pw->compute_handle = p_pipeline;
-	} else {
-		pw->failed = true;
-		ERR_PRINT(vformat("WebGPU: asynchronous compute pipeline creation failed: %s",
-				p_message.data ? String::utf8(p_message.data, (int)p_message.length) : String("unknown")));
+	{
+		MutexLock lock(pw->mutex);
+		if (p_status == WGPUCreatePipelineAsyncStatus_Success && p_pipeline != nullptr) {
+			pw->compute_handle = p_pipeline;
+		} else {
+			pw->failed = true;
+			ERR_PRINT(vformat("WebGPU: asynchronous compute pipeline creation failed: %s",
+					p_message.data ? String::utf8(p_message.data, (int)p_message.length) : String("unknown")));
+		}
+
+		pw->pending_creations = 0;
+		destroy_wrapper = pw->orphaned;
+		if (!destroy_wrapper) {
+			pw->ready = !pw->failed && pw->compute_handle != nullptr;
+		}
 	}
 
-	pw->pending_creations = 0;
-	if (pw->orphaned) {
+	if (destroy_wrapper) {
 		_pipeline_wrapper_destroy(pw);
-		return;
 	}
-	pw->ready = !pw->failed && pw->compute_handle != nullptr;
 }
 
 // Fence work-done callback: fires when wgpuQueueSubmit work completes on GPU.
@@ -275,43 +292,24 @@ static uint32_t _pipelines_created_total = 0;
 // non-filtering samplers on depth textures, and Godot reads the shadow atlas
 // with an ordinary linear sampler, so those bindings have to be declared - and
 // bound - as non-filtering.
-// True when the shader's layout declares this sampler binding non-filtering, in
-// which case a filtering sampler cannot legally be bound to it.
-static bool _layout_wants_nonfiltering(const WGShader *p_shader, uint32_t p_set_index, uint32_t p_binding) {
+// Return the sampler type declared by the shader layout at this binding. Combined
+// sampler+texture uniforms store only their texture half as layout_entry, so keep
+// checking the separately remembered sampler-half type too.
+static WGPUSamplerBindingType _layout_sampler_type(const WGShader *p_shader, uint32_t p_set_index, uint32_t p_binding) {
 	if (!p_shader || p_set_index >= (uint32_t)p_shader->bind_group_infos.size()) {
-		return false;
+		return WGPUSamplerBindingType_BindingNotUsed;
 	}
 	for (const WGShader::BindGroupEntry &bge : p_shader->bind_group_infos[p_set_index].entries) {
-		if (bge.layout_entry.binding == p_binding) {
-			return bge.layout_entry.sampler.type == WGPUSamplerBindingType_NonFiltering;
+		if (bge.layout_entry.binding == p_binding &&
+				bge.layout_entry.sampler.type != WGPUSamplerBindingType_BindingNotUsed) {
+			return bge.layout_entry.sampler.type;
 		}
-		// Combined sampler+texture: only the texture half (binding+1) is stored, so
-		// the sampler half has to be matched through its remembered type.
 		if (bge.combined_sampler_type != WGPUSamplerBindingType_BindingNotUsed &&
 				bge.layout_entry.binding == p_binding + 1) {
-			return bge.combined_sampler_type == WGPUSamplerBindingType_NonFiltering;
+			return bge.combined_sampler_type;
 		}
 	}
-	return false;
-}
-
-// True when the shader's layout declares this sampler binding as a comparison
-// sampler. A comparison sampler may only be bound where the layout says so.
-static bool _layout_wants_comparison(const WGShader *p_shader, uint32_t p_set_index, uint32_t p_binding) {
-	if (!p_shader || p_set_index >= (uint32_t)p_shader->bind_group_infos.size()) {
-		return false;
-	}
-	for (const WGShader::BindGroupEntry &bge : p_shader->bind_group_infos[p_set_index].entries) {
-		if (bge.layout_entry.binding == p_binding) {
-			return bge.layout_entry.sampler.type == WGPUSamplerBindingType_Comparison;
-		}
-		// Combined sampler+texture: see _layout_wants_nonfiltering.
-		if (bge.combined_sampler_type != WGPUSamplerBindingType_BindingNotUsed &&
-				bge.layout_entry.binding == p_binding + 1) {
-			return bge.combined_sampler_type == WGPUSamplerBindingType_Comparison;
-		}
-	}
-	return false;
+	return WGPUSamplerBindingType_BindingNotUsed;
 }
 
 static void _collect_depth_paired_samplers(const char *p_wgsl, HashSet<uint32_t> *r_sampler_keys) {
@@ -462,6 +460,7 @@ static char *_translate_spirv_to_wgsl(const uint8_t *p_spv_ptr, int p_spv_size) 
 			// browser can be reproduced against the host tint_convert_cli instead of
 			// guessed at from a truncated message. Only populated on failure.
 			{
+#ifdef __EMSCRIPTEN__
 				Vector<uint8_t> failed_bytes;
 				failed_bytes.resize((int)p_spv_size);
 				memcpy(failed_bytes.ptrw(), p_spv_ptr, (size_t)p_spv_size);
@@ -474,6 +473,7 @@ static char *_translate_spirv_to_wgsl(const uint8_t *p_spv_ptr, int p_spv_size) 
 					}
 				},
 						b64_cs.get_data());
+#endif
 			}
 		} else {
 			ERR_PRINT("Tint SPIR-V→WGSL failed (unknown error)");
@@ -571,7 +571,7 @@ static void _wgsl_disk_cache_load() {
 	// here (the file is read-only), so a bad seed is just ignored.
 	int seeded = _wgsl_cache_parse_file("/tmp/wgsl_seed.bin");
 	if (seeded > 0) {
-		EM_ASM({ console.log('[WGSLCACHE] seeded ' + $0 + ' entries from bundled cache'); }, (int)seeded);
+		print_verbose(vformat("[WGSLCACHE] seeded %d entries from bundled cache", seeded));
 	}
 
 	Ref<DirAccess> da = DirAccess::create_for_path("user://");
@@ -597,11 +597,11 @@ static void _wgsl_disk_cache_load() {
 		// scene renders error-magenta) - self-heal by refusing all of it. The next
 		// boot repopulates from Tint (or the seed).
 		_wgsl_disk_cache_nuke();
-		EM_ASM({ console.warn('[WGSLCACHE] corrupt cache discarded'); });
+		WARN_PRINT("[WGSLCACHE] corrupt cache discarded");
 		return;
 	}
 	if (loaded > 0) {
-		EM_ASM({ console.log('[WGSLCACHE] loaded ' + $0 + ' entries'); }, (int)loaded);
+		print_verbose(vformat("[WGSLCACHE] loaded %d entries", loaded));
 	}
 }
 
@@ -642,8 +642,8 @@ static void _wgsl_disk_cache_flush() {
 	_wgsl_disk_cache_pending = 0;
 	_wgsl_disk_cache_last_flush_usec = OS::get_singleton()->get_ticks_usec();
 	if (written > 0) {
-		EM_ASM({ console.log('[WGSLCACHE] flushed ' + $0 + ' new entries (session: cache=' + $1 + ' precompiled=' + $2 + ' tint=' + $3 + ')'); },
-				(int)written, (int)_spv_to_wgsl_cache_hits, (int)_spv_to_wgsl_precompiled_hits, (int)_spv_to_wgsl_cache_misses);
+		print_verbose(vformat("[WGSLCACHE] flushed %d new entries (session: cache=%d precompiled=%d tint=%d)",
+				written, _spv_to_wgsl_cache_hits, _spv_to_wgsl_precompiled_hits, _spv_to_wgsl_cache_misses));
 	}
 }
 
@@ -994,14 +994,17 @@ RenderingDeviceDriverWebGPU::~RenderingDeviceDriverWebGPU() {
 
 	// Release dummy samplers.
 	if (dummy_filtering_sampler) {
+		sampler_descriptors.erase(dummy_filtering_sampler);
 		wgpuSamplerRelease(dummy_filtering_sampler);
 		dummy_filtering_sampler = nullptr;
 	}
 	if (dummy_comparison_sampler) {
+		sampler_descriptors.erase(dummy_comparison_sampler);
 		wgpuSamplerRelease(dummy_comparison_sampler);
 		dummy_comparison_sampler = nullptr;
 	}
 	if (dummy_nonfiltering_sampler) {
+		sampler_descriptors.erase(dummy_nonfiltering_sampler);
 		wgpuSamplerRelease(dummy_nonfiltering_sampler);
 		dummy_nonfiltering_sampler = nullptr;
 	}
@@ -1062,6 +1065,7 @@ Error RenderingDeviceDriverWebGPU::initialize(uint32_t p_device_index, uint32_t 
 	// Enable with ?aw3_perf in the URL, or by setting globalThis.__aw3_perf
 	// before the engine starts — deliberately available in release builds, since
 	// the release artifact is the one worth measuring.
+#ifdef __EMSCRIPTEN__
 	perf.enabled = EM_ASM_INT({
 		try {
 			return (globalThis.__aw3_perf ||
@@ -1070,6 +1074,9 @@ Error RenderingDeviceDriverWebGPU::initialize(uint32_t p_device_index, uint32_t 
 			return 0;
 		}
 	}) != 0;
+#else
+	perf.enabled = OS::get_singleton()->get_environment("AW3_WEBGPU_PERF") == "1";
+#endif
 
 	// Query device limits.
 	_check_capabilities();
@@ -1218,6 +1225,9 @@ Error RenderingDeviceDriverWebGPU::initialize(uint32_t p_device_index, uint32_t 
 		sd.mipmapFilter = WGPUMipmapFilterMode_Linear;
 		sd.maxAnisotropy = 1;
 		dummy_filtering_sampler = wgpuDeviceCreateSampler(device, &sd);
+		if (dummy_filtering_sampler) {
+			sampler_descriptors.insert(dummy_filtering_sampler, sd);
+		}
 
 		WGPUSamplerDescriptor csd = {};
 		csd.addressModeU = WGPUAddressMode_ClampToEdge;
@@ -1229,6 +1239,9 @@ Error RenderingDeviceDriverWebGPU::initialize(uint32_t p_device_index, uint32_t 
 		csd.maxAnisotropy = 1;
 		csd.compare = WGPUCompareFunction_Less;
 		dummy_comparison_sampler = wgpuDeviceCreateSampler(device, &csd);
+		if (dummy_comparison_sampler) {
+			sampler_descriptors.insert(dummy_comparison_sampler, csd);
+		}
 
 		WGPUSamplerDescriptor nsd = {};
 		nsd.addressModeU = WGPUAddressMode_ClampToEdge;
@@ -1239,6 +1252,9 @@ Error RenderingDeviceDriverWebGPU::initialize(uint32_t p_device_index, uint32_t 
 		nsd.mipmapFilter = WGPUMipmapFilterMode_Nearest;
 		nsd.maxAnisotropy = 1;
 		dummy_nonfiltering_sampler = wgpuDeviceCreateSampler(device, &nsd);
+		if (dummy_nonfiltering_sampler) {
+			sampler_descriptors.insert(dummy_nonfiltering_sampler, nsd);
+		}
 	}
 
 	// Create aliasing stub buffer — substituted for duplicate writable storage buffer bindings
@@ -1258,6 +1274,7 @@ Error RenderingDeviceDriverWebGPU::initialize(uint32_t p_device_index, uint32_t 
 
 	// Always-on: uncaptured error listener so WebGPU validation errors appear
 	// in the browser console before any abort(). Lightweight — no extra API calls.
+#ifdef __EMSCRIPTEN__
 	MAIN_THREAD_EM_ASM({
 		var d = Module['preinitializedWebGPUDevice'];
 		if (d && !d._uncapturedPatched) {
@@ -1273,6 +1290,7 @@ Error RenderingDeviceDriverWebGPU::initialize(uint32_t p_device_index, uint32_t 
 			d._lostPatched = true;
 		}
 	});
+#endif
 
 	// Install main-thread JS diagnostic patches early — as soon as the device is
 	// ready, before any pipelines are created. This ensures we intercept EVERY
@@ -1284,7 +1302,7 @@ Error RenderingDeviceDriverWebGPU::initialize(uint32_t p_device_index, uint32_t 
 	// doubles every render-pipeline compile, and the per-module getCompilationInfo()
 	// forces a sync compile path. On shiny_gen with ~383 shaders, leaving these on
 	// adds ~12s to startup. Re-enable by uncommenting #define WEBGPU_VERBOSE above.
-#ifdef WEBGPU_VERBOSE
+#if defined(WEBGPU_VERBOSE) && defined(__EMSCRIPTEN__)
 	MAIN_THREAD_EM_ASM({
 		var d = Module['preinitializedWebGPUDevice'];
 		if (!d) { console.error('[DIAG-PATCH] preinitializedWebGPUDevice missing'); return; }
@@ -1405,6 +1423,11 @@ void RenderingDeviceDriverWebGPU::_check_capabilities() {
 	WGPUStatus status = wgpuDeviceGetLimits(device, &device_limits);
 	if (status != WGPUStatus_Success) {
 		WARN_PRINT("WebGPU: Failed to query device limits, using spec minimums.");
+	} else {
+		print_verbose(vformat("WebGPU: Device limits: sampled textures/stage=%d, samplers/stage=%d, bind groups=%d.",
+				device_limits.maxSampledTexturesPerShaderStage,
+				device_limits.maxSamplersPerShaderStage,
+				device_limits.maxBindGroups));
 	}
 
 	// Check for timestamp query support.
@@ -1415,10 +1438,17 @@ void RenderingDeviceDriverWebGPU::_check_capabilities() {
 	// errors that corrupt rendering. GPU timestamp profiling is sacrificed — the
 	// profiler reports "gpu=N/A" — but rendering correctness is preserved.
 	// TODO: Re-enable once emdawnwebgpu properly implements unmap-cancels-pending-map.
+#ifdef __EMSCRIPTEN__
 	timestamp_supported = false;
 	if (wgpuDeviceHasFeature(device, WGPUFeatureName_TimestampQuery)) {
 		print_verbose("WebGPU: Timestamp query feature is available (readback disabled due to buffer mapping issue).");
 	}
+#else
+	timestamp_supported = wgpuDeviceHasFeature(device, WGPUFeatureName_TimestampQuery);
+	if (timestamp_supported) {
+		print_verbose("WebGPU: Timestamp query feature is available.");
+	}
+#endif
 
 	// float32-filterable: required for linear sampling of R32Float / RG32Float / RGBA32Float.
 	// Forward Mobile's HDR post-processing path samples 32F render targets with linear
@@ -1446,23 +1476,16 @@ void RenderingDeviceDriverWebGPU::_check_capabilities() {
 		WARN_PRINT("WebGPU: float32-blendable feature NOT available — blend on float32 targets will be disabled.");
 	}
 
-	// texture-formats-tier1: adds storage binding support for r8unorm, rg8unorm, etc.
-	// The emdawnwebgpu 4.0.10 header lacks the WGPUFeatureName enum value for this
-	// feature, so query the JS device object directly.
-	has_texture_formats_tier1 = (bool)EM_ASM_INT({
-		var d = Module['preinitializedWebGPUDevice'];
-		return (d && d.features && d.features.has('texture-formats-tier1')) ? 1 : 0;
-	});
+	// texture-formats-tier1 adds storage binding support for r8unorm, rg8unorm, etc.
+	has_texture_formats_tier1 = wgpuDeviceHasFeature(device, WGPUFeatureName_TextureFormatsTier1);
 	if (has_texture_formats_tier1) {
 		print_verbose("WebGPU: texture-formats-tier1 feature is available — r8/rg8 storage formats supported natively.");
 	}
 
 	// readonly-and-readwrite-storage-textures: allows read and read_write access
 	// modes on storage textures. Without this, only write-only is valid.
-	has_rw_storage_textures = (bool)EM_ASM_INT({
-		var d = Module['preinitializedWebGPUDevice'];
-		return (d && d.features && d.features.has('readonly-and-readwrite-storage-textures')) ? 1 : 0;
-	});
+	WGPUInstance webgpu_instance = context_driver ? context_driver->get_instance() : nullptr;
+	has_rw_storage_textures = webgpu_instance && wgpuInstanceHasWGSLLanguageFeature(webgpu_instance, WGPUWGSLLanguageFeatureName_ReadonlyAndReadwriteStorageTextures);
 	if (has_rw_storage_textures) {
 		print_verbose("WebGPU: readonly-and-readwrite-storage-textures feature is available.");
 	} else {
@@ -3209,7 +3232,11 @@ void RenderingDeviceDriverWebGPU::pipeline_set_async_creation(bool p_enabled) {
 
 bool RenderingDeviceDriverWebGPU::pipeline_is_ready(PipelineID p_pipeline) {
 	WGPipelineWrapper *pw = (WGPipelineWrapper *)(p_pipeline.id);
-	return pw == nullptr || pw->ready;
+	if (pw == nullptr) {
+		return true;
+	}
+	MutexLock lock(pw->mutex);
+	return pw->ready;
 }
 
 RDD::SamplerID RenderingDeviceDriverWebGPU::sampler_create(const SamplerState &p_state) {
@@ -3286,6 +3313,7 @@ void RenderingDeviceDriverWebGPU::sampler_free(SamplerID p_sampler) {
 	WGPUSampler sampler = (WGPUSampler)(p_sampler.id);
 	if (sampler) {
 		if (WGPUSampler *twin = nonfiltering_twins.getptr(sampler)) {
+			sampler_descriptors.erase(*twin);
 			wgpuSamplerRelease(*twin);
 			nonfiltering_twins.erase(sampler);
 		}
@@ -3294,26 +3322,52 @@ void RenderingDeviceDriverWebGPU::sampler_free(SamplerID p_sampler) {
 	}
 }
 
-// WebGPU will not accept a comparison sampler where the layout declares a plain
-// one. That combination turns up on bindings the shader never samples: the
-// declaration is dead-code-eliminated before the WGSL is scanned for
-// sampler_comparison, so the layout entry defaults to Filtering, while Godot goes
-// on binding the shadow atlas's comparison sampler (volumetric_fog_process does
-// this with the shadow sampler on its fog-only variants). Nothing reads the
-// binding, so any valid sampler satisfies it.
+// Return a sampler compatible with the binding type declared by the translated
+// WGSL. Besides comparison/plain mismatches on dead bindings, depth textures read
+// without comparison force a NonFiltering layout even when Godot supplied a
+// linear sampler. Combined sampler+texture uniforms are covered by
+// _layout_sampler_type too.
 WGPUSampler RenderingDeviceDriverWebGPU::_compatible_sampler(WGPUSampler p_sampler, const WGShader *p_shader, uint32_t p_set_index, uint32_t p_binding) {
-	if (p_sampler == nullptr || _layout_wants_comparison(p_shader, p_set_index, p_binding)) {
+	if (p_sampler == nullptr) {
 		return p_sampler;
 	}
+
+	WGPUSamplerBindingType target_type = _layout_sampler_type(p_shader, p_set_index, p_binding);
+	if (target_type == WGPUSamplerBindingType_BindingNotUsed || target_type == WGPUSamplerBindingType_Undefined) {
+		return p_sampler;
+	}
+
 	const WGPUSamplerDescriptor *desc = sampler_descriptors.getptr(p_sampler);
-	if (desc == nullptr || desc->compare == WGPUCompareFunction_Undefined) {
+	if (desc == nullptr) {
+		if (target_type == WGPUSamplerBindingType_Comparison && dummy_comparison_sampler) {
+			return dummy_comparison_sampler;
+		}
+		if (target_type == WGPUSamplerBindingType_NonFiltering && dummy_nonfiltering_sampler) {
+			return dummy_nonfiltering_sampler;
+		}
 		return p_sampler;
 	}
-	if (_layout_wants_nonfiltering(p_shader, p_set_index, p_binding)) {
-		// dummy_filtering_sampler would be rejected in a non-filtering slot.
-		return dummy_nonfiltering_sampler;
+
+	const bool is_comparison = desc->compare != WGPUCompareFunction_Undefined;
+	const bool is_filtering = !is_comparison &&
+			(desc->magFilter == WGPUFilterMode_Linear ||
+					desc->minFilter == WGPUFilterMode_Linear ||
+					desc->mipmapFilter == WGPUMipmapFilterMode_Linear ||
+					desc->maxAnisotropy > 1);
+
+	if (target_type == WGPUSamplerBindingType_Comparison) {
+		return is_comparison ? p_sampler : dummy_comparison_sampler;
 	}
-	return dummy_filtering_sampler;
+	if (target_type == WGPUSamplerBindingType_NonFiltering) {
+		if (is_comparison) {
+			return dummy_nonfiltering_sampler;
+		}
+		return is_filtering ? _nonfiltering_twin(p_sampler) : p_sampler;
+	}
+	if (target_type == WGPUSamplerBindingType_Filtering && is_comparison) {
+		return dummy_filtering_sampler;
+	}
+	return p_sampler;
 }
 
 // A copy of p_sampler with filtering turned off, for binding into a slot the
@@ -3340,6 +3394,8 @@ WGPUSampler RenderingDeviceDriverWebGPU::_nonfiltering_twin(WGPUSampler p_sample
 	if (twin == nullptr) {
 		return p_sampler;
 	}
+	twin_desc.label = {};
+	sampler_descriptors.insert(twin, twin_desc);
 	nonfiltering_twins.insert(p_sampler, twin);
 	return twin;
 }
@@ -3474,6 +3530,21 @@ Error RenderingDeviceDriverWebGPU::fence_wait(FenceID p_fence) {
 	WGFence *fence = (WGFence *)(p_fence.id);
 	ERR_FAIL_NULL_V(fence, ERR_INVALID_PARAMETER);
 
+#ifndef __EMSCRIPTEN__
+	// Native Dawn provides an actual waitable future. Waiting here is required:
+	// force-signaling (the browser fallback below) can let Godot recycle GPU
+	// resources before Metal has completed the preceding frame.
+	if (fence->work_done_pending) {
+		WGPUInstance inst = context_driver ? context_driver->get_instance() : nullptr;
+		ERR_FAIL_NULL_V(inst, ERR_CANT_ACQUIRE_RESOURCE);
+		WGPUFutureWaitInfo wait_info = WGPU_FUTURE_WAIT_INFO_INIT;
+		wait_info.future = fence->completion_future;
+		WGPUWaitStatus status = wgpuInstanceWaitAny(inst, 1, &wait_info, UINT64_MAX);
+		ERR_FAIL_COND_V_MSG(status != WGPUWaitStatus_Success || !wait_info.completed,
+				ERR_CANT_ACQUIRE_RESOURCE, "WebGPU: Failed waiting for Dawn queue completion.");
+	}
+	return fence->signaled ? OK : ERR_CANT_ACQUIRE_RESOURCE;
+#else
 	// In the browser's single-threaded model, GPU work submitted via
 	// wgpuQueueSubmit completes asynchronously.  The emdawnwebgpu
 	// implementation resolves AllowSpontaneous callbacks during
@@ -3495,6 +3566,7 @@ Error RenderingDeviceDriverWebGPU::fence_wait(FenceID p_fence) {
 		fence->signaled = true;
 	}
 	return OK;
+#endif
 }
 
 void RenderingDeviceDriverWebGPU::fence_free(FenceID p_fence) {
@@ -3503,6 +3575,15 @@ void RenderingDeviceDriverWebGPU::fence_free(FenceID p_fence) {
 		return;
 	}
 
+#ifndef __EMSCRIPTEN__
+	// WaitAnyOnly callbacks are delivered by fence_wait, so drain an outstanding
+	// future before releasing its userdata.
+	if (fence->work_done_pending && fence_wait(p_fence) != OK) {
+		ERR_PRINT("WebGPU: Could not drain Dawn queue completion before freeing a fence.");
+		return;
+	}
+	delete fence;
+#else
 	// If an async work-done callback is in flight, mark freed and let
 	// the callback handle deletion (use-after-free prevention).
 	if (fence->work_done_pending) {
@@ -3511,6 +3592,7 @@ void RenderingDeviceDriverWebGPU::fence_free(FenceID p_fence) {
 	}
 
 	delete fence;
+#endif
 }
 
 // =============================================================================
@@ -3577,7 +3659,7 @@ Error RenderingDeviceDriverWebGPU::command_queue_execute_and_present(CommandQueu
 			print_line(vformat("[SUBMITTIME] %.1fms cmds=%d", _submit_dt / 1000.0, (int)wgpu_cmd_buffers.size()));
 		}
 		// Diagnostic: log submit count for the first few frames.
-#ifdef WEBGPU_VERBOSE
+#if defined(WEBGPU_VERBOSE) && defined(__EMSCRIPTEN__)
 		static int _submit_log = 0;
 		if (_submit_log < 10) {
 			EM_ASM({ console.log('[DIAG-SUBMIT] frame=' + $0 + ' cmds=' + $1); },
@@ -3594,11 +3676,15 @@ Error RenderingDeviceDriverWebGPU::command_queue_execute_and_present(CommandQueu
 			fence->signaled = false;
 			fence->work_done_pending = true;
 			WGPUQueueWorkDoneCallbackInfo cb = {};
+#ifdef __EMSCRIPTEN__
 			cb.mode = WGPUCallbackMode_AllowSpontaneous;
+#else
+			cb.mode = WGPUCallbackMode_WaitAnyOnly;
+#endif
 			cb.callback = _fence_work_done_callback;
 			cb.userdata1 = fence;
 			cb.userdata2 = nullptr;
-			wgpuQueueOnSubmittedWorkDone(queue, cb);
+			fence->completion_future = wgpuQueueOnSubmittedWorkDone(queue, cb);
 		}
 	}
 
@@ -3843,7 +3929,11 @@ Error RenderingDeviceDriverWebGPU::swap_chain_resize(CommandQueueID p_cmd_queue,
 	config.format = sc->format;
 	config.usage = WGPUTextureUsage_RenderAttachment;
 	config.alphaMode = WGPUCompositeAlphaMode_Opaque;
+#ifdef __EMSCRIPTEN__
 	config.presentMode = WGPUPresentMode_Fifo; // Browser always vsyncs via requestAnimationFrame.
+#else
+	config.presentMode = context_driver->surface_get_vsync_mode(sc->surface_id) == DisplayServerEnums::VSYNC_DISABLED ? WGPUPresentMode_Immediate : WGPUPresentMode_Fifo;
+#endif
 	config.width = width;
 	config.height = height;
 	wgpuSurfaceConfigure(sc->surface, &config);
@@ -5759,9 +5849,6 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 					WGPUBindGroupEntry entry = {};
 					entry.binding = uniform.binding * 2;
 					entry.sampler = (WGPUSampler)(uniform.ids[0].id);
-					if (_layout_wants_nonfiltering(shader, p_set_index, entry.binding)) {
-						entry.sampler = _nonfiltering_twin(entry.sampler);
-					}
 					entry.sampler = _compatible_sampler(entry.sampler, shader, p_set_index, entry.binding);
 					entries.push_back(entry);
 				}
@@ -5886,10 +5973,7 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 					if (sampler && !swt_collapsed) {
 						WGPUBindGroupEntry se = {};
 						se.binding = uniform.binding * 2 + j * 2 + 0;
-						se.sampler = _layout_wants_nonfiltering(shader, p_set_index, se.binding)
-								? _nonfiltering_twin(sampler)
-								: sampler;
-						se.sampler = _compatible_sampler(se.sampler, shader, p_set_index, se.binding);
+						se.sampler = _compatible_sampler(sampler, shader, p_set_index, se.binding);
 						entries.push_back(se);
 					}
 					if (tex && tex->default_view) {
@@ -6209,8 +6293,13 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 		cb.callback = [](WGPUPopErrorScopeStatus p_status, WGPUErrorType p_type, WGPUStringView p_message, void *p_userdata1, void *p_userdata2) {
 			BGScopeCtx *c = (BGScopeCtx *)p_userdata1;
 			if (p_type != WGPUErrorType_NoError) {
+#ifdef __EMSCRIPTEN__
 				EM_ASM({ console.error('[BINDGROUP-FAIL] shader=' + UTF8ToString($0) + ' set=' + $1 + ' : ' + UTF8ToString($2, $3)); },
 						c->shader_name.get_data(), (int)c->set_index, p_message.data, (int)p_message.length);
+#else
+				String message = String::utf8(p_message.data, p_message.length == WGPU_STRLEN ? -1 : (int)p_message.length);
+				ERR_PRINT(vformat("[BINDGROUP-FAIL] shader=%s set=%d: %s", String::utf8(c->shader_name.get_data()), c->set_index, message));
+#endif
 			}
 			memdelete(c);
 		};
@@ -6276,45 +6365,7 @@ WGPUBindGroup RenderingDeviceDriverWebGPU::_get_compatible_bind_group(WGUniformS
 		for (auto &entry : adapted) {
 			// --- Sampler adaptation ---
 			if (entry.sampler != nullptr) {
-				WGPUSamplerBindingType target_samp_type = WGPUSamplerBindingType_BindingNotUsed;
-				for (const auto &bge : p_target_shader->bind_group_infos[p_set_idx].entries) {
-					if (bge.layout_entry.binding == entry.binding &&
-							bge.layout_entry.sampler.type != WGPUSamplerBindingType_BindingNotUsed) {
-						target_samp_type = bge.layout_entry.sampler.type;
-						break;
-					}
-				}
-				// Fallback: check source shader for SWT sampler info.
-				if (target_samp_type == WGPUSamplerBindingType_BindingNotUsed &&
-						p_us->source_shader && p_set_idx < (uint32_t)p_us->source_shader->bind_group_infos.size()) {
-					for (const auto &bge : p_us->source_shader->bind_group_infos[p_set_idx].entries) {
-						if (bge.layout_entry.binding == entry.binding &&
-								bge.layout_entry.sampler.type != WGPUSamplerBindingType_BindingNotUsed) {
-							target_samp_type = bge.layout_entry.sampler.type;
-							break;
-						}
-					}
-				}
-
-				WGPUSamplerBindingType source_samp_type = WGPUSamplerBindingType_BindingNotUsed;
-				if (p_us->source_shader && p_set_idx < (uint32_t)p_us->source_shader->bind_group_infos.size()) {
-					for (const auto &bge : p_us->source_shader->bind_group_infos[p_set_idx].entries) {
-						if (bge.layout_entry.binding == entry.binding &&
-								bge.layout_entry.sampler.type != WGPUSamplerBindingType_BindingNotUsed) {
-							source_samp_type = bge.layout_entry.sampler.type;
-							break;
-						}
-					}
-				}
-
-				if ((target_samp_type == WGPUSamplerBindingType_Filtering ||
-						target_samp_type == WGPUSamplerBindingType_NonFiltering) &&
-						source_samp_type == WGPUSamplerBindingType_Comparison && dummy_filtering_sampler) {
-					entry.sampler = dummy_filtering_sampler;
-				} else if (target_samp_type == WGPUSamplerBindingType_Comparison &&
-						source_samp_type != WGPUSamplerBindingType_Comparison && dummy_comparison_sampler) {
-					entry.sampler = dummy_comparison_sampler;
-				}
+				entry.sampler = _compatible_sampler(entry.sampler, p_target_shader, p_set_idx, entry.binding);
 			}
 
 			// --- Texture view adaptation ---
@@ -7391,11 +7442,14 @@ void RenderingDeviceDriverWebGPU::command_copy_texture_to_buffer(CommandBufferID
 void RenderingDeviceDriverWebGPU::pipeline_free(PipelineID p_pipeline) {
 	WGPipelineWrapper *pw = (WGPipelineWrapper *)(p_pipeline.id);
 	ERR_FAIL_NULL(pw);
-	if (pw->pending_creations > 0) {
-		// An asynchronous creation is still in flight and the Dawn callback holds
-		// this pointer — hand destruction over to the last callback.
-		pw->orphaned = true;
-		return;
+	{
+		MutexLock lock(pw->mutex);
+		if (pw->pending_creations > 0) {
+			// An asynchronous creation is still in flight and the Dawn callback holds
+			// this pointer — hand destruction over to the last callback.
+			pw->orphaned = true;
+			return;
+		}
 	}
 	_pipeline_wrapper_destroy(pw);
 }
@@ -7582,6 +7636,19 @@ void RenderingDeviceDriverWebGPU::_flush_push_constants(WGCommandBuffer *p_cmd_b
 				}
 
 				WGPURenderPassDescriptor pass_desc = {};
+				if (color_attachments.is_empty() && ds_att_ptr == nullptr) {
+					WGPUTextureView dummy_view = _get_dummy_attachment_view(
+							p_cmd_buf->render_state.render_area_width,
+							p_cmd_buf->render_state.render_area_height);
+					if (dummy_view != nullptr) {
+						WGPURenderPassColorAttachment dummy = {};
+						dummy.view = dummy_view;
+						dummy.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+						dummy.loadOp = WGPULoadOp_Clear;
+						dummy.storeOp = WGPUStoreOp_Discard;
+						color_attachments.push_back(dummy);
+					}
+				}
 				pass_desc.colorAttachmentCount = color_attachments.size();
 				pass_desc.colorAttachments = color_attachments.ptr();
 				pass_desc.depthStencilAttachment = ds_att_ptr;
@@ -8007,7 +8074,7 @@ void RenderingDeviceDriverWebGPU::command_begin_render_pass(CommandBufferID p_cm
 
 	// --- Begin render pass ---
 	// --- Diagnostic: verify swap chain view maps to correct JS object ---
-#ifdef WEBGPU_VERBOSE
+#if defined(WEBGPU_VERBOSE) && defined(__EMSCRIPTEN__)
 	if (rp->is_swap_chain_pass && color_attachments.size() > 0) {
 		static int _sc_view_log = 0;
 		if (_sc_view_log < 5) {
@@ -8202,6 +8269,20 @@ void RenderingDeviceDriverWebGPU::command_next_render_subpass(CommandBufferID p_
 	}
 
 	// --- Begin new render pass for this subpass ---
+	if (color_attachments.is_empty() && ds_att_ptr == nullptr) {
+		WGPUTextureView dummy_view = _get_dummy_attachment_view(
+				cmd->render_state.render_area_width,
+				cmd->render_state.render_area_height);
+		if (dummy_view != nullptr) {
+			WGPURenderPassColorAttachment dummy = {};
+			dummy.view = dummy_view;
+			dummy.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+			dummy.loadOp = WGPULoadOp_Clear;
+			dummy.storeOp = WGPUStoreOp_Discard;
+			color_attachments.push_back(dummy);
+		}
+	}
+
 	WGPURenderPassDescriptor pass_desc = {};
 	pass_desc.colorAttachmentCount = color_attachments.size();
 	pass_desc.colorAttachments = color_attachments.ptr();
@@ -8815,8 +8896,10 @@ WGPUShaderModule RenderingDeviceDriverWebGPU::_create_module_with_spec_constants
 		}
 	}
 
-	// Demote read_write storage to read for vertex/fragment stages.
-	if (p_stage == SHADER_STAGE_VERTEX || p_stage == SHADER_STAGE_FRAGMENT) {
+	// WebGPU does not allow read_write storage buffers in vertex shaders.
+	// Keep fragment storage access unchanged: clustered rendering uses atomics there,
+	// and WGSL requires atomic storage variables to remain read_write.
+	if (p_stage == SHADER_STAGE_VERTEX) {
 		char *q = wgsl_str;
 		while ((q = strstr(q, "var<storage, read_write>")) != nullptr) {
 			memcpy(q, "var<storage, read>      ", 24);
@@ -9480,7 +9563,12 @@ void RenderingDeviceDriverWebGPU::command_bind_compute_pipeline(CommandBufferID 
 		cmd->active_encoder = WGCommandBuffer::COMPUTE;
 	}
 
-	if (!pw->ready) {
+	bool pipeline_ready = false;
+	{
+		MutexLock lock(pw->mutex);
+		pipeline_ready = pw->ready;
+	}
+	if (!pipeline_ready) {
 		// Asynchronous creation still in flight (or failed): record the wrapper as
 		// current so uniform-set binding resolves against the right shader layout,
 		// but leave the encoder's pipeline unset — dispatches are dropped until a
@@ -9947,18 +10035,18 @@ void RenderingDeviceDriverWebGPU::begin_segment(uint32_t p_frame_index, uint32_t
 	// skips the per-frame trip into JS for the clock.
 	if (perf.enabled) {
 		perf.frames_since_log++;
-		double now = EM_ASM_DOUBLE({ return performance.now(); });
+		double now = OS::get_singleton()->get_ticks_usec() / 1000.0;
 
 		// Report individual slow frames: the per-second average hides the stalls
 		// that are actually felt.
 		if (perf.last_frame_time > 0) {
 			double frame_ms = now - perf.last_frame_time;
 			if (frame_ms > 25.0) {
-				EM_ASM({ console.log('[SLOWFRAME] ' + $0.toFixed(1) + ' ms draws=' + $1 + ' setbg=' + $2 + ' pipelines=' + $3); },
+				print_line(vformat("[SLOWFRAME] %.1f ms draws=%d setbg=%d pipelines=%d",
 						frame_ms,
-						(int)(perf.draw_calls - perf.draw_calls_at_last_frame),
-						(int)(perf.set_bind_group_calls - perf.set_bind_group_calls_at_last_frame),
-						(int)_pipelines_created_total);
+						perf.draw_calls - perf.draw_calls_at_last_frame,
+						perf.set_bind_group_calls - perf.set_bind_group_calls_at_last_frame,
+						_pipelines_created_total));
 			}
 		}
 		perf.last_frame_time = now;
@@ -9968,19 +10056,11 @@ void RenderingDeviceDriverWebGPU::begin_segment(uint32_t p_frame_index, uint32_t
 			double elapsed = (now - perf.last_log_time) / 1000.0;
 			uint32_t fps = (uint32_t)(perf.frames_since_log / elapsed);
 			uint32_t f = perf.frames_since_log > 0 ? perf.frames_since_log : 1;
-			EM_ASM({
-				console.log('[PERF] fps=' + $0 +
-					' draws/f=' + $1 +
-					' SetBG/f=' + $2 +
-					' PC/f=' + $3 +
-					' RP/f=' + $4 +
-					' SetVB/f=' + $5 +
-					' FI/f=' + $6 +
-					' RingOF/f=' + $7);
-			}, fps, perf.draw_calls / f, perf.set_bind_group_calls / f,
+			print_line(vformat("[PERF] fps=%d draws/f=%d SetBG/f=%d PC/f=%d RP/f=%d SetVB/f=%d FI/f=%d RingOF/f=%d",
+					fps, perf.draw_calls / f, perf.set_bind_group_calls / f,
 					perf.push_constant_writes / f, perf.render_passes / f,
 					perf.set_vertex_buffer_calls / f, perf.first_instance_draws / f,
-					perf.ring_overflows / f);
+					perf.ring_overflows / f));
 			perf.reset();
 			perf.frames_since_log = 0;
 			perf.last_log_time = now;
@@ -10054,8 +10134,12 @@ void RenderingDeviceDriverWebGPU::set_object_name(ObjectType p_type, ID p_driver
 			if (!pw) {
 				break;
 			}
+			MutexLock lock(pw->mutex);
 			if (pw->type == WGPipelineWrapper::RENDER && pw->render_handle) {
 				wgpuRenderPipelineSetLabel(pw->render_handle, label);
+				if (pw->render_handle_u16) {
+					wgpuRenderPipelineSetLabel(pw->render_handle_u16, label);
+				}
 			} else if (pw->type == WGPipelineWrapper::COMPUTE && pw->compute_handle) {
 				wgpuComputePipelineSetLabel(pw->compute_handle, label);
 			}
@@ -10145,7 +10229,13 @@ uint64_t RenderingDeviceDriverWebGPU::api_trait_get(ApiTrait p_trait) {
 		// updates; overflow stalls briefly and reuses blocks.
 		case API_TRAIT_STAGING_BUFFER_MAX_SIZE_MB: return 16;
 		case API_TRAIT_SKELETON_BUFFER_DIRECT_WRITE: return 1;
-		case API_TRAIT_GPU_CALLS_MAIN_THREAD_ONLY: return 1;
+		case API_TRAIT_GPU_CALLS_MAIN_THREAD_ONLY:
+			// Keep pipeline creation on the rendering thread on native Dawn too.
+			// Godot otherwise starts hundreds of concurrent synchronous Dawn/Metal
+			// compiles in its worker pool; a quit can then tear rendering state down
+			// while those workers are still inside Dawn. The deferred compile queue
+			// uses Dawn's asynchronous pipeline API, which is also the browser path.
+			return 1;
 		// Force dual-paraboloid shadows for omni lights. Cubemap shadows
 		// require 6 render pass encoder cycles + 2 copy-to-atlas ops per
 		// light; dual-paraboloid uses 2 passes directly into the atlas,
