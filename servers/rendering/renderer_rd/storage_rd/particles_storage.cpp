@@ -1289,11 +1289,12 @@ void ParticlesStorage::_particles_process_dispatch(Particles *p_particles, const
 	int process_amount = p_process_amount;
 
 	ParticleProcessMaterialData *m = static_cast<ParticleProcessMaterialData *>(material_storage->material_get_data(p_particles->process_material, MaterialStorage::SHADER_TYPE_PARTICLES));
-	if (!m) {
+	if (!m || !m->shader_data || !m->shader_data->valid) {
 		m = static_cast<ParticleProcessMaterialData *>(material_storage->material_get_data(particles_shader.default_material, MaterialStorage::SHADER_TYPE_PARTICLES));
 	}
 
 	ERR_FAIL_NULL(m);
+	ERR_FAIL_NULL(m->shader_data);
 
 	// Preparing another system can allocate this system's sub-emission buffer,
 	// invalidating set 1 between the phase-separated prepare and dispatch loops.
@@ -1587,6 +1588,8 @@ void ParticlesStorage::update_particles() {
 	};
 	thread_local LocalVector<PendingParticles> pending;
 	pending.clear();
+	thread_local LocalVector<Particles *> pipeline_pending;
+	pipeline_pending.clear();
 
 	while (particle_update_list.first()) {
 		//use transform feedback to process particles
@@ -1595,6 +1598,21 @@ void ParticlesStorage::update_particles() {
 
 		particles->update_list.remove_from_list();
 		particles->dirty = false;
+
+		// A WebGPU compute pipeline can still be compiling after its RID has been
+		// created. Particle simulation is stateful, so dropping its first dispatch
+		// would consume the clear/restart on the CPU without initializing the GPU
+		// particle buffer. Keep the system untouched and retry it next frame.
+		MaterialStorage *material_storage = MaterialStorage::get_singleton();
+		ParticleProcessMaterialData *process_material = static_cast<ParticleProcessMaterialData *>(material_storage->material_get_data(particles->process_material, MaterialStorage::SHADER_TYPE_PARTICLES));
+		if (!process_material || !process_material->shader_data || !process_material->shader_data->valid) {
+			process_material = static_cast<ParticleProcessMaterialData *>(material_storage->material_get_data(particles_shader.default_material, MaterialStorage::SHADER_TYPE_PARTICLES));
+		}
+		if (process_material && process_material->shader_data && !process_material->shader_data->pipeline.is_ready()) {
+			particles->dirty = true;
+			pipeline_pending.push_back(particles);
+			continue;
+		}
 
 		_particles_update_buffers(particles);
 
@@ -1958,6 +1976,14 @@ void ParticlesStorage::update_particles() {
 		}
 
 		particles->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_AABB);
+	}
+
+	// Requeue after draining particle_update_list so a pipeline that is still
+	// compiling cannot make this update loop spin indefinitely.
+	for (Particles *particles : pipeline_pending) {
+		if (!particles->update_list.in_list()) {
+			particle_update_list.add(&particles->update_list);
+		}
 	}
 }
 

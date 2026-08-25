@@ -55,6 +55,7 @@ protected:
 
 	RID pipeline;
 	WorkerThreadPool::TaskID task = WorkerThreadPool::INVALID_TASK_ID;
+	bool ready = false;
 
 	void _create(const CreationParameters &c) {
 		if (c.is_compute) {
@@ -69,10 +70,9 @@ protected:
 		if (RD::get_singleton()->gpu_calls_main_thread_only()) {
 			// Driver is bound to the device's thread, so no background task. Compute
 			// pipelines still get the driver's asynchronous creation: the browser
-			// compiles off-thread and dispatches are dropped until the pipeline is
-			// ready, which this class's users (particles, effects) tolerate — they
-			// re-dispatch every frame. Render pipelines stay synchronous: their
-			// callers draw with whatever get_rid() returns, with no fallback.
+			// compiles off-thread. Callers can either re-dispatch every frame or use
+			// is_ready() before consuming state. Render pipelines stay synchronous:
+			// their callers draw with whatever get_rid() returns, with no fallback.
 			if (c.is_compute) {
 				RD::get_singleton()->pipeline_set_async_creation(true);
 				_create(c);
@@ -133,8 +133,20 @@ public:
 		return pipeline;
 	}
 
+	bool is_ready() {
+		_wait();
+		if (!ready) {
+			// Match RenderingDevice::pipeline_is_ready(): an invalid RID has no
+			// asynchronous work pending. Treating it as perpetually pending would
+			// make a caller retry forever after a failed pipeline creation.
+			ready = !pipeline.is_valid() || RD::get_singleton()->pipeline_is_ready(pipeline);
+		}
+		return ready;
+	}
+
 	void free() {
 		_wait();
+		ready = false;
 
 		if (pipeline.is_valid()) {
 #ifdef DEV_ENABLED
