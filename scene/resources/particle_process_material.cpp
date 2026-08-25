@@ -921,7 +921,16 @@ void ParticleProcessMaterial::_update_shader() {
 	code += "	PhysicalParameters physics_params;\n";
 	code += "	calculate_initial_physical_params(physics_params, alt_seed);\n";
 	code += "	process_display_param(params, 0.0);\n";
-	code += "	if (rand_from_seed(alt_seed) > AMOUNT_RATIO) {\n";
+	// Keep the previous amount-ratio check's seed advance so downstream random
+	// properties remain unchanged when amount_ratio is 1.
+	code += "	rand_from_seed(alt_seed);\n";
+	code += "	if (AMOUNT_RATIO > 0.0) {\n";
+	code += "		const float inv_amount_ratio = 1.0 / AMOUNT_RATIO;\n";
+	code += "		float remainder = mod(float(NUMBER), inv_amount_ratio);\n";
+	code += "		if (remainder >= 1.0) {\n";
+	code += "			ACTIVE = false;\n";
+	code += "		}\n";
+	code += "	} else {\n";
 	code += "		ACTIVE = false;\n";
 	code += "	}\n\n";
 
