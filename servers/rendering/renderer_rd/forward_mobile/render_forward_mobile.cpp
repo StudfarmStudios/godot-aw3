@@ -893,10 +893,11 @@ void RenderForwardMobile::_render_scene(RenderDataRD *p_render_data, const Color
 	RendererRD::MaterialStorage::Samplers samplers;
 	bool hdr_render_target = false;
 
-#ifdef WEB_ENABLED
-	// WebGPU does not support subpasses or input attachments.
-	using_subpass_post_process = false;
-#endif
+	if (RenderingDevice::get_singleton()->get_device_api_name() == "WebGPU") {
+		// WebGPU does not support subpasses or input attachments. Test the active
+		// API because a native macOS binary can also contain the Metal driver.
+		using_subpass_post_process = false;
+	}
 
 	RSE::ViewportMSAA msaa = rb->get_msaa_3d();
 	bool use_msaa = msaa != RSE::VIEWPORT_MSAA_DISABLED;

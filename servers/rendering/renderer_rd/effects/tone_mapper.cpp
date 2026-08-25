@@ -61,13 +61,15 @@ ToneMapper::ToneMapper(bool p_use_mobile_version) {
 			tonemap_mobile.shader.set_variant_enabled(TONEMAP_MOBILE_MODE_SUBPASS_1D_LUT_MULTIVIEW, false);
 		}
 
-#ifdef WEB_ENABLED
-		// WebGPU does not support input attachments / subpass reads.
-		tonemap_mobile.shader.set_variant_enabled(TONEMAP_MOBILE_MODE_SUBPASS, false);
-		tonemap_mobile.shader.set_variant_enabled(TONEMAP_MOBILE_MODE_SUBPASS_1D_LUT, false);
-		tonemap_mobile.shader.set_variant_enabled(TONEMAP_MOBILE_MODE_SUBPASS_MULTIVIEW, false);
-		tonemap_mobile.shader.set_variant_enabled(TONEMAP_MOBILE_MODE_SUBPASS_1D_LUT_MULTIVIEW, false);
-#endif
+		if (RD::get_singleton()->get_device_api_name() == "WebGPU") {
+			// WebGPU does not support input attachments / subpass reads. Test the
+			// active API instead of the build platform: native macOS binaries can
+			// contain both the Metal and WebGPU rendering drivers.
+			tonemap_mobile.shader.set_variant_enabled(TONEMAP_MOBILE_MODE_SUBPASS, false);
+			tonemap_mobile.shader.set_variant_enabled(TONEMAP_MOBILE_MODE_SUBPASS_1D_LUT, false);
+			tonemap_mobile.shader.set_variant_enabled(TONEMAP_MOBILE_MODE_SUBPASS_MULTIVIEW, false);
+			tonemap_mobile.shader.set_variant_enabled(TONEMAP_MOBILE_MODE_SUBPASS_1D_LUT_MULTIVIEW, false);
+		}
 
 		tonemap_mobile.shader_version = tonemap_mobile.shader.version_create();
 

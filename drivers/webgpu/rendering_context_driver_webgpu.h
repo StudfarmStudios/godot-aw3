@@ -56,6 +56,10 @@ class RenderingContextDriverWebGPU : public RenderingContextDriver {
 	SurfaceID next_surface_id = 1;
 
 public:
+	struct WindowPlatformData {
+		void *metal_layer;
+	};
+
 	RenderingContextDriverWebGPU();
 	virtual ~RenderingContextDriverWebGPU() override;
 

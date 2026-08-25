@@ -27,7 +27,13 @@
 
 #include "src/tint/utils/strconv/parse_num.h"
 
+#include <cerrno>
 #include <charconv>
+#include <string>
+
+#if defined(__APPLE__)
+#include <locale.h>
+#endif
 
 // abseil dependency removed for Godot vendoring — std::from_chars
 // handles float/double in C++17 (GCC 11+, Clang 12+, MSVC 19.29+).
@@ -43,6 +49,30 @@ template <typename T>
 Result<T, ParseNumberError> Parse(std::string_view number) {
     T val = 0;
     if constexpr (std::is_floating_point_v<T>) {
+#if defined(__APPLE__)
+        // libc++'s floating-point from_chars is only available with a macOS 26
+        // deployment target. Godot supports older macOS releases, so use the
+        // locale-explicit C parser there. A copy is needed because string_view
+        // does not guarantee a trailing null byte.
+        const std::string text(number);
+        char* end = nullptr;
+        errno = 0;
+        static locale_t c_locale = newlocale(LC_NUMERIC_MASK, "C", nullptr);
+        if (!c_locale) {
+            return ParseNumberError::kUnparsable;
+        }
+        if constexpr (std::is_same_v<T, float>) {
+            val = strtof_l(text.c_str(), &end, c_locale);
+        } else {
+            val = strtod_l(text.c_str(), &end, c_locale);
+        }
+        if (errno == ERANGE) {
+            return ParseNumberError::kResultOutOfRange;
+        }
+        if (end == text.data() || end != text.data() + text.size()) {
+            return ParseNumberError::kUnparsable;
+        }
+#else
         auto result = std::from_chars(number.data(), number.data() + number.size(), val);
         if (result.ec == std::errc::result_out_of_range) {
             return ParseNumberError::kResultOutOfRange;
@@ -50,6 +80,7 @@ Result<T, ParseNumberError> Parse(std::string_view number) {
         if (result.ec != std::errc() || result.ptr != number.data() + number.size()) {
             return ParseNumberError::kUnparsable;
         }
+#endif
     } else {
         auto result = std::from_chars(number.data(), number.data() + number.size(), val);
         if (result.ec == std::errc::result_out_of_range) {

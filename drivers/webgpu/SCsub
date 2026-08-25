@@ -670,6 +670,10 @@ else:
 # Tint preprocessor defines: only enable SPIR-V reader + WGSL writer.
 env_tint.Append(
     CPPDEFINES=[
+        # Native Dawn contains its own Tint snapshot. Keep Godot's patched,
+        # vendored copy private so a static native link cannot interpose one
+        # implementation's C++ symbols on the other.
+        ("tint", "godot_tint"),
         ("TINT_BUILD_SPV_READER", 1),
         ("TINT_BUILD_WGSL_WRITER", 1),
         ("TINT_BUILD_WGSL_READER", 0),

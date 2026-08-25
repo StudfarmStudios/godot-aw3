@@ -267,14 +267,34 @@ public:
 	void clear_pipelines() {
 		PipelineCompileQueueRD::remove_owner(this);
 		_wait_for_all_pipelines();
-		_add_new_pipelines_to_map();
+
+		// Asynchronous driver pipelines can still be waiting in compiled_queue.
+		// They must be freed here too: carrying them across a shader-map reset lets
+		// a stale RID re-enter hash_map after its shader has gone away, and leaves
+		// RenderingDevice to report invalid frees during renderer teardown.
+		thread_local LocalVector<RID> queued_pipelines;
+		queued_pipelines.clear();
+		{
+			MutexLock lock(compiled_queue_mutex);
+			for (const Pair<uint32_t, RID> &pair : compiled_queue) {
+				queued_pipelines.push_back(pair.second);
+			}
+			compiled_queue.clear();
+		}
 
 		for (KeyValue<uint32_t, RID> entry : hash_map) {
 			RD::get_singleton()->free_rid(entry.value);
 		}
+		for (RID pipeline : queued_pipelines) {
+			RD::get_singleton()->free_rid(pipeline);
+		}
 
 		hash_map.clear();
-		compilation_set.clear();
+		{
+			MutexLock local_lock(local_mutex);
+			compilation_set.clear();
+			compilation_tasks.clear();
+		}
 	}
 
 	// Set the external pipeline compilations array to increase the counters on every time a pipeline is compiled.

@@ -1,8 +1,9 @@
 # WebGPU Rendering Driver for Godot 4.6
 
 A `RenderingDeviceDriver` / `RenderingContextDriver` implementation targeting
-WebGPU via Emscripten's **emdawnwebgpu** port (Dawn). This enables Godot's
-Forward+ and Mobile renderers to run in the browser.
+WebGPU via Emscripten's **emdawnwebgpu** port in browsers or native **Dawn** on
+macOS. This enables Godot's Forward+ and Mobile renderers to use one WebGPU
+driver in both environments.
 
 ## Architecture Overview
 
@@ -18,12 +19,12 @@ Forward+ and Mobile renderers to run in the browser.
 │    • SPIR-V → WGSL translation (Tint, linked in)        │
 ├─────────────────────────────────────────────────────────┤
 │  RenderingContextDriverWebGPU                           │
-│    • Device import from JS pre-initialized GPUDevice    │
-│    • Surface creation from HTML canvas (#canvas)        │
+│    • Browser: import JS device, use HTML canvas         │
+│    • macOS: request Dawn Metal device, use CAMetalLayer │
 │    • Swap chain management via WGPUSurfaceTexture       │
 ├─────────────────────────────────────────────────────────┤
-│  emdawnwebgpu (Emscripten port)                         │
-│    • Dawn WebGPU C API → browser WebGPU JS API          │
+│  emdawnwebgpu (web) / Dawn Metal backend (macOS)        │
+│    • WebGPU C API → browser WebGPU or native Metal      │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -59,11 +60,28 @@ are split into separate texture + sampler bindings, push constant blocks are
 rewritten to storage buffer references at binding 120, and various other
 fixups (depth image flags, position Y negation, point size stripping) are
 applied. Tint is compiled as a thirdparty C++20 library via a thin wrapper
-(`tint_wrapper.cpp`) that isolates its C++20 headers from the Godot build.
+(`tint_wrapper.cpp`) that isolates its C++20 headers from the Godot build. Its
+C++ namespace is renamed to `godot_tint` at compile time so native Dawn's own
+Tint snapshot cannot collide with Godot's patched vendored copy in a static
+macOS build.
 
 ### Barrier No-ops
 WebGPU tracks resource hazards automatically. All barrier/sync commands are
 no-ops.
+
+### Pipeline Scheduling and Fences
+Godot submits WebGPU calls from its render/main thread on both browser and
+native builds. Deferred pipelines use WebGPU's asynchronous creation API, so
+Dawn performs compilation on its workers while the renderer keeps its fallback
+pipeline active. Pipeline wrappers are synchronized because native callbacks
+can arrive from those workers. Native queue fences wait on Dawn futures;
+browser fences are driven by browser event processing.
+
+### Mobile Tonemapping
+WebGPU cannot consume Vulkan `subpassInput` tonemap variants. When WebGPU is the
+active rendering-device API, the Mobile renderer omits those variants and uses
+the sampled-texture tonemap path. The selection is made at runtime so a macOS
+binary containing both drivers keeps the subpass path when Metal is selected.
 
 ### Buffer Mapping
 WebGPU buffer mapping is asynchronous. Driver uses a **shadow buffer** pattern:
@@ -107,12 +125,20 @@ scons platform=web target=template_release dlink_enabled=yes webgpu=yes opengl3=
 # Build with both WebGPU and WebGL2 support
 scons platform=web target=template_debug dlink_enabled=yes webgpu=yes opengl3=yes threads=no -j$(nproc)
 
-# Build macOS editor (does not include WebGPU driver, for reference)
-scons platform=macos target=editor -j$(nproc)
+# Build macOS editor with native Dawn installed as a static SDK
+scons platform=macos target=editor webgpu=yes \
+    dawn_sdk_path=/path/to/dawn/install -j$(sysctl -n hw.logicalcpu)
+
+# Build a macOS release export template with native Dawn
+scons platform=macos target=template_release webgpu=yes \
+    dawn_sdk_path=/path/to/dawn/install -j$(sysctl -n hw.logicalcpu)
 ```
 
-The build flag `webgpu=yes` enables `WEBGPU_ENABLED` and adds
-`--use-port=emdawnwebgpu` to both compile and link flags.
+The build flag `webgpu=yes` enables `WEBGPU_ENABLED`. Web builds add
+`--use-port=emdawnwebgpu` to compile and link flags. macOS builds require
+`dawn_sdk_path` (or `DAWN_SDK_PATH`) to point at a Dawn CMake install containing
+`include/webgpu/webgpu.h` and `lib/libwebgpu_dawn.a`; the normal Metal driver
+remains the default.
 
 ## Project Settings
 
@@ -122,6 +148,10 @@ The rendering driver is selected via project settings:
   `gl_compatibility` (default)
 - `rendering/rendering_device/driver.web` — `webgpu` (used when rendering
   method is `forward_plus` or `mobile`)
+- `rendering/rendering_device/driver.macos` — `webgpu`, `metal`, or `vulkan`
+
+On macOS, `--rendering-driver webgpu` is convenient for per-run selection
+without changing the project setting.
 
 When `gl_compatibility` is selected, the existing WebGL 2.0 / GLES3 path is
 used instead.

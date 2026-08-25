@@ -23,6 +23,7 @@ done
 | 0004 | shader_io.cc | Point size | Accept non-constant `point_size` stores |
 | 0005 | ir_to_program.cc | Spec constants | `@size` emission guard + capability |
 | 0006 | parse_num.cc | Vendoring | Replace `absl::from_chars` with `std::from_chars` |
+| 0007 | parse_num.cc | macOS | Use locale-explicit float parsing below the macOS 26 deployment target |
 
 ## Logical Groups
 
@@ -41,6 +42,10 @@ value first. This patch relaxes that validation. Could potentially be moved to
 
 **Group D — Vendoring (0006)**: Replaces Abseil dependency with C++17 `std::from_chars`.
 Always necessary when vendoring without Abseil.
+
+**Group E — macOS compatibility (0007)**: Apple's libc++ declares floating-point
+`std::from_chars` unavailable below macOS 26. Use `strtof_l` / `strtod_l` with
+the C locale while retaining `std::from_chars` for integers and other platforms.
 
 ## Upstream Source
 
