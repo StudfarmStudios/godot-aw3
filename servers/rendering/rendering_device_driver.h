@@ -676,6 +676,7 @@ public:
 	// that cannot wait leave it off and get the pipeline built in place.
 	virtual void pipeline_set_async_creation(bool p_enabled) {}
 	virtual bool pipeline_is_ready(PipelineID p_pipeline) { return true; }
+	virtual bool pipeline_has_failed(PipelineID p_pipeline) { return false; }
 
 	// ----- BINDING -----
 

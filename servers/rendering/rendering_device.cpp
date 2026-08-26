@@ -1203,6 +1203,18 @@ bool RenderingDevice::pipeline_is_ready(RID p_pipeline) {
 	return true;
 }
 
+bool RenderingDevice::pipeline_has_failed(RID p_pipeline) {
+	RenderPipeline *pipeline = render_pipeline_owner.get_or_null(p_pipeline);
+	if (pipeline != nullptr) {
+		return driver->pipeline_has_failed(pipeline->driver_id);
+	}
+	ComputePipeline *compute = compute_pipeline_owner.get_or_null(p_pipeline);
+	if (compute != nullptr) {
+		return driver->pipeline_has_failed(compute->driver_id);
+	}
+	return true;
+}
+
 bool RenderingDevice::gpu_calls_main_thread_only() {
 	return driver->api_trait_get(RDD::API_TRAIT_GPU_CALLS_MAIN_THREAD_ONLY) != 0;
 }

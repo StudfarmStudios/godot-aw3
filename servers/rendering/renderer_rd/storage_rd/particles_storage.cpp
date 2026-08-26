@@ -1289,7 +1289,7 @@ void ParticlesStorage::_particles_process_dispatch(Particles *p_particles, const
 	int process_amount = p_process_amount;
 
 	ParticleProcessMaterialData *m = static_cast<ParticleProcessMaterialData *>(material_storage->material_get_data(p_particles->process_material, MaterialStorage::SHADER_TYPE_PARTICLES));
-	if (!m || !m->shader_data || !m->shader_data->valid) {
+	if (!m) {
 		m = static_cast<ParticleProcessMaterialData *>(material_storage->material_get_data(particles_shader.default_material, MaterialStorage::SHADER_TYPE_PARTICLES));
 	}
 
@@ -1599,18 +1599,24 @@ void ParticlesStorage::update_particles() {
 		particles->update_list.remove_from_list();
 		particles->dirty = false;
 
-		// A WebGPU compute pipeline can still be compiling after its RID has been
-		// created. Particle simulation is stateful, so dropping its first dispatch
-		// would consume the clear/restart on the CPU without initializing the GPU
-		// particle buffer. Keep the system untouched and retry it next frame.
+		// Asynchronous WebGPU pipeline creation can outlive the RID creation. A
+		// particle restart is stateful, so consuming it before the first dispatch
+		// leaves the GPU buffer uninitialized. Retry only while compilation is
+		// pending; a failed pipeline must not self-requeue forever.
 		MaterialStorage *material_storage = MaterialStorage::get_singleton();
 		ParticleProcessMaterialData *process_material = static_cast<ParticleProcessMaterialData *>(material_storage->material_get_data(particles->process_material, MaterialStorage::SHADER_TYPE_PARTICLES));
-		if (!process_material || !process_material->shader_data || !process_material->shader_data->valid) {
+		if (!process_material) {
 			process_material = static_cast<ParticleProcessMaterialData *>(material_storage->material_get_data(particles_shader.default_material, MaterialStorage::SHADER_TYPE_PARTICLES));
 		}
-		if (process_material && process_material->shader_data && !process_material->shader_data->pipeline.is_ready()) {
-			particles->dirty = true;
-			pipeline_pending.push_back(particles);
+		if (!process_material || !process_material->shader_data || !process_material->shader_data->valid) {
+			continue;
+		}
+		PipelineDeferredRD::Status pipeline_status = process_material->shader_data->pipeline.get_status();
+		if (pipeline_status != PipelineDeferredRD::Status::READY) {
+			if (pipeline_status == PipelineDeferredRD::Status::PENDING) {
+				particles->dirty = true;
+				pipeline_pending.push_back(particles);
+			}
 			continue;
 		}
 
@@ -1978,8 +1984,8 @@ void ParticlesStorage::update_particles() {
 		particles->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_AABB);
 	}
 
-	// Requeue after draining particle_update_list so a pipeline that is still
-	// compiling cannot make this update loop spin indefinitely.
+	// Requeue after draining particle_update_list so an in-flight pipeline cannot
+	// make this update loop spin in the same frame.
 	for (Particles *particles : pipeline_pending) {
 		if (!particles->update_list.in_list()) {
 			particle_update_list.add(&particles->update_list);

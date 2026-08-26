@@ -273,6 +273,7 @@ public:
 	// See RenderingDeviceDriver::pipeline_set_async_creation.
 	void pipeline_set_async_creation(bool p_enabled);
 	bool pipeline_is_ready(RID p_pipeline);
+	bool pipeline_has_failed(RID p_pipeline);
 	bool force_omni_dual_paraboloid_shadows();
 	bool supports_batch_instance_draws();
 	bool supports_first_instance_index();

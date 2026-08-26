@@ -3239,6 +3239,15 @@ bool RenderingDeviceDriverWebGPU::pipeline_is_ready(PipelineID p_pipeline) {
 	return pw->ready;
 }
 
+bool RenderingDeviceDriverWebGPU::pipeline_has_failed(PipelineID p_pipeline) {
+	WGPipelineWrapper *pw = (WGPipelineWrapper *)(p_pipeline.id);
+	if (pw == nullptr) {
+		return true;
+	}
+	MutexLock lock(pw->mutex);
+	return pw->failed;
+}
+
 RDD::SamplerID RenderingDeviceDriverWebGPU::sampler_create(const SamplerState &p_state) {
 	WGPUSamplerDescriptor desc = {};
 

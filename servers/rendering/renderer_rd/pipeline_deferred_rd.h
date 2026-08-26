@@ -37,6 +37,13 @@
 // wait for it to be ready.
 
 class PipelineDeferredRD {
+public:
+	enum class Status {
+		READY,
+		PENDING,
+		FAILED,
+	};
+
 protected:
 	struct CreationParameters {
 		RID shader;
@@ -55,7 +62,7 @@ protected:
 
 	RID pipeline;
 	WorkerThreadPool::TaskID task = WorkerThreadPool::INVALID_TASK_ID;
-	bool ready = false;
+	Status status = Status::PENDING;
 
 	void _create(const CreationParameters &c) {
 		if (c.is_compute) {
@@ -70,9 +77,10 @@ protected:
 		if (RD::get_singleton()->gpu_calls_main_thread_only()) {
 			// Driver is bound to the device's thread, so no background task. Compute
 			// pipelines still get the driver's asynchronous creation: the browser
-			// compiles off-thread. Callers can either re-dispatch every frame or use
-			// is_ready() before consuming state. Render pipelines stay synchronous:
-			// their callers draw with whatever get_rid() returns, with no fallback.
+			// compiles off-thread and dispatches are dropped until the pipeline is
+			// ready. Callers can re-dispatch or query get_status() before consuming
+			// one-shot state. Render pipelines stay synchronous: their
+			// callers draw with whatever get_rid() returns, with no fallback.
 			if (c.is_compute) {
 				RD::get_singleton()->pipeline_set_async_creation(true);
 				_create(c);
@@ -133,20 +141,24 @@ public:
 		return pipeline;
 	}
 
-	bool is_ready() {
+	Status get_status() {
 		_wait();
-		if (!ready) {
-			// Match RenderingDevice::pipeline_is_ready(): an invalid RID has no
-			// asynchronous work pending. Treating it as perpetually pending would
-			// make a caller retry forever after a failed pipeline creation.
-			ready = !pipeline.is_valid() || RD::get_singleton()->pipeline_is_ready(pipeline);
+		if (status != Status::PENDING) {
+			return status;
 		}
-		return ready;
+		if (!pipeline.is_valid()) {
+			status = Status::FAILED;
+		} else if (RD::get_singleton()->pipeline_is_ready(pipeline)) {
+			status = Status::READY;
+		} else if (RD::get_singleton()->pipeline_has_failed(pipeline)) {
+			status = Status::FAILED;
+		}
+		return status;
 	}
 
 	void free() {
 		_wait();
-		ready = false;
+		status = Status::PENDING;
 
 		if (pipeline.is_valid()) {
 #ifdef DEV_ENABLED
