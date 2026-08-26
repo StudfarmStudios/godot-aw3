@@ -158,35 +158,42 @@ void ParticleProcessMaterial::finish_shaders() {
 }
 
 void ParticleProcessMaterial::_update_shader() {
+	MutexLock shader_lock(shader_mutex);
+
 	if (!_is_initialized()) {
 		_mark_ready();
 	}
 
 	MaterialKey mk = _compute_key();
-	if (mk == current_key) {
-		return; // No update required in the end.
-	}
 
 	{
 		MutexLock lock(shader_map_mutex);
 		ShaderData *v = shader_map.getptr(current_key);
-		if (v) {
+		// A key can be erased and later reused by a different shader generation.
+		// Only the RID identifies the cache entry registered by this material.
+		if (mk == current_key && shader_rid.is_valid() && v && v->shader == shader_rid) {
+			return; // This material is registered with the current shader generation.
+		}
+
+		if (v && v->shader == shader_rid) {
+			DEV_ASSERT(v->users > 0);
 			v->users--;
 			if (v->users == 0) {
 				// Deallocate shader, as it's no longer in use.
-				RS::get_singleton()->free_rid(v->shader);
+				RID shader_to_free = v->shader;
 				shader_map.erase(current_key);
-				shader_rid = RID();
+				RS::get_singleton()->free_rid(shader_to_free);
 			}
 		}
+		shader_rid = RID();
 
 		current_key = mk;
 
 		v = shader_map.getptr(mk);
 		if (v) {
 			shader_rid = v->shader;
-			RS::get_singleton()->material_set_shader(_get_material(), shader_rid);
 			v->users++;
+			RS::get_singleton()->material_set_shader(_get_material(), shader_rid);
 			return;
 		}
 	}
@@ -2151,6 +2158,7 @@ RID ParticleProcessMaterial::get_rid() const {
 
 RID ParticleProcessMaterial::get_shader_rid() const {
 	const_cast<ParticleProcessMaterial *>(this)->_update_shader();
+	MutexLock shader_lock(shader_mutex);
 	return shader_rid;
 }
 
@@ -2840,16 +2848,22 @@ ParticleProcessMaterial::ParticleProcessMaterial() :
 
 ParticleProcessMaterial::~ParticleProcessMaterial() {
 	ERR_FAIL_NULL(RenderingServer::get_singleton());
-	MutexLock lock(shader_map_mutex);
-
-	if (shader_map.has(current_key)) {
-		shader_map[current_key].users--;
-		if (shader_map[current_key].users == 0) {
-			//deallocate shader, as it's no longer in use
-			RS::get_singleton()->free_rid(shader_map[current_key].shader);
-			shader_map.erase(current_key);
+	MutexLock shader_lock(shader_mutex);
+	{
+		MutexLock lock(shader_map_mutex);
+		ShaderData *v = shader_map.getptr(current_key);
+		if (v && v->shader == shader_rid) {
+			DEV_ASSERT(v->users > 0);
+			v->users--;
+			if (v->users == 0) {
+				// Deallocate shader, as it's no longer in use.
+				RID shader_to_free = v->shader;
+				shader_map.erase(current_key);
+				RS::get_singleton()->free_rid(shader_to_free);
+			}
 		}
-
-		RS::get_singleton()->material_set_shader(_get_material(), RID());
+		shader_rid = RID();
 	}
+
+	RS::get_singleton()->material_set_shader(_get_material(), RID());
 }

@@ -158,6 +158,7 @@ private:
 	static HashMap<MaterialKey, ShaderData, MaterialKey> shader_map;
 	static RBSet<String> min_max_properties;
 
+	mutable Mutex shader_mutex;
 	MaterialKey current_key;
 	RID shader_rid;
 
