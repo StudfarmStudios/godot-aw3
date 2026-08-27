@@ -38,7 +38,7 @@
 
 class PipelineDeferredRD {
 public:
-	enum class Status {
+	enum class PipelineStatus {
 		READY,
 		PENDING,
 		FAILED,
@@ -62,7 +62,7 @@ protected:
 
 	RID pipeline;
 	WorkerThreadPool::TaskID task = WorkerThreadPool::INVALID_TASK_ID;
-	Status status = Status::PENDING;
+	PipelineStatus status = PipelineStatus::PENDING;
 
 	void _create(const CreationParameters &c) {
 		if (c.is_compute) {
@@ -141,24 +141,24 @@ public:
 		return pipeline;
 	}
 
-	Status get_status() {
+	PipelineStatus get_status() {
 		_wait();
-		if (status != Status::PENDING) {
+		if (status != PipelineStatus::PENDING) {
 			return status;
 		}
 		if (!pipeline.is_valid()) {
-			status = Status::FAILED;
+			status = PipelineStatus::FAILED;
 		} else if (RD::get_singleton()->pipeline_is_ready(pipeline)) {
-			status = Status::READY;
+			status = PipelineStatus::READY;
 		} else if (RD::get_singleton()->pipeline_has_failed(pipeline)) {
-			status = Status::FAILED;
+			status = PipelineStatus::FAILED;
 		}
 		return status;
 	}
 
 	void free() {
 		_wait();
-		status = Status::PENDING;
+		status = PipelineStatus::PENDING;
 
 		if (pipeline.is_valid()) {
 #ifdef DEV_ENABLED

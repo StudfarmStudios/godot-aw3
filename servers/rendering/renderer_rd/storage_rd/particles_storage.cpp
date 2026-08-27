@@ -1611,9 +1611,9 @@ void ParticlesStorage::update_particles() {
 		if (!process_material || !process_material->shader_data || !process_material->shader_data->valid) {
 			continue;
 		}
-		PipelineDeferredRD::Status pipeline_status = process_material->shader_data->pipeline.get_status();
-		if (pipeline_status != PipelineDeferredRD::Status::READY) {
-			if (pipeline_status == PipelineDeferredRD::Status::PENDING) {
+		PipelineDeferredRD::PipelineStatus pipeline_status = process_material->shader_data->pipeline.get_status();
+		if (pipeline_status != PipelineDeferredRD::PipelineStatus::READY) {
+			if (pipeline_status == PipelineDeferredRD::PipelineStatus::PENDING) {
 				particles->dirty = true;
 				pipeline_pending.push_back(particles);
 			}
