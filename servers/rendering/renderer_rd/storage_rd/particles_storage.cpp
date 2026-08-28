@@ -1611,6 +1611,13 @@ void ParticlesStorage::update_particles() {
 		if (!process_material || !process_material->shader_data || !process_material->shader_data->valid) {
 			continue;
 		}
+		if (!process_material->shader_data->ensure_pipeline()) {
+			if (process_material->shader_data->valid) {
+				particles->dirty = true;
+				pipeline_pending.push_back(particles);
+			}
+			continue;
+		}
 		PipelineDeferredRD::PipelineStatus pipeline_status = process_material->shader_data->pipeline.get_status();
 		if (pipeline_status != PipelineDeferredRD::PipelineStatus::READY) {
 			if (pipeline_status == PipelineDeferredRD::PipelineStatus::PENDING) {
@@ -2054,6 +2061,7 @@ void ParticlesStorage::ParticlesShaderData::set_code(const String &p_code) {
 	} else {
 		pipeline.free();
 	}
+	pipeline_creation_started = false;
 
 	for (uint32_t i = 0; i < ParticlesShader::MAX_USERDATAS; i++) {
 		if (userdatas_used[i]) {
@@ -2062,17 +2070,38 @@ void ParticlesStorage::ParticlesShaderData::set_code(const String &p_code) {
 	}
 
 	particles_storage->particles_shader.shader.version_set_compute_code(version, gen_code.code, gen_code.uniforms, gen_code.stage_globals[ShaderCompiler::STAGE_COMPUTE], gen_code.defines);
-	ERR_FAIL_COND(!particles_storage->particles_shader.shader.version_is_valid(version));
 
 	ubo_size = gen_code.uniform_total_size;
 	ubo_offsets = gen_code.uniform_offsets;
 	texture_uniforms = gen_code.texture_uniforms;
 
-	//update pipelines
-
-	pipeline.create_compute_pipeline(particles_storage->particles_shader.shader.version_get_shader(version, 0));
-
 	valid = true;
+	if (!RD::get_singleton()->gpu_calls_main_thread_only()) {
+		ERR_FAIL_COND(!particles_storage->particles_shader.shader.version_is_valid(version));
+		ERR_FAIL_COND(!ensure_pipeline());
+	}
+}
+
+bool ParticlesStorage::ParticlesShaderData::ensure_pipeline() {
+	if (!valid) {
+		return false;
+	}
+	if (pipeline_creation_started) {
+		return true;
+	}
+
+	bool pending = false;
+	RID shader_rid = ParticlesStorage::get_singleton()->particles_shader.shader.version_get_shader_if_ready(version, 0, &pending);
+	if (shader_rid.is_null()) {
+		if (!pending) {
+			valid = false;
+		}
+		return false;
+	}
+
+	pipeline.create_compute_pipeline(shader_rid);
+	pipeline_creation_started = true;
+	return true;
 }
 
 bool ParticlesStorage::ParticlesShaderData::is_animated() const {
@@ -2105,7 +2134,14 @@ MaterialStorage::ShaderData *ParticlesStorage::_create_particles_shader_func() {
 }
 
 bool ParticlesStorage::ParticleProcessMaterialData::update_parameters(const HashMap<StringName, Variant> &p_parameters, bool p_uniform_dirty, bool p_textures_dirty) {
-	return update_parameters_uniform_set(p_parameters, p_uniform_dirty, p_textures_dirty, shader_data->uniforms, shader_data->ubo_offsets.ptr(), shader_data->texture_uniforms, shader_data->default_texture_params, shader_data->ubo_size, uniform_set, ParticlesStorage::get_singleton()->particles_shader.shader.version_get_shader(shader_data->version, 0), 3, true, false);
+	if (!shader_data->ensure_pipeline()) {
+		if (shader_data->valid) {
+			defer_update_parameters();
+		}
+		return false;
+	}
+	RID shader = ParticlesStorage::get_singleton()->particles_shader.shader.version_get_shader(shader_data->version, 0);
+	return update_parameters_uniform_set(p_parameters, p_uniform_dirty, p_textures_dirty, shader_data->uniforms, shader_data->ubo_offsets.ptr(), shader_data->texture_uniforms, shader_data->default_texture_params, shader_data->ubo_size, uniform_set, shader, 3, true, false);
 }
 
 ParticlesStorage::ParticleProcessMaterialData::~ParticleProcessMaterialData() {

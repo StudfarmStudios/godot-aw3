@@ -31,6 +31,7 @@
 #include "renderer_compositor_rd.h"
 
 #include "servers/rendering/renderer_rd/pipeline_compile_queue_rd.h"
+#include "servers/rendering/renderer_rd/shader_rd.h"
 
 #include "core/config/engine.h"
 #include "core/config/project_settings.h"
@@ -137,6 +138,7 @@ void RendererCompositorRD::begin_frame(double frame_step) {
 	// The renderer draws with the ubershader until each one lands, so the budget
 	// trades a little pop-in for a frame that does not stall.
 	if (RD::get_singleton()->gpu_calls_main_thread_only()) {
+		ShaderRD::process_deferred_compiles(2.0);
 		PipelineCompileQueueRD::process(2.0);
 	}
 }

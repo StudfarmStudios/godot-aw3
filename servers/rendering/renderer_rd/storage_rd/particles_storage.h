@@ -386,6 +386,9 @@ private:
 
 		bool userdatas_used[ParticlesShader::MAX_USERDATAS] = {};
 		uint32_t userdata_count = 0;
+		bool pipeline_creation_started = false;
+
+		bool ensure_pipeline();
 
 		virtual void set_code(const String &p_Code);
 		virtual bool is_animated() const;

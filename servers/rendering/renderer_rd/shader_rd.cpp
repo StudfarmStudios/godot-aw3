@@ -41,6 +41,8 @@
 
 #define ENABLE_SHADER_CACHE 1
 
+LocalVector<ShaderRD::DeferredCompile> ShaderRD::deferred_compile_queue;
+
 void ShaderRD::_add_stage(const char *p_code, StageType p_stage_type) {
 	Vector<String> lines = String(p_code).split("\n");
 
@@ -258,9 +260,15 @@ void ShaderRD::_initialize_version(Version *p_version) {
 	p_version->variants.resize_initialized(variant_defines.size());
 	p_version->variant_data.resize(variant_defines.size());
 	p_version->group_compilation_tasks.resize_initialized(group_enabled.size());
+	p_version->group_deferred_compiles.resize_initialized(group_enabled.size());
+	p_version->group_cache_loaded.resize(group_enabled.size());
+	for (int group = 0; group < p_version->group_cache_loaded.size(); group++) {
+		p_version->group_cache_loaded.write[group] = false;
+	}
 }
 
 void ShaderRD::_clear_version(Version *p_version) {
+	_cancel_deferred_compiles(p_version);
 	_compile_ensure_finished(p_version);
 
 	// Clear versions if they exist.
@@ -409,16 +417,99 @@ void ShaderRD::_compile_variant(uint32_t p_variant, CompileData p_data) {
 		return; // Variant is disabled, return.
 	}
 
-	Vector<String> variant_stage_sources = _build_variant_stage_sources(variant, p_data);
-	Vector<RD::ShaderStageSPIRVData> variant_stages = compile_stages(variant_stage_sources, dynamic_buffers);
-	ERR_FAIL_COND(variant_stages.is_empty());
+	Vector<uint8_t> shader_data = p_data.version->variant_data[variant];
+	if (shader_data.is_empty()) {
+		Vector<String> variant_stage_sources = _build_variant_stage_sources(variant, p_data);
+		Vector<RD::ShaderStageSPIRVData> variant_stages = compile_stages(variant_stage_sources, dynamic_buffers);
+		ERR_FAIL_COND(variant_stages.is_empty());
 
-	Vector<uint8_t> shader_data = RD::get_singleton()->shader_compile_binary_from_spirv(variant_stages, name + ":" + itos(variant));
-	ERR_FAIL_COND(shader_data.is_empty());
+		shader_data = RD::get_singleton()->shader_compile_binary_from_spirv(variant_stages, name + ":" + itos(variant));
+		ERR_FAIL_COND(shader_data.is_empty());
+	}
 
 	{
 		p_data.version->variants.write[variant] = RD::get_singleton()->shader_create_from_bytecode_with_samplers(shader_data, p_data.version->variants[variant], immutable_samplers);
 		p_data.version->variant_data.write[variant] = shader_data;
+	}
+}
+
+void ShaderRD::_compile_deferred_variant(const DeferredCompile &p_compile) {
+	Version *version = p_compile.version;
+	MutexLock lock(*version->mutex);
+
+	if (p_compile.group < 0 || p_compile.group >= version->group_compilation_tasks.size() ||
+			version->group_compilation_tasks[p_compile.group] != COMPILE_DEFERRED) {
+		return; // The version was changed or freed while this job was queued.
+	}
+
+	CompileData compile_data;
+	compile_data.version = version;
+	compile_data.group = p_compile.group;
+	_compile_variant(p_compile.variant, compile_data);
+
+	DEV_ASSERT(version->group_deferred_compiles[p_compile.group] > 0);
+	version->group_deferred_compiles.write[p_compile.group]--;
+	if (version->group_deferred_compiles[p_compile.group] == 0) {
+		version->group_compilation_tasks.write[p_compile.group] = COMPILED_INLINE;
+		_compile_version_end(version, p_compile.group);
+	}
+}
+
+void ShaderRD::_compile_deferred_group_now(Version *p_version, int p_group) {
+	uint32_t i = 0;
+	while (i < deferred_compile_queue.size()) {
+		const DeferredCompile compile = deferred_compile_queue[i];
+		if (compile.shader != this || compile.version != p_version || compile.group != p_group) {
+			i++;
+			continue;
+		}
+
+		deferred_compile_queue.remove_at(i);
+		CompileData compile_data;
+		compile_data.version = p_version;
+		compile_data.group = p_group;
+		_compile_variant(compile.variant, compile_data);
+		DEV_ASSERT(p_version->group_deferred_compiles[p_group] > 0);
+		p_version->group_deferred_compiles.write[p_group]--;
+	}
+
+	ERR_FAIL_COND_MSG(p_version->group_deferred_compiles[p_group] != 0,
+			"ShaderRD deferred compile queue lost a shader variant.");
+	p_version->group_compilation_tasks.write[p_group] = COMPILED_INLINE;
+}
+
+void ShaderRD::_cancel_deferred_compiles(Version *p_version) {
+	uint32_t i = 0;
+	while (i < deferred_compile_queue.size()) {
+		if (deferred_compile_queue[i].shader == this && deferred_compile_queue[i].version == p_version) {
+			deferred_compile_queue.remove_at(i);
+		} else {
+			i++;
+		}
+	}
+
+	for (int group = 0; group < p_version->group_compilation_tasks.size(); group++) {
+		if (p_version->group_compilation_tasks[group] == COMPILE_DEFERRED) {
+			p_version->group_compilation_tasks.write[group] = 0;
+			p_version->group_deferred_compiles.write[group] = 0;
+		}
+	}
+}
+
+void ShaderRD::_prioritize_deferred_group(Version *p_version, int p_group) {
+	LocalVector<DeferredCompile> prioritized;
+	uint32_t i = 0;
+	while (i < deferred_compile_queue.size()) {
+		const DeferredCompile &compile = deferred_compile_queue[i];
+		if (compile.shader == this && compile.version == p_version && compile.group == p_group) {
+			prioritized.push_back(compile);
+			deferred_compile_queue.remove_at(i);
+		} else {
+			i++;
+		}
+	}
+	for (int64_t j = prioritized.size() - 1; j >= 0; j--) {
+		deferred_compile_queue.insert(0, prioritized[j]);
 	}
 }
 
@@ -611,7 +702,7 @@ String ShaderRD::_get_cache_file_path(Version *p_version, int p_group, const Str
 	return shader_cache_dir.path_join(relative_path);
 }
 
-bool ShaderRD::_load_from_cache(Version *p_version, int p_group) {
+bool ShaderRD::_load_from_cache(Version *p_version, int p_group, bool p_create_modules) {
 	String api_safe_name = String(RD::get_singleton()->get_device_api_name()).validate_filename().to_lower();
 	Ref<FileAccess> f;
 	if (shader_cache_user_dir_valid) {
@@ -661,6 +752,10 @@ bool ShaderRD::_load_from_cache(Version *p_version, int p_group) {
 		ERR_FAIL_COND_V(br != variant_size, false);
 
 		p_version->variant_data.write[variant_id] = variant_bytes;
+	}
+
+	if (!p_create_modules) {
+		return true;
 	}
 
 	for (uint32_t i = 0; i < variant_count; i++) {
@@ -719,30 +814,46 @@ void ShaderRD::_compile_version_start(Version *p_version, int p_group) {
 	}
 
 	p_version->dirty = false;
+	const bool defer_modules = RD::get_singleton()->gpu_calls_main_thread_only();
+	p_version->group_cache_loaded.write[p_group] = false;
 
 #if ENABLE_SHADER_CACHE
 	if (shader_cache_user_dir_valid || shader_cache_res_dir_valid) {
-		if (_load_from_cache(p_version, p_group)) {
+		const bool cache_loaded = _load_from_cache(p_version, p_group, !defer_modules);
+		p_version->group_cache_loaded.write[p_group] = cache_loaded;
+		if (cache_loaded && !defer_modules) {
 			return;
 		}
 	}
 #endif
 
+	if (defer_modules) {
+		p_version->group_compilation_tasks.write[p_group] = COMPILE_DEFERRED;
+		p_version->group_deferred_compiles.write[p_group] = 0;
+		for (uint32_t i = 0; i < group_to_variant_map[p_group].size(); i++) {
+			const int variant = group_to_variant_map[p_group][i];
+			if (!variants_enabled[variant]) {
+				continue;
+			}
+
+			DeferredCompile compile;
+			compile.shader = this;
+			compile.version = p_version;
+			compile.group = p_group;
+			compile.variant = i;
+			deferred_compile_queue.push_back(compile);
+			p_version->group_deferred_compiles.write[p_group]++;
+		}
+		if (p_version->group_deferred_compiles[p_group] == 0) {
+			p_version->group_compilation_tasks.write[p_group] = COMPILED_INLINE;
+			_compile_version_end(p_version, p_group);
+		}
+		return;
+	}
+
 	CompileData compile_data;
 	compile_data.version = p_version;
 	compile_data.group = p_group;
-
-	if (RD::get_singleton()->gpu_calls_main_thread_only()) {
-		// The driver can only be called from the thread that owns the device
-		// (WebGPU in the browser), so compile here rather than on the pool. The
-		// sentinel tells _compile_version_end there is nothing to wait for - it
-		// must still run, since that is where the variants are validated.
-		for (uint32_t i = 0; i < group_to_variant_map[p_group].size(); i++) {
-			_compile_variant(i, compile_data);
-		}
-		p_version->group_compilation_tasks.write[p_group] = COMPILED_INLINE;
-		return;
-	}
 
 	WorkerThreadPool::GroupID group_task = WorkerThreadPool::get_singleton()->add_template_group_task(this, &ShaderRD::_compile_variant, compile_data, group_to_variant_map[p_group].size(), -1, true, SNAME("ShaderCompilation"));
 	p_version->group_compilation_tasks.write[p_group] = group_task;
@@ -753,7 +864,11 @@ void ShaderRD::_compile_version_end(Version *p_version, int p_group) {
 		return;
 	}
 	WorkerThreadPool::GroupID group_task = p_version->group_compilation_tasks[p_group];
-	if (group_task != COMPILED_INLINE) {
+	if (group_task == COMPILE_DEFERRED) {
+		_compile_deferred_group_now(p_version, p_group);
+		group_task = p_version->group_compilation_tasks[p_group];
+	}
+	if (group_task != COMPILED_INLINE && group_task != 0) {
 		WorkerThreadPool::get_singleton()->wait_for_group_task_completion(group_task);
 	}
 	p_version->group_compilation_tasks.write[p_group] = 0;
@@ -772,6 +887,10 @@ void ShaderRD::_compile_version_end(Version *p_version, int p_group) {
 	}
 
 	if (!all_valid) {
+		// Other groups for this version may still be in the module queue. They
+		// must not run after the backing variant arrays are cleared below.
+		_cancel_deferred_compiles(p_version);
+
 		// Clear versions if they exist.
 		for (int i = 0; i < variant_defines.size(); i++) {
 			if (!variants_enabled[i] || !group_enabled[variant_defines[i].group]) {
@@ -787,7 +906,7 @@ void ShaderRD::_compile_version_end(Version *p_version, int p_group) {
 		return;
 	}
 #if ENABLE_SHADER_CACHE
-	else if (shader_cache_user_dir_valid) {
+	else if (shader_cache_user_dir_valid && !p_version->group_cache_loaded[p_group]) {
 		_save_to_cache(p_version, p_group);
 	}
 #endif
@@ -803,6 +922,7 @@ void ShaderRD::_compile_ensure_finished(Version *p_version) {
 }
 
 void ShaderRD::_version_set(Version *p_version, const HashMap<String, String> &p_code, const Vector<String> &p_custom_defines) {
+	_cancel_deferred_compiles(p_version);
 	p_version->code_sections.clear();
 	for (const KeyValue<String, String> &E : p_code) {
 		p_version->code_sections[StringName(E.key.to_upper())] = E.value.utf8();
@@ -835,6 +955,7 @@ void ShaderRD::version_set_code(RID p_version, const HashMap<String, String> &p_
 
 	MutexLock lock(*version->mutex);
 
+	_cancel_deferred_compiles(version);
 	_compile_ensure_finished(version);
 
 	version->vertex_globals = p_vertex_globals.utf8();
@@ -852,6 +973,7 @@ void ShaderRD::version_set_compute_code(RID p_version, const HashMap<String, Str
 
 	MutexLock lock(*version->mutex);
 
+	_cancel_deferred_compiles(version);
 	_compile_ensure_finished(version);
 
 	version->compute_globals = p_compute_globals.utf8();
@@ -865,6 +987,10 @@ void ShaderRD::version_set_raytracing_code(RID p_version, const HashMap<String, 
 
 	Version *version = version_owner.get_or_null(p_version);
 	ERR_FAIL_NULL(version);
+	MutexLock lock(*version->mutex);
+
+	_cancel_deferred_compiles(version);
+	_compile_ensure_finished(version);
 
 	version->raygen_globals = p_raygen_globals.utf8();
 	version->any_hit_globals = p_any_hit_globals.utf8();
@@ -874,6 +1000,62 @@ void ShaderRD::version_set_raytracing_code(RID p_version, const HashMap<String, 
 	version->uniforms = p_uniforms.utf8();
 
 	_version_set(version, p_code, p_custom_defines);
+}
+
+RID ShaderRD::version_get_shader_if_ready(RID p_version, int p_variant, bool *r_pending) {
+	if (r_pending != nullptr) {
+		*r_pending = false;
+	}
+	if (!RD::get_singleton()->gpu_calls_main_thread_only()) {
+		return version_get_shader(p_version, p_variant);
+	}
+
+	ERR_FAIL_INDEX_V(p_variant, variant_defines.size(), RID());
+	ERR_FAIL_COND_V(!variants_enabled[p_variant], RID());
+	Version *version = version_owner.get_or_null(p_version);
+	ERR_FAIL_NULL_V(version, RID());
+
+	MutexLock lock(*version->mutex);
+	if (version->dirty) {
+		_initialize_version(version);
+		for (int i = 0; i < group_enabled.size(); i++) {
+			if (!group_enabled[i]) {
+				_allocate_placeholders(version, i);
+				continue;
+			}
+			_compile_version_start(version, i);
+		}
+	}
+
+	const uint32_t group = variant_to_group[p_variant];
+	if (version->group_compilation_tasks[group] != 0) {
+		if (version->group_compilation_tasks[group] == COMPILE_DEFERRED) {
+			_prioritize_deferred_group(version, group);
+		}
+		if (r_pending != nullptr) {
+			*r_pending = true;
+		}
+		return RID();
+	}
+	return version->valid ? version->variants[p_variant] : RID();
+}
+
+void ShaderRD::process_deferred_compiles(double p_budget_msec) {
+	if (deferred_compile_queue.is_empty()) {
+		return;
+	}
+
+	const uint64_t started = OS::get_singleton()->get_ticks_usec();
+	const uint64_t budget_usec = uint64_t(p_budget_msec * 1000.0);
+	do {
+		const DeferredCompile compile = deferred_compile_queue[0];
+		deferred_compile_queue.remove_at(0);
+		compile.shader->_compile_deferred_variant(compile);
+	} while (!deferred_compile_queue.is_empty() && OS::get_singleton()->get_ticks_usec() - started < budget_usec);
+}
+
+uint32_t ShaderRD::get_deferred_compile_count() {
+	return deferred_compile_queue.size();
 }
 
 bool ShaderRD::version_is_valid(RID p_version) {

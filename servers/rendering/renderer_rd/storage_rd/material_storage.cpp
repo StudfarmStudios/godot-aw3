@@ -2437,10 +2437,14 @@ void MaterialStorage::_update_queued_materials() {
 		bool uniforms_changed = false;
 
 		if (material->data) {
+			material->data->update_parameters_deferred = false;
 			uniforms_changed = material->data->update_parameters(material->params, material->uniform_dirty, material->texture_dirty);
 		}
 		material->texture_dirty = false;
 		material->uniform_dirty = false;
+		if (material->data && material->data->update_parameters_deferred) {
+			_material_queue_update(material, true, true);
+		}
 
 		if (uniforms_changed) {
 			//some implementations such as 3D renderer cache the material uniform set, so update is required

@@ -82,6 +82,8 @@ private:
 		HashMap<StringName, CharString> code_sections;
 		Vector<CharString> custom_defines;
 		Vector<WorkerThreadPool::GroupID> group_compilation_tasks;
+		Vector<uint32_t> group_deferred_compiles;
+		Vector<bool> group_cache_loaded;
 
 		Vector<Vector<uint8_t>> variant_data;
 		Vector<RID> variants;
@@ -97,12 +99,27 @@ private:
 		int group = 0;
 	};
 
+	struct DeferredCompile {
+		ShaderRD *shader = nullptr;
+		Version *version = nullptr;
+		int group = 0;
+		uint32_t variant = 0; // Index within the compilation group.
+	};
+	// Accessed only on the RenderingDevice's owning thread. This mirrors the
+	// main-thread-only pipeline queue and deliberately needs no cross-thread lock.
+	static LocalVector<DeferredCompile> deferred_compile_queue;
+
 	// Vector will have the size of SHADER_STAGE_MAX and unused stages will have empty strings.
 	// Stands in for a group task id when the variants were compiled inline,
 	// because the driver only accepts calls on the thread that owns the device.
 	static constexpr WorkerThreadPool::GroupID COMPILED_INLINE = -1;
+	static constexpr WorkerThreadPool::GroupID COMPILE_DEFERRED = -2;
 
 	void _compile_variant(uint32_t p_variant, CompileData p_data);
+	void _compile_deferred_variant(const DeferredCompile &p_compile);
+	void _compile_deferred_group_now(Version *p_version, int p_group);
+	void _cancel_deferred_compiles(Version *p_version);
+	void _prioritize_deferred_group(Version *p_version, int p_group);
 
 	void _initialize_version(Version *p_version);
 	void _clear_version(Version *p_version);
@@ -182,7 +199,7 @@ private:
 	String _version_get_sha1(Version *p_version) const;
 	String _get_cache_file_relative_path(Version *p_version, int p_group, const String &p_api_name);
 	String _get_cache_file_path(Version *p_version, int p_group, const String &p_api_name, bool p_user_dir);
-	bool _load_from_cache(Version *p_version, int p_group);
+	bool _load_from_cache(Version *p_version, int p_group, bool p_create_modules = true);
 	void _save_to_cache(Version *p_version, int p_group);
 	void _initialize_cache();
 	void _version_set(Version *p_version, const HashMap<String, String> &p_code, const Vector<String> &p_custom_defines);
@@ -230,6 +247,12 @@ public:
 
 		return version->variants[p_variant];
 	}
+
+	// Returns immediately when the requested module is still queued. The optional
+	// output distinguishes a pending module from a failed shader.
+	RID version_get_shader_if_ready(RID p_version, int p_variant, bool *r_pending = nullptr);
+	static void process_deferred_compiles(double p_budget_msec);
+	static uint32_t get_deferred_compile_count();
 
 	bool version_is_valid(RID p_version);
 
