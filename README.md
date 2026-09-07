@@ -27,13 +27,75 @@ an ancestor of 4.7.1, so it is carried here as an import of that branch's diff
 rather than as a merge. To re-sync with dwalter upstream, diff their branch
 against its 4.6.2 base again and re-apply.
 
-## Branches
+## Branch
 
-- `aw3/web-mono-aot` — 4.7.1 + mono static linking + AW3's web/.NET fixes. This
-  is the configuration AW3 ships today.
-- `aw3/webgpu` — the above plus the WebGPU backend.
+`aw-web-export` is the only branch and the default. It carries 4.7.1 + the
+static-linked Mono web export + AW3's .NET fixes + the WebGPU backend + the SDL
+port. (The earlier `aw3/web-mono-aot` and `aw3/webgpu` branches were folded
+into it and no longer exist.)
 
-## Building
+## Adding web support to a C# game
+
+`misc/web-export/wasm.sh` turns a Godot 4.7 C# project into a browser build:
+gameplay C# AOT-compiled to WebAssembly, threads on, rendering through WebGPU.
+It is non-interactive and idempotent, so a person or an agent can run it end
+to end:
+
+```sh
+git clone -b aw-web-export https://github.com/StudfarmStudios/godot-aw3 && cd godot-aw3
+misc/web-export/wasm.sh all   /path/to/game      # the folder with project.godot
+misc/web-export/wasm.sh serve /path/to/game      # http://127.0.0.1:8080/ with COOP/COEP headers
+```
+
+`all` is these four, which also run on their own:
+
+| subcommand | what it does | when to re-run |
+|---|---|---|
+| `toolchain` | installs emsdk 4.0.20 and an arm64/x64 .NET 9 SDK with the `wasm-tools` workload under `~/.godot-aw3` (Homebrew on macOS for scons/glslang/molten-vk; apt hints on Linux) | once per machine |
+| `engine` | builds this fork's editor, regenerates the C# glue and pushes the fork's `GodotSharp` NuGet packages to `bin/GodotSharp/Tools/nupkgs`, and builds the bootstrap web template | when the fork moves (it notices `modules/mono` commits newer than the assemblies) |
+| `prepare <game>` | writes `nuget.config` (source mapping so `Godot.*` comes from the fork, not nuget.org), a generated `godot-aw3-web.props` plus one `<Import>` line in the csproj, an entry-point stub, a `.sln` if none exists, `renderer/rendering_method.web` in `project.godot`, and a `Web` export preset pointing at the template | once per game, or to change `AOT_MODE` |
+| `export <game>` | pass 1 exports (the publish AOT-compiles the C# and leaves `.o` files), pass 2 relinks the template against them, then copies `godot.wasm`/`godot.js` over the export | after every C# change |
+
+The two passes exist because the AOT images are linked into the **engine**
+template, not into the game's pck, so the template is game-specific. `export`
+refuses to continue when the publish left no fresh object, when scons did not
+report `linking N AOT-compiled assemblies`, or when the template zip was not
+rewritten — each of those otherwise ships the previous build's code with no
+message. `doctor [game]` prints the state of everything above, including a
+stale-GodotSharp check and where the cached NuGet package came from.
+
+Knobs, all environment variables: `AOT_MODE` (`LLVMOnlyInterp` by default —
+methods the AOT compiler cannot produce run on the interpreter; `LLVMOnly`
+aborts on them instead and is what AW3 ships after a full coverage pass),
+`RENDERING_METHOD` (`forward_plus`, falls back to `mobile` on adapters with
+fewer than 48 sampled textures per stage; either selects WebGPU), `ENGINE_DIR`,
+`EMSDK_DIR`, `DOTNET_DIR`, `CSPROJ`, `PRESET`, `JOBS`, `FORCE=1`.
+
+Expect the first `engine` run to take from twenty minutes to an hour depending
+on the machine; a later `export` is a few minutes (publish, then a relink).
+The serve step matters: threads need `SharedArrayBuffer`, which browsers grant
+only to cross-origin isolated pages, so a plain file server shows a blank page.
+
+Things the game has to live with on the web, each of which fails without
+naming itself — the long form with every reason is AW3's
+`docs/gameclient/web-csharp-export.md`:
+
+- A P/Invoke of your own must not return a struct by value or carry floating
+  point in its signature (`WASM0001` in the publish log; `export` stops on it).
+- `OS.GetCmdlineUserArgs()` is empty: the shell passes args without `--`, so
+  read `OS.GetCmdlineArgs()` and set them via `"args"` in `index.html`.
+- `System.Net.Http.HttpClient` never sends (no .NET JS host); use Godot's
+  `HttpClient`.
+- `ResourceLoader.LoadThreadedRequest` never completes: loading creates GPU
+  resources and WebGPU calls must stay on the thread that created the device.
+  Load on the main thread and spread it over frames.
+- Culture-sensitive string calls abort (no ICU); the props set
+  `InvariantGlobalization`, so use ordinal comparisons.
+- A black screen with nothing printed means the template and the assemblies
+  disagree: run `doctor`, then `engine` (rebuilds stale GodotSharp and purges
+  the NuGet cache) and `export` again.
+
+## Building by hand
 
 ```sh
 # Editor (macOS)
@@ -41,13 +103,19 @@ scons platform=macos target=editor module_mono_enabled=yes \
       accesskit=no angle=no vulkan_sdk_path=$(brew --prefix molten-vk)
 ./bin/godot.macos.editor.arm64.mono --headless --generate-mono-glue modules/mono/glue
 python3 modules/mono/build_scripts/build_assemblies.py \
-      --godot-output-dir=./bin --push-nupkgs-local /tmp/godot-nuget
+      --godot-output-dir=./bin --push-nupkgs-local ./bin/GodotSharp/Tools/nupkgs
 
 # Web template. mono_aot_dir points at a game's AOT objects (left behind by a
-# first export) and links them into the template - see the AW3 docs.
+# first export) and links them into the template; omit it for the bootstrap.
+# Bootstrap and relink must use the same flags or scons rebuilds everything.
 scons platform=web target=template_release module_mono_enabled=yes webgpu=yes \
       stack_size=32768 default_pthread_stack_size=32768 initial_memory=256 \
-      mono_aot_dir=<abs path>/gameclient/.godot/mono/temp/obj/ExportRelease/browser-wasm/wasm/for-publish
+      optimize=speed lto=thin \
+      mono_aot_dir=<abs path>/<game>/.godot/mono/temp/obj/ExportRelease/browser-wasm/wasm/for-publish
+
+# Native macOS WebGPU (Dawn on Metal) for editor or template: add
+#   webgpu=yes dawn_sdk_path=<Dawn CMake install prefix>
+# and run with --rendering-driver webgpu. Dawn build: AW3 docs/gameclient/native-webgpu.md.
 
 # KMS/DRM (arm64 device) template. Needs a static SDL3 first; both steps are
 # wrapped by the scripts in platform/sdl - see that README.
