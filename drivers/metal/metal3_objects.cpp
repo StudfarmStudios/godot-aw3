@@ -1433,15 +1433,17 @@ void MDCommandBuffer::render_draw(uint32_t p_vertex_count,
 void MDCommandBuffer::render_bind_vertex_buffers(uint32_t p_binding_count, const RDD::BufferID *p_buffers, const uint64_t *p_offsets, uint64_t p_dynamic_offsets) {
 	DEV_ASSERT(type == MDCommandBufferStateType::Render);
 
+	// A different count also changes the first Metal binding slot. Cached
+	// pointers alone cannot establish that those slots still hold the buffers.
+	bool same = render.vertex_buffers.size() == p_binding_count;
 	render.vertex_buffers.resize(p_binding_count);
 	render.vertex_offsets.resize(p_binding_count);
 
-	// Are the existing buffer bindings the same?
-	bool same = true;
-
-	// Reverse the buffers, as their bindings are assigned in descending order.
+	// Dynamic frame indices are packed in the original buffer order. Decode
+	// them in that order, then reverse the destination for Metal's binding slots.
 	for (uint32_t i = 0; i < p_binding_count; i += 1) {
-		const RenderingDeviceDriverMetal::BufferInfo *buf_info = (const RenderingDeviceDriverMetal::BufferInfo *)p_buffers[p_binding_count - i - 1].id;
+		const RenderingDeviceDriverMetal::BufferInfo *buf_info = (const RenderingDeviceDriverMetal::BufferInfo *)p_buffers[i].id;
+		uint32_t binding_index = p_binding_count - i - 1;
 
 		NS::UInteger dynamic_offset = 0;
 		if (buf_info->is_dynamic()) {
@@ -1450,12 +1452,12 @@ void MDCommandBuffer::render_bind_vertex_buffers(uint32_t p_binding_count, const
 			p_dynamic_offsets >>= 2;
 			dynamic_offset = frame_idx * dyn_buf->size_bytes;
 		}
-		if (render.vertex_buffers[i] != buf_info->buffer.get()) {
-			render.vertex_buffers[i] = buf_info->buffer.get();
+		if (render.vertex_buffers[binding_index] != buf_info->buffer.get()) {
+			render.vertex_buffers[binding_index] = buf_info->buffer.get();
 			same = false;
 		}
 
-		render.vertex_offsets[i] = dynamic_offset + p_offsets[p_binding_count - i - 1];
+		render.vertex_offsets[binding_index] = dynamic_offset + p_offsets[i];
 	}
 
 	if (render.encoder) {
