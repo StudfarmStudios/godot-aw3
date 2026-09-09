@@ -1,0 +1,31 @@
+From: upstream Dawn commit 6c89318c3ca666e54bda3c012e9e2c4967ec4fff
+Subject: [native][metal] Use MTLCommandBuffer.presentDrawable to avoid races
+
+Backport to Dawn a082d8e7cb9118e9df5965e63c4ff64e62e5fd14.
+Upstream: https://github.com/google/dawn/commit/6c89318c3ca666e54bda3c012e9e2c4967ec4fff
+
+Schedule presentation on the queue's command buffer. Calling drawable.present()
+immediately after submission can present before GPU writes have been scheduled.
+
+--- a/src/dawn/native/metal/SwapChainMTL.mm
++++ b/src/dawn/native/metal/SwapChainMTL.mm
+@@ -30,6 +30,7 @@
+ #include "dawn/native/ChainUtils.h"
+ #include "dawn/native/Surface.h"
+ #include "dawn/native/metal/DeviceMTL.h"
++#include "dawn/native/metal/QueueMTL.h"
+ #include "dawn/native/metal/TextureMTL.h"
+ 
+ #import <QuartzCore/CAMetalLayer.h>
+@@ -91,7 +92,10 @@
+ 
+ MaybeError SwapChain::PresentImpl() {
+     DAWN_ASSERT(mCurrentDrawable != nullptr);
+-    [*mCurrentDrawable present];
++    Queue* queue = ToBackend(GetDevice()->GetQueue());
++    CommandRecordingContext* commandContext = queue->GetPendingCommandContext();
++    [commandContext->GetCommands() presentDrawable:*mCurrentDrawable];
++    DAWN_TRY(queue->SubmitPendingCommandBuffer());
+ 
+     mTexture->APIDestroy();
+     mTexture = nullptr;
