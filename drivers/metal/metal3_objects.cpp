@@ -1433,9 +1433,9 @@ void MDCommandBuffer::render_draw(uint32_t p_vertex_count,
 void MDCommandBuffer::render_bind_vertex_buffers(uint32_t p_binding_count, const RDD::BufferID *p_buffers, const uint64_t *p_offsets, uint64_t p_dynamic_offsets) {
 	DEV_ASSERT(type == MDCommandBufferStateType::Render);
 
-	// A different count also changes the first Metal binding slot. Cached
-	// pointers alone cannot establish that those slots still hold the buffers.
-	bool same = render.vertex_buffers.size() == p_binding_count;
+	// A different count changes the first Metal binding slot. Dirty vertex state
+	// also means the encoder's bindings were replaced or invalidated.
+	bool same = render.vertex_buffers.size() == p_binding_count && !render.dirty.has_flag(RenderState::DIRTY_VERTEX);
 	render.vertex_buffers.resize(p_binding_count);
 	render.vertex_offsets.resize(p_binding_count);
 
