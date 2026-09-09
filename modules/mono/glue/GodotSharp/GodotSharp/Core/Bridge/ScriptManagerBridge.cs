@@ -89,16 +89,41 @@ namespace Godot.Bridge
             }
         }
 
+        // Binding creation is frequent for native objects returned to C#. Class
+        // names are interned and immutable; retain one owning name per class to
+        // avoid allocating and decoding its text for every object wrapper.
+        private static readonly ConcurrentDictionary<IntPtr, (StringName Owner, string Text)>
+            _nativeTypeNames = new();
+
+        private static unsafe string GetNativeTypeName(godot_string_name* nativeTypeName)
+        {
+            IntPtr id = nativeTypeName->DangerousGetInternId();
+            if (_nativeTypeNames.TryGetValue(id, out var cached))
+                return cached.Text;
+
+            var owner = StringName.CreateTakingOwnershipOfDisposableValue(
+                NativeFuncs.godotsharp_string_name_new_copy(CustomUnsafe.AsRef(nativeTypeName)));
+            bool retained = false;
+            try
+            {
+                string text = owner.ToString();
+                retained = _nativeTypeNames.TryAdd(id, (owner, text));
+                return retained ? text : _nativeTypeNames[id].Text;
+            }
+            finally
+            {
+                // Another thread may have inserted this class concurrently.
+                if (!retained)
+                    owner.Dispose();
+            }
+        }
+
         [UnmanagedCallersOnly]
         internal static unsafe IntPtr CreateManagedForGodotObjectBinding(godot_string_name* nativeTypeName, IntPtr godotObject)
         {
             try
             {
-                using var stringName = StringName.CreateTakingOwnershipOfDisposableValue(
-                    NativeFuncs.godotsharp_string_name_new_copy(CustomUnsafe.AsRef(nativeTypeName)));
-                string nativeTypeNameStr = stringName.ToString();
-
-                var instance = Constructors.Invoke(nativeTypeNameStr, godotObject);
+                var instance = Constructors.Invoke(GetNativeTypeName(nativeTypeName), godotObject);
 
                 return GCHandle.ToIntPtr(CustomGCHandle.AllocStrong(instance));
             }

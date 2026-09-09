@@ -545,6 +545,10 @@ namespace Godot.NativeInterop
     [StructLayout(LayoutKind.Sequential)]
     public ref struct godot_string_name
     {
+        // Borrowed intern identity. A retained key must keep an owning StringName
+        // alive so the native intern table cannot recycle this address.
+        internal readonly IntPtr DangerousGetInternId() => _data;
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly unsafe godot_string_name* GetUnsafeAddress()
             => (godot_string_name*)Unsafe.AsPointer(ref Unsafe.AsRef(in _data));
