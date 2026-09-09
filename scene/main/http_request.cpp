@@ -515,7 +515,9 @@ bool HTTPRequest::_update_connection() {
 					return true;
 				}
 			} else if (client->get_status() == HTTPClient::STATUS_DISCONNECTED) {
-				// We read till EOF, with no errors. Request is done.
+				// We read till EOF, with no errors. Keep the completed download when
+				// _request_done() closes the request (web always has unknown body length).
+				download_complete = true;
 				_defer_done(RESULT_SUCCESS, response_code, response_headers, body);
 				return true;
 			}
