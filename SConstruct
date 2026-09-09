@@ -881,7 +881,9 @@ else:
         if methods.is_apple_clang(env):
             # Apple Clang, its linker doesn't like -s.
             env.AppendUnique(LINKFLAGS=["-Wl,-S", "-Wl,-x", "-Wl,-dead_strip"])
-        else:
+        elif not (methods.using_emcc(env) and "--emit-symbol-map" in env["LINKFLAGS"]):
+            # Emscripten needs names until it writes the sidecar symbol map,
+            # then removes them from the release WASM itself.
             env.AppendUnique(LINKFLAGS=["-s"])
 
     # Linker needs optimization flags too, at least for Emscripten.

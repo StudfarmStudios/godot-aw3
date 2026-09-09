@@ -41,6 +41,8 @@ def get_opts():
 
     return [
         ("initial_memory", "Initial WASM memory (in MiB)", 32),
+        EnumVariable("wasm_pgo", "LLVM profile-guided optimization", "off", ["off", "generate", "use"]),
+        ("wasm_pgo_profile", "Merged LLVM profile (.profdata), required with wasm_pgo=use", ""),
         # Matches default values from before Emscripten 3.1.27. New defaults are too low for Godot.
         ("stack_size", "WASM stack size (in KiB)", 5120),
         ("default_pthread_stack_size", "WASM pthread default stack size (in KiB)", 2048),
@@ -114,6 +116,8 @@ def library_emitter(target, source, env):
     # This makes sure that when emscripten is updated, that the cached files
     # aren't used and are recompiled instead.
     env.Depends(source, env.Value(get_compiler_version(env)))
+    if env.get("wasm_pgo") == "use":
+        env.Depends(source, env.File(env["wasm_pgo_profile"]))
     return target, source
 
 
@@ -137,6 +141,23 @@ def configure(env: "SConsEnvironment"):
 
     env["EXPORTED_FUNCTIONS"] = ["_main"]
     env["EXPORTED_RUNTIME_METHODS"] = []
+
+    # Instrument compiler IR rather than selecting a subset of engine features.
+    # Unvisited code remains available in the optimized build. Atomic counters
+    # are necessary because rendering, physics, and jobs run on different threads.
+    if env["wasm_pgo"] == "generate":
+        env.Append(CCFLAGS=["-fprofile-generate", "-fprofile-update=atomic"])
+        env.Append(LINKFLAGS=["-fprofile-generate", "-fprofile-update=atomic"])
+        env["EXPORTED_FUNCTIONS"] += ["___llvm_profile_set_filename", "___llvm_profile_write_file"]
+        env["EXPORTED_RUNTIME_METHODS"] += ["FS"]
+    elif env["wasm_pgo"] == "use":
+        profile_path = Path(env["wasm_pgo_profile"]).resolve()
+        if not env["wasm_pgo_profile"] or not profile_path.is_file():
+            print_error("wasm_pgo=use requires an existing wasm_pgo_profile=.profdata file")
+            sys.exit(255)
+        env["wasm_pgo_profile"] = str(profile_path)
+        env.Append(CCFLAGS=["-fprofile-use=" + str(profile_path)])
+        env.Append(LINKFLAGS=["-fprofile-use=" + str(profile_path)])
 
     # Validate arch.
     supported_arches = ["wasm32", "wasm64"]
