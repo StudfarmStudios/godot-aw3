@@ -1163,9 +1163,6 @@ void ParticlesStorage::_particles_process_prepare(Particles *p_particles, double
 	Particles *sub_emitter = particles_owner.get_or_null(p_particles->sub_emitter);
 
 	if (sub_emitter && sub_emitter->emission_storage_buffer.is_valid()) {
-		//	print_line("updating subemitter buffer");
-		int32_t zero[4] = { 0, sub_emitter->amount, 0, 0 };
-		RD::get_singleton()->buffer_update(sub_emitter->emission_storage_buffer, 0, sizeof(uint32_t) * 4, zero);
 		push_constant.can_emit = true;
 
 		if (sub_emitter->emitting) {
@@ -1304,6 +1301,16 @@ void ParticlesStorage::_particles_process_dispatch(Particles *p_particles, const
 			"Failed to create the particle material uniform set before dispatch.");
 
 	p_particles->has_collision_cache = m->shader_data->uses_collision;
+
+	if (push_constant.can_emit) {
+		Particles *sub_emitter = particles_owner.get_or_null(p_particles->sub_emitter);
+		ERR_FAIL_COND_MSG(!sub_emitter || !sub_emitter->emission_storage_buffer.is_valid(), "Missing sub-emitter storage before particle dispatch.");
+		// Keep this reset next to the producer dispatch. In a batched round,
+		// a child dispatched after preparation can consume an empty queue and
+		// make its count negative before the parent starts writing into it.
+		int32_t zero[4] = { 0, sub_emitter->amount, 0, 0 };
+		RD::get_singleton()->buffer_update(sub_emitter->emission_storage_buffer, 0, sizeof(uint32_t) * 4, zero);
+	}
 
 	//todo should maybe compute all particle systems together?
 	RD::ComputeListID compute_list = RD::get_singleton()->compute_list_begin();

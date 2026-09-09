@@ -203,7 +203,9 @@ bool emit_subparticle(mat4 p_xform, vec3 p_velocity, vec4 p_color, vec4 p_custom
 
 	int dst_index = atomicAdd(dst_particles.particle_count, 1);
 
-	if (dst_index >= dst_particles.particle_max) {
+	// Consuming an empty source queue can leave its count negative. Never
+	// turn that value into a write before the destination particle array.
+	if (dst_index < 0 || dst_index >= dst_particles.particle_max) {
 		atomicAdd(dst_particles.particle_count, -1);
 		return false;
 	}
