@@ -100,6 +100,8 @@ CopyEffects::CopyEffects(BitField<RasterEffects> p_raster_effects) {
 		copy_modes.push_back("\n#define MODE_LINEARIZE_DEPTH_COPY\n");
 		copy_modes.push_back("\n#define MODE_OCTMAP_TO_PANORAMA\n");
 		copy_modes.push_back("\n#define MODE_OCTMAP_ARRAY_TO_PANORAMA\n");
+		copy_modes.push_back("\n#define MODE_SIMPLE_COPY_DEPTH\n#define SOURCE_DEPTH\n");
+		copy_modes.push_back("\n#define MODE_LINEARIZE_DEPTH_COPY\n#define SOURCE_DEPTH\n");
 
 		copy.shader.initialize(copy_modes);
 		memset(&copy.push_constant, 0, sizeof(CopyPushConstant));
@@ -119,6 +121,7 @@ CopyEffects::CopyEffects(BitField<RasterEffects> p_raster_effects) {
 		copy_modes.push_back("\n#define MODE_PANORAMA_TO_DP\n"); // COPY_TO_FB_COPY_PANORAMA_TO_DP
 		copy_modes.push_back("\n#define MODE_TWO_SOURCES\n"); // COPY_TO_FB_COPY2
 		copy_modes.push_back("\n#define MODE_SET_COLOR\n"); // COPY_TO_FB_SET_COLOR
+		copy_modes.push_back("\n#define SOURCE_DEPTH\n"); // COPY_TO_FB_DEPTH_SOURCE
 		copy_modes.push_back("\n#define USE_MULTIVIEW\n"); // COPY_TO_FB_MULTIVIEW
 		copy_modes.push_back("\n#define USE_MULTIVIEW\n#define MODE_TWO_SOURCES\n"); // COPY_TO_FB_MULTIVIEW_WITH_DEPTH
 
@@ -446,6 +449,9 @@ void CopyEffects::copy_to_rect(RID p_source_rd_texture, RID p_dest_texture, cons
 	// tolerated by Vulkan/Metal but is a validation error on WebGPU (the invalid
 	// bind group then poisons the whole frame's command buffer).
 	CopyMode mode = p_dest_is_depth ? COPY_MODE_SIMPLY_COPY_DEPTH : (p_8_bit_dst ? COPY_MODE_SIMPLY_COPY_8BIT : COPY_MODE_SIMPLY_COPY);
+	if (p_dest_is_depth && (RD::get_singleton()->texture_get_format(p_source_rd_texture).usage_bits & RD::TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
+		mode = COPY_MODE_SIMPLY_COPY_DEPTH_SOURCE;
+	}
 	RID shader = copy.shader.version_get_shader(copy.shader_version, mode);
 	ERR_FAIL_COND(shader.is_null());
 
@@ -523,6 +529,9 @@ void CopyEffects::copy_depth_to_rect(RID p_source_rd_texture, RID p_dest_texture
 	RD::Uniform u_dest_texture(RD::UNIFORM_TYPE_IMAGE, 0, p_dest_texture);
 
 	CopyMode mode = COPY_MODE_SIMPLY_COPY_DEPTH;
+	if (RD::get_singleton()->texture_get_format(p_source_rd_texture).usage_bits & RD::TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+		mode = COPY_MODE_SIMPLY_COPY_DEPTH_SOURCE;
+	}
 	RID shader = copy.shader.version_get_shader(copy.shader_version, mode);
 	ERR_FAIL_COND(shader.is_null());
 
@@ -562,6 +571,9 @@ void CopyEffects::copy_depth_to_rect_and_linearize(RID p_source_rd_texture, RID 
 	RD::Uniform u_dest_texture(RD::UNIFORM_TYPE_IMAGE, 0, p_dest_texture);
 
 	CopyMode mode = COPY_MODE_LINEARIZE_DEPTH;
+	if (RD::get_singleton()->texture_get_format(p_source_rd_texture).usage_bits & RD::TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+		mode = COPY_MODE_LINEARIZE_DEPTH_SOURCE;
+	}
 	RID shader = copy.shader.version_get_shader(copy.shader_version, mode);
 	ERR_FAIL_COND(shader.is_null());
 
@@ -662,6 +674,9 @@ void CopyEffects::copy_to_fb_rect(RID p_source_rd_texture, RID p_dest_framebuffe
 		mode = p_secondary.is_valid() ? COPY_TO_FB_MULTIVIEW_WITH_DEPTH : COPY_TO_FB_MULTIVIEW;
 	} else {
 		mode = p_secondary.is_valid() ? COPY_TO_FB_COPY2 : COPY_TO_FB_COPY;
+		if (!p_secondary.is_valid() && (RD::get_singleton()->texture_get_format(p_source_rd_texture).usage_bits & RD::TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
+			mode = COPY_TO_FB_DEPTH_SOURCE;
+		}
 	}
 
 	RID shader = copy_to_fb.shader.version_get_shader(copy_to_fb.shader_version, mode);

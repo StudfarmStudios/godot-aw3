@@ -96,7 +96,12 @@ layout(set = 1, binding = 0) uniform sampler2DArray source_depth;
 layout(location = 1) out float depth;
 #endif /* MODE_TWO_SOURCES */
 #else /* USE_MULTIVIEW */
+#ifdef SOURCE_DEPTH
+layout(set = 0, binding = 0) uniform sampler2D godot_depth_source;
+#define source_color godot_depth_source
+#else
 layout(set = 0, binding = 0) uniform sampler2D source_color;
+#endif
 #ifdef MODE_TWO_SOURCES
 layout(set = 1, binding = 0) uniform sampler2D source_color2;
 #endif /* MODE_TWO_SOURCES */

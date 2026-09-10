@@ -23,7 +23,8 @@ void main() {
 
 layout(location = 0) in vec2 uv_interp;
 
-layout(set = 0, binding = 0) uniform sampler2DMS source_depth;
+layout(set = 0, binding = 0) uniform sampler2DMS godot_depth_source;
+#define source_depth godot_depth_source
 
 layout(push_constant, std430) uniform Params {
     ivec2 pad;

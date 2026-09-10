@@ -65,6 +65,17 @@ C++ namespace is renamed to `godot_tint` at compile time so native Dawn's own
 Tint snapshot cannot collide with Godot's patched vendored copy in a static
 macOS build.
 
+Depth-copy and MSAA-resolve shaders mark raw depth attachments with the uniform
+name `godot_depth_source`. GLSL's non-comparison `sampler2D` / `sampler2DMS` types
+otherwise lose that distinction. Before splitting combined samplers, the shared
+runtime/build-time preprocessor preserves only the marked input as a depth
+texture; other color bindings retain their types. Bind groups use a depth-only
+view for those attachments, including depth/stencil formats. The resolved R32F
+scene-depth texture remains an ordinary float texture. This avoids silently
+substituting an empty fallback into the pass that creates `hint_depth_texture`.
+See the [rendered depth regression probe](../../misc/native-webgpu/scene-depth-probe/README.md)
+for Forward+ and Mobile checks with and without MSAA.
+
 ### Barrier No-ops
 WebGPU tracks resource hazards automatically. All barrier/sync commands are
 no-ops.

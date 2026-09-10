@@ -122,6 +122,8 @@ private:
 		COPY_MODE_LINEARIZE_DEPTH,
 		COPY_MODE_OCTMAP_TO_PANORAMA,
 		COPY_MODE_OCTMAP_ARRAY_TO_PANORAMA,
+		COPY_MODE_SIMPLY_COPY_DEPTH_SOURCE,
+		COPY_MODE_LINEARIZE_DEPTH_SOURCE,
 		COPY_MODE_MAX,
 
 	};
@@ -178,6 +180,7 @@ private:
 		COPY_TO_FB_COPY_PANORAMA_TO_DP,
 		COPY_TO_FB_COPY2,
 		COPY_TO_FB_SET_COLOR,
+		COPY_TO_FB_DEPTH_SOURCE,
 
 		// These variants are disabled unless XR shaders are enabled.
 		// They should be listed last.

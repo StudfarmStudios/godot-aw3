@@ -1524,6 +1524,120 @@ DepthImageFixResult fix_depth2_images(const Vector<uint8_t> &p_bytes) {
 	return result;
 }
 
+// ---- preserve_depth_sources ----
+
+Vector<uint8_t> preserve_depth_sources(const Vector<uint8_t> &p_bytes) {
+	const uint8_t *data = p_bytes.ptr();
+	const int64_t len = p_bytes.size();
+	if (len < 20 || len % 4 != 0) {
+		return p_bytes;
+	}
+	const uint32_t total_words = uint32_t(len / 4);
+	std::unordered_map<uint32_t, std::vector<uint32_t>> types;
+	std::unordered_map<uint32_t, uint32_t> depth_types;
+	HashSet<uint32_t> depth_values;
+	uint32_t bound = read_word(data, len, 3);
+	for (uint32_t pos = 5; pos < total_words;) {
+		const uint32_t word = read_word(data, len, pos);
+		const uint32_t count = word >> 16;
+		const uint16_t op = uint16_t(word);
+		if (count == 0 || count > total_words - pos) {
+			return p_bytes;
+		}
+		if (op == OP_NAME && count >= 3) {
+			const char *name = reinterpret_cast<const char *>(data + (pos + 2) * 4);
+			const size_t capacity = (count - 2) * 4;
+			if (capacity >= sizeof("godot_depth_source") && memcmp(name, "godot_depth_source", sizeof("godot_depth_source")) == 0) {
+				depth_values.insert(read_word(data, len, pos + 1));
+			}
+		}
+		pos += count;
+	}
+	if (depth_values.is_empty()) {
+		return p_bytes;
+	}
+	for (uint32_t pos = 5; pos < total_words;) {
+		const uint32_t word = read_word(data, len, pos);
+		const uint32_t count = word >> 16;
+		const uint16_t op = uint16_t(word);
+		if ((op == OP_TYPE_IMAGE && count >= 9) || (op == OP_TYPE_POINTER && count == 4) || (op == OP_TYPE_SAMPLED_IMAGE && count == 3)) {
+			std::vector<uint32_t> words(count);
+			memcpy(words.data(), data + pos * 4, count * 4);
+			types.emplace(words[1], std::move(words));
+		}
+		pos += count;
+	}
+
+	// Image types are interned: changing the original texture2D type would also
+	// turn color/normal textures into depth textures. Clone only this binding's
+	// image, pointer and sampled-image types, preserving their dimensions.
+	std::vector<uint32_t> new_types;
+	auto depth_type = [&](auto &&self, uint32_t id) -> uint32_t {
+		auto existing = depth_types.find(id);
+		if (existing != depth_types.end()) {
+			return existing->second;
+		}
+		auto found = types.find(id);
+		if (found == types.end()) {
+			return id;
+		}
+		auto words = found->second;
+		const uint16_t op = uint16_t(words[0]);
+		if (op == OP_TYPE_IMAGE) {
+			// Depth sources are sampled 2D or multisampled 2D images.
+			if (words[3] != 1 || words[7] != 1 || words[4] == 1) {
+				return id;
+			}
+			words[4] = 1;
+		} else {
+			const uint32_t element = op == OP_TYPE_POINTER ? 3 : 2;
+			const uint32_t replacement = self(self, words[element]);
+			if (replacement == words[element]) {
+				return id;
+			}
+			words[element] = replacement;
+		}
+		words[1] = bound++;
+		depth_types.emplace(id, words[1]);
+		new_types.insert(new_types.end(), words.begin(), words.end());
+		return words[1];
+	};
+
+	std::unordered_map<uint32_t, uint32_t> replacements;
+	uint32_t insertion = 0;
+	for (uint32_t pos = 5; pos < total_words;) {
+		const uint32_t word = read_word(data, len, pos);
+		const uint32_t count = word >> 16;
+		const uint16_t op = uint16_t(word);
+		bool replace = op == OP_VARIABLE && count >= 4 && depth_values.has(read_word(data, len, pos + 2));
+		if (replace && insertion == 0) {
+			insertion = pos;
+		}
+		if ((op == OP_LOAD || op == OP_COPY_OBJECT || op == OP_IMAGE || op == OP_SAMPLED_IMAGE) && count >= 4) {
+			replace = depth_values.has(read_word(data, len, pos + 3));
+		}
+		if (replace) {
+			depth_values.insert(read_word(data, len, pos + 2));
+			replacements.emplace(pos + 1, depth_type(depth_type, read_word(data, len, pos + 1)));
+		}
+		pos += count;
+	}
+	if (new_types.empty() || insertion == 0) {
+		return p_bytes;
+	}
+	Vector<uint8_t> out;
+	for (uint32_t pos = 0; pos < total_words; pos++) {
+		if (pos == insertion) {
+			for (uint32_t word : new_types) {
+				push_word(out, word);
+			}
+		}
+		auto replacement = replacements.find(pos);
+		push_word(out, pos == 3 ? bound : (replacement == replacements.end() ? read_word(data, len, pos) : replacement->second));
+	}
+	return out;
+}
+
 // ---- negate_position_y ----
 
 Vector<uint8_t> negate_position_y(const Vector<uint8_t> &p_bytes) {
@@ -2465,6 +2579,7 @@ Vector<uint8_t> run_all(const Vector<uint8_t> &p_bytes, Vector<DepthImageFixResu
 	if (want()) { spv = rewrite_copy_logical(spv); }
 	if (want()) { spv = rewrite_terminate_invocation(spv); }
 	if (want()) { spv = convert_push_constants_to_uniforms(spv); }
+	if (want()) { spv = preserve_depth_sources(spv); }
 	if (want()) { spv = split_combined_samplers(spv); }
 
 	if (want()) {

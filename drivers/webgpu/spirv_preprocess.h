@@ -112,6 +112,12 @@ Vector<uint8_t> split_combined_samplers(const Vector<uint8_t> &p_bytes);
 // depth). Returns the modified bytes and info about changed image types.
 DepthImageFixResult fix_depth2_images(const Vector<uint8_t> &p_bytes);
 
+// Preserve explicitly marked depth-format inputs (godot_depth_source) through
+// GLSL's sampled-image type erasure. Copy/resolve shaders mark their real depth
+// attachments; the resolved R32F scene-depth buffer remains an ordinary texture.
+// Run after opaque-function inlining, before combined-sampler splitting.
+Vector<uint8_t> preserve_depth_sources(const Vector<uint8_t> &p_bytes);
+
 // Negate the Y component of gl_Position in vertex shaders.
 // Compensates for the difference between Vulkan's Y-down NDC (which
 // Godot's GLSL shaders target) and WebGPU's Y-up NDC.

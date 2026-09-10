@@ -868,6 +868,19 @@ static WGPUTextureSampleType _wgsl_declared_sample_type(const char *p_type, cons
 	return WGPUTextureSampleType_Undefined;
 }
 
+static WGPUTextureView _create_depth_sample_view(WGTexture *p_texture, WGPUTextureViewDimension p_dimension) {
+	WGPUTextureViewDescriptor view = {};
+	// Leave the format unspecified so Depth24PlusStencil8 / Depth32FloatStencil8
+	// select the compatible depth-only format. Attachment views keep both aspects.
+	view.dimension = p_dimension == WGPUTextureViewDimension_Undefined ? p_texture->view_dimension : p_dimension;
+	view.aspect = WGPUTextureAspect_DepthOnly;
+	view.baseMipLevel = p_texture->base_mipmap;
+	view.mipLevelCount = p_texture->mipmaps;
+	view.baseArrayLayer = p_texture->base_layer;
+	view.arrayLayerCount = view.dimension == WGPUTextureViewDimension_2D ? 1 : p_texture->layers;
+	return wgpuTextureCreateView(p_texture->gpu_handle(), &view);
+}
+
 // The sample type for a sampled-texture BGL entry. The layout has to describe
 // what the shader declared, not what the Godot-side texture format suggests:
 // an integer texture described as a float variant fails pipeline creation with
@@ -5941,7 +5954,10 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 						// Fix depth/float mismatch: if layout expects Float but
 						// texture has a depth format (common with Godot's depth
 						// fallback textures), substitute a float fallback texture.
-						if (expected_sample == WGPUTextureSampleType_Float &&
+						if (expected_sample == WGPUTextureSampleType_Depth && _is_depth_format(tex->format)) {
+							entry.textureView = _create_depth_sample_view(tex, expected_dim);
+							us->temp_views.push_back(entry.textureView);
+						} else if (expected_sample == WGPUTextureSampleType_Float &&
 								_is_depth_format(tex->format) &&
 								fallback_float_texture_view != nullptr) {
 							// Also check if we need cube dimension for the depth fallback.
@@ -6009,6 +6025,7 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 				// Sampler at binding*2+j*2+0, texture at binding*2+j*2+1 (matches layout and SPIR-V preprocessor).
 				// Look up expected texture dimension and sample type from the shader layout.
 				WGPUTextureViewDimension swt_expected_dim = WGPUTextureViewDimension_Undefined;
+				WGPUTextureSampleType swt_expected_sample = WGPUTextureSampleType_Undefined;
 				bool swt_expected_ms = false;
 				// When the sampler half does not exist (multisampled combined sampler),
 				// the texture lives at the sampler's slot and nothing is bound at +1.
@@ -6020,11 +6037,13 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 								bge.layout_entry.binding == uniform.binding * 2 + 0) {
 							swt_collapsed = true;
 							swt_expected_dim = bge.layout_entry.texture.viewDimension;
+							swt_expected_sample = bge.layout_entry.texture.sampleType;
 							swt_expected_ms = (bool)bge.layout_entry.texture.multisampled;
 							break;
 						}
 						if (bge.layout_entry.binding == tex_binding) {
 							swt_expected_dim = bge.layout_entry.texture.viewDimension;
+							swt_expected_sample = bge.layout_entry.texture.sampleType;
 							swt_expected_ms = (bool)bge.layout_entry.texture.multisampled;
 							break;
 						}
@@ -6043,20 +6062,19 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 						WGPUBindGroupEntry te = {};
 						// Collapsed pairs put the texture where the sampler would have gone.
 						te.binding = uniform.binding * 2 + j * 2 + (swt_collapsed ? 0 : 1);
-						// Check sample-count mismatch first: if the BGL expects a multisampled
-						// texture but the bound texture isn't multisampled (or vice versa),
-						// we can't use either the real texture or a non-MS fallback. Substitute
-						// the MSAA fallback for this case. This handles ResolveRasterShaderRD
-						// which binds an MSAA depth texture into a float MSAA slot (WebGPU
-						// forbids sampling depth as float, so the MSAA fallback is used).
+						// An MSAA float slot needs an MSAA-compatible fallback on a
+						// sample-count or format mismatch. Typed depth slots can sample
+						// the actual depth attachment, including MSAA resolve inputs.
 						bool tex_is_ms = (tex->sample_count > 1);
-						if (swt_expected_ms && (!tex_is_ms || _is_depth_format(tex->format)) &&
+						if (swt_expected_ms && (!tex_is_ms || (_is_depth_format(tex->format) && swt_expected_sample != WGPUTextureSampleType_Depth)) &&
 								fallback_ms_texture_view != nullptr) {
 							te.textureView = fallback_ms_texture_view;
-						} else if (_is_depth_format(tex->format) && fallback_float_texture_view != nullptr) {
-							// Fix depth/float mismatch: combined sampler+texture bindings
-							// are always Float. If a depth fallback texture is provided,
-							// substitute a float fallback.
+						} else if (swt_expected_sample == WGPUTextureSampleType_Depth && _is_depth_format(tex->format)) {
+							te.textureView = _create_depth_sample_view(tex, swt_expected_dim);
+							us->temp_views.push_back(te.textureView);
+						} else if (_is_depth_format(tex->format) && swt_expected_sample != WGPUTextureSampleType_Depth && fallback_float_texture_view != nullptr) {
+							// A float-only binding still needs a compatible fallback,
+							// but typed depth inputs must receive the actual attachment.
 							if (swt_expected_dim == WGPUTextureViewDimension_Cube && fallback_cube_texture_view != nullptr) {
 								te.textureView = fallback_cube_texture_view;
 							} else {

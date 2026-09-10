@@ -358,6 +358,8 @@ SHADER_REGISTRY = [
         ("linearize_depth", "\n#define MODE_LINEARIZE_DEPTH_COPY\n", [COMP]),
         ("octmap_panorama", "\n#define MODE_OCTMAP_TO_PANORAMA\n", [COMP]),
         ("octmap_array_panorama", "\n#define MODE_OCTMAP_ARRAY_TO_PANORAMA\n", [COMP]),
+        ("simple_copy_depth_source", "\n#define MODE_SIMPLE_COPY_DEPTH\n#define SOURCE_DEPTH\n", [COMP]),
+        ("linearize_depth_source", "\n#define MODE_LINEARIZE_DEPTH_COPY\n#define SOURCE_DEPTH\n", [COMP]),
     ]),
 
     ("servers/rendering/renderer_rd/shaders/effects/copy_to_fb.glsl",
@@ -366,6 +368,7 @@ SHADER_REGISTRY = [
         ("panorama_to_dp", "\n#define MODE_PANORAMA_TO_DP\n", [VERT, FRAG]),
         ("two_sources", "\n#define MODE_TWO_SOURCES\n", [VERT, FRAG]),
         ("set_color", "\n#define MODE_SET_COLOR\n", [VERT, FRAG]),
+        ("depth_source", "\n#define SOURCE_DEPTH\n", [VERT, FRAG]),
     ]),
 
     ("servers/rendering/renderer_rd/shaders/effects/cube_to_dp.glsl",

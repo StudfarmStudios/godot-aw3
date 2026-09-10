@@ -48,6 +48,11 @@ params;
 layout(set = 0, binding = 0) uniform sampler2DArray source_color;
 #elif defined(MODE_OCTMAP_TO_PANORAMA)
 layout(set = 0, binding = 0) uniform sampler2D source_color;
+#elif defined(SOURCE_DEPTH)
+// Keep depth-format sources distinct from resolved R32F depth copies. The
+// WebGPU translator preserves this marked input as a depth texture.
+layout(set = 0, binding = 0) uniform sampler2D godot_depth_source;
+#define source_color godot_depth_source
 #elif !defined(MODE_SET_COLOR)
 layout(set = 0, binding = 0) uniform sampler2D source_color;
 #endif
