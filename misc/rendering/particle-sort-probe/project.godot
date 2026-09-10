@@ -1,0 +1,12 @@
+config_version=5
+
+[application]
+config/name="Particle sort bounds regression"
+
+[display]
+window/size/viewport_width=320
+window/size/viewport_height=200
+
+[rendering]
+renderer/rendering_method="forward_plus"
+shader_compiler/shader_cache/enabled=false

@@ -155,8 +155,10 @@ void main() {
 
 	tgp.x = int(Gid.x * 256);
 	tgp.y = 0;
-	tgp.z = int(params.total_elements.x);
-	tgp.w = int(min(512, max(0, params.total_elements - Gid.x * 512)));
+	tgp.z = int(params.total_elements);
+	// The merge dispatch is rounded up to a power of two. Keep the subtraction
+	// signed so workgroups beyond the data clamp to zero instead of wrapping.
+	tgp.w = min(SORT_SIZE, max(0, tgp.z - int(Gid.x) * SORT_SIZE));
 
 	int GlobalBaseIndex = int(tgp.y + tgp.x * 2 + GTid.x);
 	int LocalBaseIndex = int(GI);
