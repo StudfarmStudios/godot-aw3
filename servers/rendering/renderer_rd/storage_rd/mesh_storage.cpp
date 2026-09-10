@@ -226,6 +226,23 @@ void MeshStorage::_skeleton_atlas_ensure_capacity(uint32_t p_floats_needed) {
 	skeleton_atlas_uniform_set = RID(); // Invalidate.
 	skeleton_atlas_uniform_set_3d = RID(); // Invalidate draw-time set too.
 	_skeleton_atlas_rebuild_uniform_set(); // Rebuild immediately so it's always available.
+
+	// Replacing the buffer invalidates the draw-time sets cached by every
+	// skinned geometry instance, not just the skeleton that triggered growth.
+	// Repopulate the new buffer from all live skeletons as well: an unchanged
+	// pose would otherwise keep its data only in the buffer we just freed.
+	for (const RID &skeleton_rid : skeleton_owner.get_owned_list()) {
+		// Allocation can precede initialization on the render thread.
+		if (!skeleton_owner.owns(skeleton_rid)) {
+			continue;
+		}
+		Skeleton *skeleton = skeleton_owner.get_or_null(skeleton_rid);
+		if (!skeleton || skeleton->size == 0) {
+			continue;
+		}
+		_skeleton_make_dirty(skeleton);
+		skeleton->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_SKELETON_DATA);
+	}
 }
 
 void MeshStorage::_skeleton_atlas_rebuild_uniform_set() {
