@@ -369,44 +369,91 @@ static void _collect_depth_paired_samplers(const char *p_wgsl, HashSet<uint32_t>
 		return;
 	}
 
-	// Calls: "textureSample*(texture, sampler, ...)", excluding the Compare forms,
-	// which legitimately take a comparison sampler.
-	const char *p = p_wgsl;
-	while ((p = strstr(p, "textureSample")) != nullptr) {
-		const char *open = strchr(p, '(');
-		bool is_compare = strncmp(p, "textureSampleCompare", 20) == 0;
-		if (!open || is_compare) {
-			p += 13;
-			continue;
+	auto read_ident = [](const char *&c) -> String {
+		while (*c && isspace((unsigned char)*c)) {
+			c++;
 		}
-		const char *arg = open + 1;
-		auto read_ident = [](const char *&c) -> String {
-			while (*c == ' ' || *c == '\n' || *c == '\t') {
-				c++;
+		const char *start = c;
+		while (*c && (isalnum((unsigned char)*c) || *c == '_')) {
+			c++;
+		}
+		return String::utf8(start, (int)(c - start));
+	};
+
+	// Tint keeps depth textures as typed helper parameters. For example, the
+	// directional soft-shadow helper samples `shadow: texture_depth_2d` with
+	// the global nearest sampler. Looking only for global texture names misses
+	// this use and produces a Filtering layout that WebGPU rejects.
+	// Resolve parameter types in their own function: another helper may use
+	// the same parameter name for a colour texture with a linear sampler.
+	const char *function = p_wgsl;
+	while ((function = strstr(function, "fn ")) != nullptr) {
+		const char *body = strchr(function, '{');
+		if (!body) {
+			break;
+		}
+		const char *body_end = body + 1;
+		int braces = 1;
+		while (*body_end && braces) {
+			if (*body_end == '{') {
+				braces++;
+			} else if (*body_end == '}') {
+				braces--;
 			}
-			const char *start = c;
-			while (*c && (isalnum((unsigned char)*c) || *c == '_')) {
-				c++;
+			body_end++;
+		}
+
+		HashMap<String, bool> depth_parameters;
+		const char *parameter = function;
+		while ((parameter = strchr(parameter, ':')) != nullptr && parameter < body) {
+			const char *name_end = parameter;
+			while (name_end > function && isspace((unsigned char)name_end[-1])) {
+				name_end--;
 			}
-			return String::utf8(start, (int)(c - start));
-		};
-		String tex_name = read_ident(arg);
-		while (*arg == ' ') {
+			const char *name_start = name_end;
+			while (name_start > function && (isalnum((unsigned char)name_start[-1]) || name_start[-1] == '_')) {
+				name_start--;
+			}
+			parameter++;
+			while (isspace((unsigned char)*parameter)) {
+				parameter++;
+			}
+			depth_parameters.insert(String::utf8(name_start, (int)(name_end - name_start)),
+					strncmp(parameter, "texture_depth", 13) == 0);
+		}
+
+		// Calls: textureSample*(texture, sampler, ...), excluding comparison
+		// forms, which legitimately use a comparison sampler.
+		const char *call = body;
+		while ((call = strstr(call, "textureSample")) != nullptr && call < body_end) {
+			const char *open = strchr(call, '(');
+			bool is_compare = strncmp(call, "textureSampleCompare", 20) == 0;
+			if (!open || open >= body_end || is_compare) {
+				call += 13;
+				continue;
+			}
+			const char *arg = open + 1;
+			String tex_name = read_ident(arg);
+			while (isspace((unsigned char)*arg)) {
+				arg++;
+			}
+			if (*arg != ',') {
+				call += 13;
+				continue;
+			}
 			arg++;
-		}
-		if (*arg != ',') {
-			p += 13;
-			continue;
-		}
-		arg++;
-		String samp_name = read_ident(arg);
-		if (depth_textures.has(tex_name)) {
-			const uint32_t *key = name_to_key.getptr(samp_name);
-			if (key) {
-				r_sampler_keys->insert(*key);
+			String samp_name = read_ident(arg);
+			const bool *parameter_is_depth = depth_parameters.getptr(tex_name);
+			bool is_depth = parameter_is_depth ? *parameter_is_depth : depth_textures.has(tex_name);
+			if (is_depth && !depth_parameters.has(samp_name)) {
+				const uint32_t *key = name_to_key.getptr(samp_name);
+				if (key) {
+					r_sampler_keys->insert(*key);
+				}
 			}
+			call += 13;
 		}
-		p += 13;
+		function = body_end;
 	}
 }
 
