@@ -694,6 +694,21 @@ static void _wgsl_disk_cache_flush() {
 	}
 }
 
+// Older persisted seeds and build-time tables predate Tint's warning directive.
+// Apply it while making the module's existing mutable copy, so warm caches get
+// the same behavior as fresh translations without invalidating or redoing them.
+static char *_copy_wgsl_for_module(const char *p_wgsl, size_t p_length) {
+	static constexpr char directive[] = "diagnostic(off, chromium.unreachable_code);\n";
+	const size_t prefix_length = strstr(p_wgsl, "diagnostic(off, chromium.unreachable_code)") ? 0 : sizeof(directive) - 1;
+	char *out = (char *)malloc(prefix_length + p_length + 1);
+	if (!out) {
+		return nullptr;
+	}
+	memcpy(out, directive, prefix_length);
+	memcpy(out + prefix_length, p_wgsl, p_length + 1);
+	return out;
+}
+
 // Returns a malloc'd null-terminated WGSL string (caller must free), or nullptr on
 // failure. Checks: (1) in-memory cache, (2) precompiled table, (3) Tint fallback.
 static char *_spv_to_wgsl_cached(const uint8_t *p_spv_ptr, int p_spv_size) {
@@ -707,11 +722,7 @@ static char *_spv_to_wgsl_cached(const uint8_t *p_spv_ptr, int p_spv_size) {
 	if (cached) {
 		_spv_to_wgsl_cache_hits++;
 		CharString cs = cached->utf8();
-		size_t len = (size_t)cs.length() + 1;
-		char *out = (char *)malloc(len);
-		if (!out) return nullptr;
-		memcpy(out, cs.get_data(), len);
-		return out;
+		return _copy_wgsl_for_module(cs.get_data(), (size_t)cs.length());
 	}
 
 	// 2. Check build-time precompiled table (eliminates runtime translation for ubershaders).
@@ -723,12 +734,8 @@ static char *_spv_to_wgsl_cached(const uint8_t *p_spv_ptr, int p_spv_size) {
 				console.log('[SHADER] Precompiled WGSL hit #' + $0);
 			}
 		}, _spv_to_wgsl_precompiled_hits);
-		size_t len = strlen(precompiled) + 1;
-		char *out = (char *)malloc(len);
-		if (!out) return nullptr;
-		memcpy(out, precompiled, len);
 		_spv_to_wgsl_cache[spv_hash] = String(precompiled);
-		return out;
+		return _copy_wgsl_for_module(precompiled, strlen(precompiled));
 	}
 
 	// 3. Fall back to Tint (for specialized shaders and shaders not in the table).

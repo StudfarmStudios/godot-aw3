@@ -35,6 +35,10 @@ char *tint_wrapper_spirv_to_wgsl(const uint32_t *p_spirv_words, size_t p_word_co
 	// (valid in Vulkan, but WGSL requires uniform control flow for derivatives).
 	// This inserts `diagnostic(off, derivative_uniformity)` in the output.
 	wgsl_options.allow_non_uniform_derivatives = true;
+	// SPIR-V control-flow reconstruction can append unreachable fallback returns.
+	// Avoid warning callbacks for this generated code: Chromium can re-enter
+	// its command-buffer lock if logging allocates and finalizes GPU objects.
+	wgsl_options.disable_unreachable_code_warning = true;
 
 	auto result = tint::SpirvToWgsl(words, wgsl_options);
 	if (result != tint::Success) {
