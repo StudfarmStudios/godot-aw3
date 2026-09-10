@@ -102,6 +102,7 @@ mono_assembly_load_from_full_fn mono_assembly_load_from_full = nullptr;
 #ifdef WEB_ENABLED
 extern "C" {
 void mono_wasm_load_runtime(int debug_level);
+void mono_wasm_init_finalizer_thread(void);
 }
 #endif
 #endif // !TOOLS_ENABLED
@@ -650,6 +651,12 @@ godot_plugins_initialize_fn initialize_monovm_and_godot_plugins(bool &r_runtime_
 	}
 
 	mono_wasm_load_runtime(1);
+
+	// The browser runtime pack uses lazy finalizer-thread creation. Its normal
+	// JavaScript startup calls this separately from mono_wasm_load_runtime; our
+	// native host must do the same. Without it, finalizable wrappers retain their
+	// native resources and GC.WaitForPendingFinalizers() returns without cleanup.
+	mono_wasm_init_finalizer_thread();
 
 	r_runtime_initialized = true;
 
