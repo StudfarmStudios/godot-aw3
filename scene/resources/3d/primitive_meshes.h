@@ -52,6 +52,7 @@ private:
 
 	mutable int array_len = 0;
 	mutable int index_array_len = 0;
+	mutable Array mesh_arrays;
 
 	Ref<Material> material;
 	bool flip_faces = false;

@@ -124,6 +124,9 @@ void PrimitiveMesh::_update() const {
 
 	array_len = pc;
 	index_array_len = indices.size();
+	// Preserve the generated geometry for synchronous CPU reads. WebGPU readback
+	// is asynchronous and cannot supply a newly uploaded surface on its first read.
+	mesh_arrays = arr.duplicate(true);
 	// in with the new
 	RenderingServer::get_singleton()->mesh_clear(mesh);
 	RenderingServer::get_singleton()->mesh_add_surface_from_arrays(mesh, (RSE::PrimitiveType)primitive_type, arr);
@@ -174,7 +177,9 @@ Array PrimitiveMesh::surface_get_arrays(int p_surface) const {
 		_update();
 	}
 
-	return RenderingServer::get_singleton()->mesh_surface_get_arrays(mesh, 0);
+	// Duplicate packed-array wrappers too, so callers cannot mutate the cache.
+	// Their underlying storage remains copy-on-write.
+	return mesh_arrays.duplicate(true);
 }
 
 Dictionary PrimitiveMesh::surface_get_lods(int p_surface) const {
