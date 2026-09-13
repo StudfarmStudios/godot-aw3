@@ -677,6 +677,8 @@ public:
 	virtual void pipeline_set_async_creation(bool p_enabled) {}
 	virtual bool pipeline_is_ready(PipelineID p_pipeline) { return true; }
 	virtual bool pipeline_has_failed(PipelineID p_pipeline) { return false; }
+	// Number of asynchronous pipeline creation callbacks that have not completed.
+	virtual uint32_t pipeline_get_pending_async_creation_count() const { return 0; }
 
 	// ----- BINDING -----
 

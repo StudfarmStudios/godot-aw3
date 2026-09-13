@@ -1,4 +1,15 @@
 const Preloader = /** @constructor */ function () { // eslint-disable-line no-unused-vars
+	const startupTiming = typeof globalThis !== 'undefined'
+		&& globalThis['GODOT_WEB_STARTUP_TIMING'] === true
+		&& typeof performance !== 'undefined' && typeof performance.mark === 'function';
+	function markDownload(file, phase) {
+		if (!startupTiming) {
+			return;
+		}
+		const basename = file.split('/').pop().replace(/[^a-zA-Z0-9_.-]/g, '_');
+		performance.mark(`godot-web-${phase}-${basename}`);
+	}
+
 	function getTrackedResponse(response, load_status) {
 		function onloadprogress(reader, controller) {
 			return reader.read().then(function (result) {
@@ -13,6 +24,7 @@ const Preloader = /** @constructor */ function () { // eslint-disable-line no-un
 					return onloadprogress(reader, controller);
 				}
 				load_status.done = true;
+				markDownload(load_status.file, 'download-end');
 				return Promise.resolve();
 			});
 		}
@@ -31,7 +43,9 @@ const Preloader = /** @constructor */ function () { // eslint-disable-line no-un
 			total: fileSize || 0,
 			loaded: 0,
 			done: false,
+			file,
 		};
+		markDownload(file, 'download-start');
 		return fetch(file).then(function (response) {
 			if (!response.ok) {
 				return Promise.reject(new Error(`Failed loading file '${file}'`));
@@ -113,6 +127,11 @@ const Preloader = /** @constructor */ function () { // eslint-disable-line no-un
 				me.preloadedFiles.push({
 					path: destPath || pathOrBuffer,
 					buffer: buf,
+					// The buffer came from fetch() and this queue is consumed exactly
+					// once by Engine.start().  MEMFS may retain its view directly,
+					// avoiding a second copy of large packs.  Buffers supplied by a
+					// caller below deliberately do not receive this marker.
+					transferOwnership: true,
 				});
 				return Promise.resolve();
 			});

@@ -31,6 +31,7 @@
 #pragma once
 
 #include "core/templates/local_vector.h"
+#include "core/templates/safe_refcount.h"
 
 // Pipeline compilations waiting to run on the thread that owns the device.
 //
@@ -69,8 +70,12 @@ public:
 	// Drop anything queued for an owner that is going away.
 	static void remove_owner(const void *p_owner);
 
+	// Includes the task currently being submitted to the driver.
 	static uint32_t pending_count();
 
 private:
 	static LocalVector<Task *> queue;
+	// Includes a task while it is being submitted to the driver, so observers
+	// cannot see a false zero between removing it and starting async creation.
+	static SafeNumeric<uint32_t> pending;
 };

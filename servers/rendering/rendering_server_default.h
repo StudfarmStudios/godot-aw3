@@ -1174,6 +1174,7 @@ public:
 #endif
 
 	virtual uint64_t get_rendering_info(RSE::RenderingInfo p_info) override;
+	virtual uint32_t get_pending_pipeline_compilation_count() const override;
 	virtual RenderingDeviceEnums::DeviceType get_video_adapter_type() const override;
 
 	virtual void set_frame_profiling_enabled(bool p_enable) override;

@@ -35,6 +35,7 @@
 #include "core/profiling/profiling.h"
 #include "servers/display/display_server.h"
 #include "servers/rendering/renderer_canvas_cull.h"
+#include "servers/rendering/renderer_rd/pipeline_compile_queue_rd.h"
 #include "servers/rendering/renderer_scene_cull.h"
 #include "servers/rendering/rendering_device.h"
 #include "servers/rendering/rendering_server_globals.h"
@@ -323,6 +324,15 @@ uint64_t RenderingServerDefault::get_rendering_info(RSE::RenderingInfo p_info) {
 		return RSG::canvas_render->get_pipeline_compilations(RSE::PIPELINE_SOURCE_SPECIALIZATION) + RSG::scene->get_pipeline_compilations(RSE::PIPELINE_SOURCE_SPECIALIZATION);
 	}
 	return RSG::utilities->get_rendering_info(p_info);
+}
+
+uint32_t RenderingServerDefault::get_pending_pipeline_compilation_count() const {
+	uint32_t pending = PipelineCompileQueueRD::pending_count();
+	RenderingDevice *rendering_device = RenderingDevice::get_singleton();
+	if (rendering_device != nullptr) {
+		pending += rendering_device->pipeline_get_pending_async_creation_count();
+	}
+	return pending;
 }
 
 RenderingDeviceEnums::DeviceType RenderingServerDefault::get_video_adapter_type() const {

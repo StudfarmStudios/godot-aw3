@@ -290,7 +290,7 @@ const GodotFS = {
 		},
 
 		// Copies a buffer to the internal file system. Creating directories recursively.
-		copy_to_fs: function (path, buffer) {
+		copy_to_fs: function (path, buffer, can_own) {
 			const idx = path.lastIndexOf('/');
 			let dir = '/';
 			if (idx > 0) {
@@ -305,7 +305,11 @@ const GodotFS = {
 				}
 				FS.mkdirTree(dir);
 			}
-			FS.writeFile(path, new Uint8Array(buffer));
+			// Emscripten 4.0.20 MEMFS accepts canOwn and retains the typed-array
+			// view instead of slicing it.  The engine passes true only for a
+			// fetch-backed preload that is discarded after startup.  WasmFS
+			// ignores this option, so its existing copy behaviour is unchanged.
+			FS.writeFile(path, new Uint8Array(buffer), { canOwn: can_own === true });
 		},
 #endif
 	},

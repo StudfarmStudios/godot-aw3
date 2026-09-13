@@ -33,12 +33,14 @@
 #include "core/os/os.h"
 
 LocalVector<PipelineCompileQueueRD::Task *> PipelineCompileQueueRD::queue;
+SafeNumeric<uint32_t> PipelineCompileQueueRD::pending;
 
 void PipelineCompileQueueRD::push(Task *p_task) {
 	if (p_task == nullptr) {
 		return;
 	}
 	queue.push_back(p_task);
+	pending.increment();
 }
 
 bool PipelineCompileQueueRD::compile_now(uint32_t p_key_hash) {
@@ -49,6 +51,8 @@ bool PipelineCompileQueueRD::compile_now(uint32_t p_key_hash) {
 		Task *task = queue[i];
 		queue.remove_at(i);
 		task->compile();
+		DEV_ASSERT(pending.get() > 0);
+		pending.decrement();
 		memdelete(task);
 		return true;
 	}
@@ -66,6 +70,8 @@ void PipelineCompileQueueRD::process(double p_budget_msec) {
 		Task *task = queue[0];
 		queue.remove_at(0);
 		task->compile();
+		DEV_ASSERT(pending.get() > 0);
+		pending.decrement();
 		memdelete(task);
 	} while (!queue.is_empty() && (OS::get_singleton()->get_ticks_usec() - started) < budget_usec);
 }
@@ -76,6 +82,8 @@ void PipelineCompileQueueRD::remove_owner(const void *p_owner) {
 		if (queue[i]->owner() == p_owner) {
 			memdelete(queue[i]);
 			queue.remove_at(i);
+			DEV_ASSERT(pending.get() > 0);
+			pending.decrement();
 		} else {
 			i++;
 		}
@@ -83,5 +91,5 @@ void PipelineCompileQueueRD::remove_owner(const void *p_owner) {
 }
 
 uint32_t PipelineCompileQueueRD::pending_count() {
-	return queue.size();
+	return pending.get();
 }

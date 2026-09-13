@@ -45,6 +45,7 @@
 #include "core/version.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/hashfuncs.h"
+#include "core/templates/safe_refcount.h"
 
 #include "drivers/webgpu/tint_wrapper.h"
 
@@ -69,6 +70,11 @@
 #define WEBGPU_DIAG(...) ((void)0)
 #define WEBGPU_DIAG_INT(...) 0
 #endif
+
+// Async callbacks can run on Dawn worker threads and can outlive a pipeline
+// wrapper that its owner has freed. Keep a process-wide count so the loading
+// gate can observe every WebGPU device without retaining a driver pointer.
+static SafeNumeric<uint32_t> _pending_async_pipeline_creations;
 
 // Forward declaration for timestamp readback callback (defined below command_timestamp_query_pool_reset).
 static void _timestamp_readback_callback(WGPUMapAsyncStatus p_status, WGPUStringView p_message, void *p_userdata1, void *p_userdata2);
@@ -100,6 +106,8 @@ static void _render_pipeline_async_callback(WGPUCreatePipelineAsyncStatus p_stat
 		WGPUStringView p_message, void *p_userdata1, void *p_userdata2) {
 	WGPipelineWrapper *pw = (WGPipelineWrapper *)p_userdata1;
 	if (pw == nullptr) {
+		DEV_ASSERT(_pending_async_pipeline_creations.get() > 0);
+		_pending_async_pipeline_creations.decrement();
 		return;
 	}
 	bool is_strip_variant = (uintptr_t)p_userdata2 == 1;
@@ -131,6 +139,13 @@ static void _render_pipeline_async_callback(WGPUCreatePipelineAsyncStatus p_stat
 		}
 	}
 
+	// Publish ready/failed before removing this creation from the aggregate.
+	// AllowSpontaneous callbacks may run on a Dawn worker thread, so decrementing
+	// at callback entry could expose a transient zero while the wrapper still
+	// appeared pending to the render thread.
+	DEV_ASSERT(_pending_async_pipeline_creations.get() > 0);
+	_pending_async_pipeline_creations.decrement();
+
 	if (destroy_wrapper) {
 		// pipeline_free ran while creation was in flight. Destroy after releasing
 		// the wrapper mutex because destruction deletes the mutex itself.
@@ -146,6 +161,8 @@ static void _compute_pipeline_async_callback(WGPUCreatePipelineAsyncStatus p_sta
 		WGPUStringView p_message, void *p_userdata1, void *p_userdata2) {
 	WGPipelineWrapper *pw = (WGPipelineWrapper *)p_userdata1;
 	if (pw == nullptr) {
+		DEV_ASSERT(_pending_async_pipeline_creations.get() > 0);
+		_pending_async_pipeline_creations.decrement();
 		return;
 	}
 	bool destroy_wrapper = false;
@@ -166,6 +183,10 @@ static void _compute_pipeline_async_callback(WGPUCreatePipelineAsyncStatus p_sta
 			pw->ready = !pw->failed && pw->compute_handle != nullptr;
 		}
 	}
+
+	// Keep the aggregate nonzero until ready/failed is visible to readers.
+	DEV_ASSERT(_pending_async_pipeline_creations.get() > 0);
+	_pending_async_pipeline_creations.decrement();
 
 	if (destroy_wrapper) {
 		_pipeline_wrapper_destroy(pw);
@@ -232,6 +253,85 @@ static bool parse_group_binding(const char *p, unsigned int &r_grp, unsigned int
 	r_grp = (unsigned int)grp;
 	r_bnd = (unsigned int)bnd;
 	return true;
+}
+
+// Finds a literal without reading or scanning beyond p_limit. This is used for
+// WGSL declarations, where an unbounded strstr() would repeatedly scan the
+// remainder of a large shader before the caller rejected a match past ';'.
+static const char *_find_before(const char *p_begin, const char *p_limit, const char *p_needle) {
+	const size_t needle_length = strlen(p_needle);
+	if (needle_length == 0 || p_begin >= p_limit || (size_t)(p_limit - p_begin) < needle_length) {
+		return nullptr;
+	}
+
+	const char *p = p_begin;
+	const char *last = p_limit - needle_length;
+	while (p <= last) {
+		p = (const char *)memchr(p, p_needle[0], (size_t)(last - p + 1));
+		if (p == nullptr) {
+			return nullptr;
+		}
+		if (memcmp(p, p_needle, needle_length) == 0) {
+			return p;
+		}
+		p++;
+	}
+	return nullptr;
+}
+
+static bool _wgsl_has_unsupported_8bit_storage_format(const char *p_wgsl) {
+	const char *p = p_wgsl;
+	while ((p = strchr(p, 'r')) != nullptr) {
+		if (p[1] == 'g') {
+			if (strncmp(p, "rg8unorm", 8) == 0 || strncmp(p, "rg8snorm", 8) == 0 ||
+					strncmp(p, "rg8uint", 7) == 0 || strncmp(p, "rg8sint", 7) == 0) {
+				return true;
+			}
+		} else if (p[1] == '8') {
+			if (strncmp(p, "r8unorm", 7) == 0 || strncmp(p, "r8snorm", 7) == 0 ||
+					strncmp(p, "r8uint", 6) == 0 || strncmp(p, "r8sint", 6) == 0) {
+				return true;
+			}
+		}
+		p++;
+	}
+	return false;
+}
+
+static void _wgsl_remap_unsupported_16bit_storage_formats(char *p_wgsl) {
+	char *p = p_wgsl;
+	while ((p = strchr(p, 'r')) != nullptr) {
+		if (p[1] == 'g' && p[2] == 'b' && p[3] == 'a') {
+			if (strncmp(p, "rgba16snorm", 11) == 0 || strncmp(p, "rgba16unorm", 11) == 0) {
+				memcpy(p, "rgba16float", 11);
+				p += 11;
+				continue;
+			}
+		} else if (p[1] == 'g') {
+			if (strncmp(p, "rg16float", 9) == 0 || strncmp(p, "rg16snorm", 9) == 0 || strncmp(p, "rg16unorm", 9) == 0) {
+				memcpy(p, "rg32float", 9);
+				p += 9;
+				continue;
+			}
+			if (strncmp(p, "rg16uint", 8) == 0 || strncmp(p, "rg16sint", 8) == 0) {
+				memcpy(p, p[4] == 'u' ? "rg32uint" : "rg32sint", 8);
+				p += 8;
+				continue;
+			}
+		} else if (p[1] == '1' && p[2] == '6') {
+			if (strncmp(p, "r16float", 8) == 0 || strncmp(p, "r16snorm", 8) == 0 || strncmp(p, "r16unorm", 8) == 0) {
+				memcpy(p, "r32float", 8);
+				p += 8;
+				continue;
+			}
+			if (strncmp(p, "r16uint", 7) == 0 || strncmp(p, "r16sint", 7) == 0) {
+				memcpy(p, p[3] == 'u' ? "r32uint" : "r32sint", 7);
+				p += 7;
+				continue;
+			}
+		}
+		p++;
+	}
 }
 
 // =============================================================================
@@ -329,8 +429,8 @@ static void _collect_depth_paired_samplers(const char *p_wgsl, HashSet<uint32_t>
 				p++;
 				continue;
 			}
-			const char *var_kw = strstr(p, " var");
 			const char *semi = strchr(p, ';');
+			const char *var_kw = semi ? _find_before(p, semi, " var") : nullptr;
 			if (!var_kw || !semi || var_kw > semi) {
 				p = semi ? semi : p + 1;
 				continue;
@@ -359,7 +459,7 @@ static void _collect_depth_paired_samplers(const char *p_wgsl, HashSet<uint32_t>
 			}
 			String name = String::utf8(name_start, (int)(name_end - name_start));
 			name_to_key.insert(name, ((uint32_t)grp << 16) | (uint32_t)bnd);
-			if (strstr(colon, "texture_depth") != nullptr && strstr(colon, "texture_depth") < semi) {
+			if (_find_before(colon, semi, "texture_depth") != nullptr) {
 				depth_textures.insert(name);
 			}
 			p = semi;
@@ -406,7 +506,7 @@ static void _collect_depth_paired_samplers(const char *p_wgsl, HashSet<uint32_t>
 
 		HashMap<String, bool> depth_parameters;
 		const char *parameter = function;
-		while ((parameter = strchr(parameter, ':')) != nullptr && parameter < body) {
+		while (parameter < body && (parameter = (const char *)memchr(parameter, ':', (size_t)(body - parameter))) != nullptr) {
 			const char *name_end = parameter;
 			while (name_end > function && isspace((unsigned char)name_end[-1])) {
 				name_end--;
@@ -426,7 +526,7 @@ static void _collect_depth_paired_samplers(const char *p_wgsl, HashSet<uint32_t>
 		// Calls: textureSample*(texture, sampler, ...), excluding comparison
 		// forms, which legitimately use a comparison sampler.
 		const char *call = body;
-		while ((call = strstr(call, "textureSample")) != nullptr && call < body_end) {
+		while ((call = _find_before(call, body_end, "textureSample")) != nullptr) {
 			const char *open = strchr(call, '(');
 			bool is_compare = strncmp(call, "textureSampleCompare", 20) == 0;
 			if (!open || open >= body_end || is_compare) {
@@ -3316,6 +3416,10 @@ bool RenderingDeviceDriverWebGPU::pipeline_has_failed(PipelineID p_pipeline) {
 	return pw->failed;
 }
 
+uint32_t RenderingDeviceDriverWebGPU::pipeline_get_pending_async_creation_count() const {
+	return _pending_async_pipeline_creations.get();
+}
+
 RDD::SamplerID RenderingDeviceDriverWebGPU::sampler_create(const SamplerState &p_state) {
 	WGPUSamplerDescriptor desc = {};
 
@@ -4423,11 +4527,7 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 		// r8* and rg8* are not valid base WebGPU storage texel formats — remap to
 		// 32-bit equivalents. With texture-formats-tier1 these formats are valid
 		// natively, so skip the remap to preserve blendable/filterable properties.
-		if (!has_texture_formats_tier1 &&
-				(strstr(wgsl_str, "r8unorm") || strstr(wgsl_str, "r8snorm") ||
-				strstr(wgsl_str, "r8uint") || strstr(wgsl_str, "r8sint") ||
-				strstr(wgsl_str, "rg8unorm") || strstr(wgsl_str, "rg8snorm") ||
-				strstr(wgsl_str, "rg8uint") || strstr(wgsl_str, "rg8sint"))) {
+		if (!has_texture_formats_tier1 && _wgsl_has_unsupported_8bit_storage_format(wgsl_str)) {
 			String ws(wgsl_str);
 			ws = ws.replace("rg8unorm", "rg32float");
 			ws = ws.replace("rg8snorm", "rg32float");
@@ -4443,54 +4543,12 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 			memcpy(wgsl_str, cs.get_data(), cs.length() + 1);
 		}
 
-		// If texture-formats-tier1 is not available, remap 16-bit SNORM/UNORM storage
-		// texture format names to their float equivalents in the WGSL text. The format
-		// string lengths are preserved (pad with spaces) so scan offsets remain valid.
-		// r16snorm  → r16float  (same 8 chars)
-		// r16unorm  → r16float  (same 8 chars)
-		// rg16snorm → rg16float (same 9 chars — "rg16float" is 9 chars, perfect)
-		// rg16unorm → rg16float (same 9 chars)
-		// rgba16snorm → rgba16float (11 vs 11 — perfect)
-		// rgba16unorm → rgba16float (11 vs 11 — perfect)
-		if (!has_texture_formats_tier1) {
-			char *q = wgsl_str;
-			while (*q) {
-				if (strncmp(q, "rgba16snorm", 11) == 0) { memcpy(q, "rgba16float", 11); q += 11; }
-				else if (strncmp(q, "rgba16unorm", 11) == 0) { memcpy(q, "rgba16float", 11); q += 11; }
-				else if (strncmp(q, "rg16snorm", 9) == 0) { memcpy(q, "rg16float", 9); q += 9; }
-				else if (strncmp(q, "rg16unorm", 9) == 0) { memcpy(q, "rg16float", 9); q += 9; }
-				else if (strncmp(q, "r16snorm", 8) == 0) { memcpy(q, "r16float", 8); q += 8; }
-				else if (strncmp(q, "r16unorm", 8) == 0) { memcpy(q, "r16float", 8); q += 8; }
-				else { q++; }
-			}
-		}
-
 		// WebGPU only supports a limited set of storage texel formats (see spec §26.1.1).
 		// 16-bit single/dual-channel formats (r16*, rg16*) are NOT valid for storage.
-		// Remap them to 32-bit equivalents. Also handles rgba16snorm/unorm → rgba32float.
+		// Remap them to 32-bit equivalents. Also handles rgba16snorm/unorm → rgba16float.
 		// Format names only appear in texture_storage_*<format, access> declarations in WGSL.
 		// All replacements preserve string length (in-place memcpy).
-		{
-			char *q = wgsl_str;
-			while (*q) {
-				// RGBA16 snorm/unorm → rgba16float (rgba16float IS a valid storage format)
-				if (strncmp(q, "rgba16snorm", 11) == 0) { memcpy(q, "rgba16float", 11); q += 11; }
-				else if (strncmp(q, "rgba16unorm", 11) == 0) { memcpy(q, "rgba16float", 11); q += 11; }
-				// RG16 all variants → rg32 equivalents
-				else if (strncmp(q, "rg16float", 9) == 0) { memcpy(q, "rg32float", 9); q += 9; }
-				else if (strncmp(q, "rg16snorm", 9) == 0) { memcpy(q, "rg32float", 9); q += 9; }
-				else if (strncmp(q, "rg16unorm", 9) == 0) { memcpy(q, "rg32float", 9); q += 9; }
-				else if (strncmp(q, "rg16uint", 8) == 0) { memcpy(q, "rg32uint", 8); q += 8; }
-				else if (strncmp(q, "rg16sint", 8) == 0) { memcpy(q, "rg32sint", 8); q += 8; }
-				// R16 all variants → r32 equivalents
-				else if (strncmp(q, "r16float", 8) == 0) { memcpy(q, "r32float", 8); q += 8; }
-				else if (strncmp(q, "r16snorm", 8) == 0) { memcpy(q, "r32float", 8); q += 8; }
-				else if (strncmp(q, "r16unorm", 8) == 0) { memcpy(q, "r32float", 8); q += 8; }
-				else if (strncmp(q, "r16uint", 7) == 0) { memcpy(q, "r32uint", 7); q += 7; }
-				else if (strncmp(q, "r16sint", 7) == 0) { memcpy(q, "r32sint", 7); q += 7; }
-				else { q++; }
-			}
-		}
+		_wgsl_remap_unsupported_16bit_storage_formats(wgsl_str);
 
 		// WebGPU restriction: storage buffers with read_write access cannot be used in
 		// vertex shaders. Tint generates var<storage, read_write> for any SSBO without
@@ -4616,13 +4674,13 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 					if (!parse_group_binding(p, grp, bnd)) { p++; continue; }
 					const char *semi = strchr(p, ';');
 					if (!semi) { p++; continue; }
-					const char *rw = strstr(p, "read_write>");
-					if (!rw || rw >= semi) { p = semi; continue; }
-					const char *ts = strstr(p, "texture_storage_");
-					if (!ts || ts >= semi) { p = semi; continue; }
+					const char *rw = _find_before(p, semi, "read_write>");
+					if (!rw) { p = semi; continue; }
+					const char *ts = _find_before(p, semi, "texture_storage_");
+					if (!ts) { p = semi; continue; }
 					// Variable name: "var NAME:"
-					const char *vp = strstr(p, "var ");
-					if (!vp || vp > ts) { p = semi; continue; }
+					const char *vp = _find_before(p, ts, "var ");
+					if (!vp) { p = semi; continue; }
 					vp += 4;
 					const char *colon = strchr(vp, ':');
 					if (!colon || colon > ts) { p = semi; continue; }
@@ -4754,22 +4812,22 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 					const char *semi = strchr(p, ';');
 					if (!semi) { p++; continue; }
 					// Look for ", read>" or ",read>" but NOT "read_write>"
-					const char *rd = strstr(p, ",read>");
-					if (!rd || rd >= semi) {
-						rd = strstr(p, ", read>");
+					const char *rd = _find_before(p, semi, ",read>");
+					if (!rd) {
+						rd = _find_before(p, semi, ", read>");
 					}
-					if (!rd || rd >= semi) { p = semi; continue; }
+					if (!rd) { p = semi; continue; }
 					// Make sure it's not read_write (already handled above).
 					if (rd > wgsl_str && *(rd - 1) == '_') { p = semi; continue; } // part of "read_write"
 					// Check for "read_write>" pattern — skip if found.
-					const char *rw_check = strstr(p, "read_write>");
-					if (rw_check && rw_check < semi && rw_check < rd) { p = semi; continue; }
+					const char *rw_check = _find_before(p, rd, "read_write>");
+					if (rw_check) { p = semi; continue; }
 
-					const char *ts = strstr(p, "texture_storage_");
-					if (!ts || ts >= semi) { p = semi; continue; }
+					const char *ts = _find_before(p, semi, "texture_storage_");
+					if (!ts) { p = semi; continue; }
 					// Variable name: "var NAME:"
-					const char *vp = strstr(p, "var ");
-					if (!vp || vp > ts) { p = semi; continue; }
+					const char *vp = _find_before(p, ts, "var ");
+					if (!vp) { p = semi; continue; }
 					vp += 4;
 					const char *colon = strchr(vp, ':');
 					if (!colon || colon > ts) { p = semi; continue; }
@@ -5014,8 +5072,8 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 					// Check for depth alias variable: Tint names it "*_depth_alias".
 					// The variable name is between "var " and ":".
 					{
-						const char *var_kw = strstr(p, "var ");
-						if (var_kw && var_kw < semi) {
+						const char *var_kw = _find_before(p, semi, "var ");
+						if (var_kw) {
 							const char *name_start = var_kw + 4;
 							// Skip any <...> (e.g., var<uniform>)
 							if (*name_start == '<') {
@@ -8974,11 +9032,7 @@ WGPUShaderModule RenderingDeviceDriverWebGPU::_create_module_with_spec_constants
 	// Format remapping passes (must match shader_create_from_container).
 
 	// Remap unsupported 8-bit storage texture format names in WGSL.
-	if (!has_texture_formats_tier1 &&
-			(strstr(wgsl_str, "r8unorm") || strstr(wgsl_str, "r8snorm") ||
-			strstr(wgsl_str, "r8uint") || strstr(wgsl_str, "r8sint") ||
-			strstr(wgsl_str, "rg8unorm") || strstr(wgsl_str, "rg8snorm") ||
-			strstr(wgsl_str, "rg8uint") || strstr(wgsl_str, "rg8sint"))) {
+	if (!has_texture_formats_tier1 && _wgsl_has_unsupported_8bit_storage_format(wgsl_str)) {
 		String ws(wgsl_str);
 		ws = ws.replace("rg8unorm", "rg32float");
 		ws = ws.replace("rg8snorm", "rg32float");
@@ -8994,39 +9048,8 @@ WGPUShaderModule RenderingDeviceDriverWebGPU::_create_module_with_spec_constants
 		memcpy(wgsl_str, cs.get_data(), cs.length() + 1);
 	}
 
-	// Remap 16-bit SNORM/UNORM storage texture formats to float equivalents.
-	if (!has_texture_formats_tier1) {
-		char *q = wgsl_str;
-		while (*q) {
-			if (strncmp(q, "rgba16snorm", 11) == 0) { memcpy(q, "rgba16float", 11); q += 11; }
-			else if (strncmp(q, "rgba16unorm", 11) == 0) { memcpy(q, "rgba16float", 11); q += 11; }
-			else if (strncmp(q, "rg16snorm", 9) == 0) { memcpy(q, "rg16float", 9); q += 9; }
-			else if (strncmp(q, "rg16unorm", 9) == 0) { memcpy(q, "rg16float", 9); q += 9; }
-			else if (strncmp(q, "r16snorm", 8) == 0) { memcpy(q, "r16float", 8); q += 8; }
-			else if (strncmp(q, "r16unorm", 8) == 0) { memcpy(q, "r16float", 8); q += 8; }
-			else { q++; }
-		}
-	}
-
 	// Remap 16-bit storage formats to 32-bit equivalents (WebGPU spec §26.1.1).
-	{
-		char *q = wgsl_str;
-		while (*q) {
-			if (strncmp(q, "rgba16snorm", 11) == 0) { memcpy(q, "rgba16float", 11); q += 11; }
-			else if (strncmp(q, "rgba16unorm", 11) == 0) { memcpy(q, "rgba16float", 11); q += 11; }
-			else if (strncmp(q, "rg16float", 9) == 0) { memcpy(q, "rg32float", 9); q += 9; }
-			else if (strncmp(q, "rg16snorm", 9) == 0) { memcpy(q, "rg32float", 9); q += 9; }
-			else if (strncmp(q, "rg16unorm", 9) == 0) { memcpy(q, "rg32float", 9); q += 9; }
-			else if (strncmp(q, "rg16uint", 8) == 0) { memcpy(q, "rg32uint", 8); q += 8; }
-			else if (strncmp(q, "rg16sint", 8) == 0) { memcpy(q, "rg32sint", 8); q += 8; }
-			else if (strncmp(q, "r16float", 8) == 0) { memcpy(q, "r32float", 8); q += 8; }
-			else if (strncmp(q, "r16snorm", 8) == 0) { memcpy(q, "r32float", 8); q += 8; }
-			else if (strncmp(q, "r16unorm", 8) == 0) { memcpy(q, "r32float", 8); q += 8; }
-			else if (strncmp(q, "r16uint", 7) == 0) { memcpy(q, "r32uint", 7); q += 7; }
-			else if (strncmp(q, "r16sint", 7) == 0) { memcpy(q, "r32sint", 7); q += 7; }
-			else { q++; }
-		}
-	}
+	_wgsl_remap_unsupported_16bit_storage_formats(wgsl_str);
 
 	// WebGPU does not allow read_write storage buffers in vertex shaders.
 	// Keep fragment storage access unchanged: clustered rendering uses atomics there,
@@ -9625,6 +9648,7 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 		cb.callback = _render_pipeline_async_callback;
 		cb.userdata1 = pw;
 		cb.userdata2 = (void *)(uintptr_t)0; // 0 = main variant.
+		_pending_async_pipeline_creations.increment();
 		wgpuDeviceCreateRenderPipelineAsync(device, &desc, cb);
 
 		if (is_strip) {
@@ -9634,6 +9658,7 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 			cb16.callback = _render_pipeline_async_callback;
 			cb16.userdata1 = pw;
 			cb16.userdata2 = (void *)(uintptr_t)1; // 1 = Uint16 strip variant.
+			_pending_async_pipeline_creations.increment();
 			wgpuDeviceCreateRenderPipelineAsync(device, &desc, cb16);
 		}
 		return PipelineID(pw);
@@ -9900,6 +9925,7 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::compute_pipeline_create(ShaderID p_
 		cb.mode = WGPUCallbackMode_AllowSpontaneous;
 		cb.callback = _compute_pipeline_async_callback;
 		cb.userdata1 = pw;
+		_pending_async_pipeline_creations.increment();
 		wgpuDeviceCreateComputePipelineAsync(device, &desc, cb);
 		return PipelineID(pw);
 	}

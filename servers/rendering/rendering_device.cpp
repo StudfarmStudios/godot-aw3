@@ -1246,6 +1246,10 @@ bool RenderingDevice::pipeline_has_failed(RID p_pipeline) {
 	return true;
 }
 
+uint32_t RenderingDevice::pipeline_get_pending_async_creation_count() const {
+	return driver->pipeline_get_pending_async_creation_count();
+}
+
 bool RenderingDevice::gpu_calls_main_thread_only() {
 	return driver->api_trait_get(RDD::API_TRAIT_GPU_CALLS_MAIN_THREAD_ONLY) != 0;
 }

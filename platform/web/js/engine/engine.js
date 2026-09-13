@@ -10,6 +10,14 @@
  */
 const Engine = (function () {
 	const preloader = new Preloader();
+	const startupTiming = typeof globalThis !== 'undefined'
+		&& globalThis['GODOT_WEB_STARTUP_TIMING'] === true
+		&& typeof performance !== 'undefined' && typeof performance.mark === 'function';
+	function markStartupPhase(name) {
+		if (startupTiming) {
+			performance.mark(`godot-web-${name}`);
+		}
+	}
 
 	let loadPromise = null;
 	let loadPath = '';
@@ -93,9 +101,13 @@ const Engine = (function () {
 					return new Promise(function (resolve, reject) {
 						promise.then(function (response) {
 							const cloned = new Response(response.clone().body, { 'headers': [['content-type', 'application/wasm']] });
+							markStartupPhase('runtime-init-start');
 							Godot(me.config.getModuleConfig(loadPath, cloned)).then(function (module) {
+								markStartupPhase('runtime-init-end');
 								const paths = me.config.persistentPaths;
+								markStartupPhase('fs-init-start');
 								module['initFS'](paths).then(function (err) {
+									markStartupPhase('fs-init-end');
 									me.rtenv = module;
 									if (me.config.unloadAfterInit) {
 										Engine.unload();
@@ -168,11 +180,17 @@ const Engine = (function () {
 							+ 'Enable "Extensions Support" for your export preset and/or build your custom template with "dlink_enabled=yes".'));
 					}
 					return new Promise(function (resolve, reject) {
+						markStartupPhase('pck-install-start');
 						for (const file of preloader.preloadedFiles) {
-							me.rtenv['copyToFS'](file.path, file.buffer);
+							// Only fetch-backed preloads are disposable here.  Keep the
+							// public copy semantics for caller-supplied ArrayBuffers.
+							me.rtenv['copyToFS'](file.path, file.buffer, file.transferOwnership === true);
 						}
+						markStartupPhase('pck-install-end');
 						preloader.preloadedFiles.length = 0; // Clear memory
+						markStartupPhase('call-main-start');
 						me.rtenv['callMain'](me.config.args);
+						markStartupPhase('call-main-end');
 						initPromise = null;
 						me.installServiceWorker();
 						resolve();

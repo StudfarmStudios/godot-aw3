@@ -974,6 +974,8 @@ public:
 	/* STATUS INFORMATION */
 
 	virtual uint64_t get_rendering_info(RSE::RenderingInfo p_info) = 0;
+	// Pipeline jobs waiting for the device thread plus asynchronous driver work.
+	virtual uint32_t get_pending_pipeline_compilation_count() const = 0;
 	virtual String get_video_adapter_name() const = 0;
 	virtual String get_video_adapter_vendor() const = 0;
 	virtual RenderingDeviceEnums::DeviceType get_video_adapter_type() const = 0;

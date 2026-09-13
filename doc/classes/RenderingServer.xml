@@ -1660,6 +1660,13 @@
 				Returns the time taken to setup rendering on the CPU in milliseconds. This value is shared across all viewports and does [i]not[/i] require [method viewport_set_measure_render_time] to be enabled on a viewport to be queried. See also [method viewport_get_measured_render_time_cpu].
 			</description>
 		</method>
+		<method name="get_pending_pipeline_compilation_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the number of rendering pipeline compilations in the main-thread rendering-device queue or reported in flight by the active driver. On WebGPU, this includes asynchronous render and compute pipeline creation. Other rendering drivers usually return [code]0[/code] once the main-thread queue has drained.
+				A return value of [code]0[/code] only describes work requested before this call. Later frames can discover and request more pipelines, so callers that use this for loading or warmup should observe it across multiple rendered frames.
+			</description>
+		</method>
 		<method name="get_rendering_device" qualifiers="const">
 			<return type="RenderingDevice" />
 			<description>
