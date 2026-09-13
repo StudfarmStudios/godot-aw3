@@ -8,6 +8,14 @@ env.Prepend(CPPPATH=["#thirdparty/metal-cpp/"])
 
 env_metal = env.Clone()
 
+# metal-cpp forwards C++ member calls on nullptr to Objective-C nil messages,
+# including empty NS::SharedPtr destruction. Upstream Clang otherwise treats
+# those calls as undefined behavior and can remove valid control-flow paths
+# (e.g. the INVALID case in MetalHeapAllocator::_free_allocation at -O3).
+# Apple Clang already permits this; preserve the same semantics when building
+# with other Clang distributions, including the macOS cross-compiler.
+env_metal.Append(CCFLAGS=["-fno-delete-null-pointer-checks"])
+
 # Thirdparty source files
 
 thirdparty_obj = []
