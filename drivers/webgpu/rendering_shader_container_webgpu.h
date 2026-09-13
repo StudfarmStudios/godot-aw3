@@ -41,6 +41,7 @@ public:
 	// Format identifier for WebGPU shader containers.
 	static constexpr uint32_t FORMAT_WEBGPU = 0x57475055; // "WGPU"
 	static constexpr uint32_t FORMAT_VERSION = 1;
+	static constexpr uint32_t COMPRESSION_FLAG_SMOLV = 0x10000;
 	static constexpr uint32_t NO_PUSH_CONSTANTS = UINT32_MAX;
 
 	struct HeaderData {
@@ -57,9 +58,8 @@ protected:
 	virtual uint32_t _format() const override { return FORMAT_WEBGPU; }
 	virtual uint32_t _format_version() const override { return FORMAT_VERSION; }
 
-	/// Called by set_code_from_spirv() — stores raw SPIR-V bytes per stage.
-	/// Dawn's WebGPU implementation supports WGPUShaderSourceSPIRV natively;
-	/// no WGSL/Tint translation step is needed.
+	/// Called by set_code_from_spirv() — stores lossless SMOL-V or raw SPIR-V bytes per stage.
+	/// The rendering driver decodes it before SPIR-V preprocessing and Tint translation.
 	virtual bool _set_code_from_spirv(const ReflectShader &p_shader) override;
 
 	// Serialization overrides for extra header data.

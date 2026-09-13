@@ -32,14 +32,16 @@
 
 #include "rendering_shader_container_webgpu.h"
 
+#include <thirdparty/misc/smolv.h>
+
 // =========================================================================
 // SPIR-V Storage
 // =========================================================================
 //
 // Architecture decision (see copilot-instructions.md #6):
-//   GLSL → SPIR-V (glslang) → stored directly as WGPUShaderSourceSPIRV.
-//   Dawn's emdawnwebgpu port natively supports WGPUShaderSourceSPIRV;
-//   no WGSL/Tint translation step is needed.
+//   GLSL → SPIR-V (glslang) → stored in the shader container.
+//   The rendering driver decompresses it before preprocessing and Tint
+//   translation, so the SPIR-V bytes used for WGSL cache keys stay stable.
 //
 // Push constant handling:
 //   Godot's push constants are emulated via a uniform buffer at a fixed
@@ -53,12 +55,31 @@ bool RenderingShaderContainerWebGPU::_set_code_from_spirv(const ReflectShader &p
 
 	for (uint32_t i = 0; i < stage_count; i++) {
 		const ReflectShaderStage &stage = p_shader.shader_stages[i];
-		// Store raw SPIR-V bytes directly — no translation.
-		Vector<uint8_t> spirv_bytes = stage.spirv_data();
-		shaders.write[i].shader_stage = stage.shader_stage;
-		shaders.write[i].code_compression_flags = 0; // No compression.
-		shaders.write[i].code_decompressed_size = 0; // 0 = not compressed (use raw bytes).
-		shaders.write[i].code_compressed_bytes = spirv_bytes;
+		const Vector<uint8_t> spirv_bytes = stage.spirv_data();
+		ERR_FAIL_COND_V_MSG(spirv_bytes.is_empty(), false,
+				vformat("Cannot store empty SPIR-V for WebGPU shader stage #%d.", i));
+		ERR_FAIL_COND_V_MSG(spirv_bytes.size() > UINT32_MAX, false,
+				vformat("SPIR-V for WebGPU shader stage #%d is too large.", i));
+
+		RenderingShaderContainer::Shader &shader = shaders.write[i];
+		shader.shader_stage = stage.shader_stage;
+
+		// SMOL-V is lossless with kEncodeFlagNone, so the decoded bytes keep the
+		// existing WGSL cache keys. Its structural encoding also remains friendly
+		// to compression applied to the complete exported PCK.
+		smolv::ByteArray smolv_bytes;
+		const bool encoded = smolv::Encode(spirv_bytes.ptr(), spirv_bytes.size(), smolv_bytes, smolv::kEncodeFlagNone);
+
+		if (encoded && smolv_bytes.size() < size_t(spirv_bytes.size())) {
+			shader.code_decompressed_size = uint32_t(spirv_bytes.size());
+			shader.code_compression_flags = COMPRESSION_FLAG_SMOLV;
+			shader.code_compressed_bytes.resize(smolv_bytes.size());
+			memcpy(shader.code_compressed_bytes.ptrw(), smolv_bytes.data(), smolv_bytes.size());
+		} else {
+			shader.code_decompressed_size = 0;
+			shader.code_compression_flags = 0;
+			shader.code_compressed_bytes = spirv_bytes;
+		}
 	}
 
 	// Decide push constant bind group slot.

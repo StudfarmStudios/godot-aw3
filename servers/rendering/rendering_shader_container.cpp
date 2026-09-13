@@ -911,6 +911,12 @@ PackedByteArray RenderingShaderContainer::to_bytes() const {
 	bytes_offset += _to_bytes_header_extra_data(&bytes_ptr[bytes_offset]);
 
 	memcpy(&bytes_ptr[bytes_offset], &reflection_data, sizeof(ReflectionData));
+	// Keep ABI padding deterministic so equivalent shader containers have identical cache bytes.
+	constexpr size_t reflection_data_fields_size =
+			offsetof(ReflectionData, shader_name_len) + sizeof(reflection_data.shader_name_len);
+	static_assert(reflection_data_fields_size <= sizeof(ReflectionData));
+	memset(&bytes_ptr[bytes_offset + reflection_data_fields_size], 0,
+			sizeof(ReflectionData) - reflection_data_fields_size);
 	bytes_offset += sizeof(ReflectionData);
 	bytes_offset += _to_bytes_reflection_extra_data(&bytes_ptr[bytes_offset]);
 
@@ -999,7 +1005,9 @@ bool RenderingShaderContainer::decompress_code(const uint8_t *p_compressed_bytes
 
 	bool uses_zstd = p_compressed_flags & COMPRESSION_FLAG_ZSTD;
 	if (uses_zstd) {
-		if (!Compression::decompress(p_decompressed_bytes, p_decompressed_size, p_compressed_bytes, p_compressed_size, Compression::MODE_ZSTD)) {
+		const int64_t decompressed_size = Compression::decompress(p_decompressed_bytes, p_decompressed_size,
+				p_compressed_bytes, p_compressed_size, Compression::MODE_ZSTD);
+		if (decompressed_size != p_decompressed_size) {
 			ERR_FAIL_V_MSG(false, "Malformed zstd input for decompressing shader code.");
 		}
 	} else {

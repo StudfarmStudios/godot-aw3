@@ -48,6 +48,7 @@
 
 #include "drivers/webgpu/tint_wrapper.h"
 
+#include <thirdparty/misc/smolv.h>
 #include <webgpu/webgpu.h>
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
@@ -4302,11 +4303,61 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 	for (int i = 0; i < stage_shaders.size(); i++) {
 		const RenderingShaderContainer::Shader &s = stage_shaders[i];
 
-		// The code_compressed_bytes holds raw SPIR-V (no compression — code_decompressed_size == 0).
-		const PackedByteArray &spv_bytes = s.code_compressed_bytes;
-		if (spv_bytes.is_empty()) {
+		if (s.code_compressed_bytes.is_empty()) {
 			error_text = "WebGPU: empty SPIR-V for shader stage.";
 			break;
+		}
+		const uint32_t compression_flags = s.code_compression_flags;
+		const uint32_t supported_compression_flags = RenderingShaderContainer::COMPRESSION_FLAG_ZSTD |
+				RenderingShaderContainerWebGPU::COMPRESSION_FLAG_SMOLV;
+		if (compression_flags & ~supported_compression_flags) {
+			error_text = "WebGPU: unsupported SPIR-V compression flags.";
+			break;
+		}
+		if ((compression_flags & RenderingShaderContainer::COMPRESSION_FLAG_ZSTD) &&
+				(compression_flags & RenderingShaderContainerWebGPU::COMPRESSION_FLAG_SMOLV)) {
+			error_text = "WebGPU: combined Zstd and SMOL-V SPIR-V compression is unsupported.";
+			break;
+		}
+
+		PackedByteArray spv_bytes;
+		if (compression_flags == RenderingShaderContainerWebGPU::COMPRESSION_FLAG_SMOLV) {
+			if (s.code_decompressed_size == 0) {
+				error_text = "WebGPU: SMOL-V SPIR-V has no decompressed size.";
+				break;
+			}
+
+			const size_t decoded_size = smolv::GetDecodedBufferSize(
+					s.code_compressed_bytes.ptr(), s.code_compressed_bytes.size());
+			if (decoded_size == 0 || decoded_size != size_t(s.code_decompressed_size) || decoded_size % sizeof(uint32_t) != 0) {
+				error_text = "WebGPU: invalid SMOL-V SPIR-V size.";
+				break;
+			}
+
+			spv_bytes.resize(s.code_decompressed_size);
+			if (!smolv::Decode(s.code_compressed_bytes.ptr(), s.code_compressed_bytes.size(), spv_bytes.ptrw(), decoded_size)) {
+				error_text = vformat("WebGPU: failed to decode SMOL-V for shader stage %d.", (int)s.shader_stage);
+				break;
+			}
+		} else if (s.code_decompressed_size > 0) {
+			if (compression_flags == 0 && s.code_compressed_bytes.size() != s.code_decompressed_size) {
+				error_text = "WebGPU: uncompressed SPIR-V size does not match its container header.";
+				break;
+			}
+			spv_bytes.resize(s.code_decompressed_size);
+			const bool decompressed = p_shader_container->decompress_code(s.code_compressed_bytes.ptr(),
+					s.code_compressed_bytes.size(), compression_flags, spv_bytes.ptrw(), spv_bytes.size());
+			if (!decompressed) {
+				error_text = vformat("WebGPU: failed to decompress SPIR-V for shader stage %d.", (int)s.shader_stage);
+				break;
+			}
+		} else {
+			// Shader caches written before stage compression contain raw SPIR-V.
+			if (compression_flags != 0) {
+				error_text = "WebGPU: compressed SPIR-V has no decompressed size.";
+				break;
+			}
+			spv_bytes = s.code_compressed_bytes;
 		}
 		if (spv_bytes.size() % 4 != 0) {
 			error_text = "WebGPU: SPIR-V size must be a multiple of 4.";
