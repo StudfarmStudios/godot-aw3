@@ -49,9 +49,12 @@ sys_env.AddJSExterns([
     "js/libs/library_godot_webgl2.externs.js",
 ])
 
-sys_env.AddJSPost([
+js_post = [
     "js/patches/patch_em_gl.js",
-])
+]
+if env["webgpu"]:
+    js_post.append("js/patches/patch_webgpu.js")
+sys_env.AddJSPost(js_post)
 
 if env["javascript_eval"]:
     sys_env.AddJSLibraries(["js/libs/library_godot_javascript_singleton.js"])
