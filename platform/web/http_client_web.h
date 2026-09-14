@@ -46,6 +46,7 @@ typedef enum {
 extern int godot_js_fetch_create(const char *p_method, const char *p_url, const char **p_headers, int p_headers_len, const uint8_t *p_body, int p_body_len);
 extern int godot_js_fetch_read_headers(int p_id, void (*parse_callback)(int p_size, const char **p_headers, void *p_ref), void *p_ref);
 extern int godot_js_fetch_read_chunk(int p_id, uint8_t *p_buf, int p_buf_size);
+extern int godot_js_fetch_get_buffered_size(int p_id);
 extern void godot_js_fetch_free(int p_id);
 extern godot_js_fetch_state_t godot_js_fetch_state_get(int p_id);
 extern int godot_js_fetch_http_status_get(int p_id);
@@ -71,7 +72,6 @@ private:
 
 	int polled_response_code = 0;
 	Vector<String> response_headers;
-	Vector<uint8_t> response_buffer;
 
 #ifdef DEBUG_ENABLED
 	uint64_t last_polling_frame = 0;

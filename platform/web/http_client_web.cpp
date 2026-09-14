@@ -120,7 +120,6 @@ void HTTPClientWeb::close() {
 	status = STATUS_DISCONNECTED;
 	polled_response_code = 0;
 	response_headers.resize(0);
-	response_buffer.resize(0);
 	if (js_id) {
 		godot_js_fetch_free(js_id);
 		js_id = 0;
@@ -169,10 +168,13 @@ int64_t HTTPClientWeb::get_response_body_length() const {
 PackedByteArray HTTPClientWeb::read_response_body_chunk() {
 	ERR_FAIL_COND_V(status != STATUS_BODY, PackedByteArray());
 
-	if (response_buffer.size() != read_limit) {
-		response_buffer.resize(read_limit);
-	}
-	int read = godot_js_fetch_read_chunk(js_id, response_buffer.ptrw(), read_limit);
+	// The fetch reader already buffers complete chunks in JavaScript. Allocate
+	// only the bytes available now and copy directly into the returned array,
+	// avoiding an intermediate read_limit-sized buffer and a second full copy.
+	PackedByteArray chunk;
+	const int available = MIN(read_limit, godot_js_fetch_get_buffered_size(js_id));
+	chunk.resize(available);
+	int read = godot_js_fetch_read_chunk(js_id, chunk.ptrw(), available);
 
 	// Check if the stream is over.
 	godot_js_fetch_state_t state = godot_js_fetch_state_get(js_id);
@@ -182,12 +184,9 @@ PackedByteArray HTTPClientWeb::read_response_body_chunk() {
 		status = STATUS_CONNECTION_ERROR;
 	}
 
-	PackedByteArray chunk;
-	if (!read) {
-		return chunk;
+	if (read != available) {
+		chunk.resize(read);
 	}
-	chunk.resize(read);
-	memcpy(chunk.ptrw(), response_buffer.ptr(), read);
 	return chunk;
 }
 

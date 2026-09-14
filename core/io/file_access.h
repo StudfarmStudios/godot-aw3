@@ -207,6 +207,8 @@ public:
 
 	virtual Error get_error() const = 0; ///< get last error
 
+	// Best-effort storage capacity reservation which must not change the logical file length.
+	virtual Error reserve(uint64_t p_length) { return ERR_UNAVAILABLE; }
 	virtual Error resize(int64_t p_length) = 0;
 	virtual void flush() = 0;
 	virtual bool store_8(uint8_t p_dest); ///< store a byte

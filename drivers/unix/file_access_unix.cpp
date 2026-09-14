@@ -34,6 +34,10 @@
 
 #include "core/string/ustring.h"
 
+#ifdef WEB_ENABLED
+#include "platform/web/godot_js.h"
+#endif
+
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -324,6 +328,26 @@ Error FileAccessUnix::resize(int64_t p_length) {
 		default:
 			return FAILED;
 	}
+}
+
+Error FileAccessUnix::reserve(uint64_t p_length) {
+#ifdef WEB_ENABLED
+	ERR_FAIL_NULL_V_MSG(f, ERR_FILE_CANT_OPEN, "File must be opened before use.");
+	if (p_length > INT32_MAX) {
+		return ERR_INVALID_PARAMETER;
+	}
+	if (fflush(f) != 0) {
+		check_errors(true);
+		return ERR_FILE_CANT_WRITE;
+	}
+	const int fd = fileno(f);
+	if (fd < 0) {
+		return ERR_FILE_CANT_OPEN;
+	}
+	return godot_js_os_fs_reserve(fd, (int)p_length) ? OK : ERR_UNAVAILABLE;
+#else
+	return ERR_UNAVAILABLE;
+#endif
 }
 
 void FileAccessUnix::flush() {

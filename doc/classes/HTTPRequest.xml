@@ -249,6 +249,9 @@
 		<member name="download_file" type="String" setter="set_download_file" getter="get_download_file" default="&quot;&quot;">
 			The file to download into. Will output any received file into it.
 		</member>
+		<member name="download_file_size_hint" type="int" setter="set_download_file_size_hint" getter="get_download_file_size_hint" default="-1">
+			Expected size of the file specified by [member download_file], in bytes. On supported platforms, this can reserve backing storage before most of the response is written and avoid repeated buffer reallocations. It does not change the file's logical length, limit the response size, or affect download progress. A value of [code]-1[/code] disables the hint. Unsupported platforms ignore it.
+		</member>
 		<member name="max_redirects" type="int" setter="set_max_redirects" getter="get_max_redirects" default="8">
 			Maximum number of allowed redirects.
 		</member>

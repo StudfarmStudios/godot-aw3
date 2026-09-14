@@ -124,6 +124,7 @@ Error HTTPRequest::request(const String &p_url, const Vector<String> &p_custom_h
 Error HTTPRequest::request_raw(const String &p_url, const Vector<String> &p_custom_headers, HTTPClient::Method p_method, const Vector<uint8_t> &p_request_data_raw) {
 	ERR_FAIL_COND_V(!is_inside_tree(), ERR_UNCONFIGURED);
 	ERR_FAIL_COND_V_MSG(requesting, ERR_BUSY, "HTTPRequest is processing a request. Wait for completion or cancel it before attempting a new one.");
+	download_file_reserve_attempted = false;
 
 	if (timeout > 0) {
 		timer->stop();
@@ -503,6 +504,16 @@ bool HTTPRequest::_update_connection() {
 						_defer_done(RESULT_DOWNLOAD_FILE_WRITE_ERROR, response_code, response_headers, PackedByteArray());
 						return true;
 					}
+					// MEMFS replaces an empty file's buffer on its first write, so reserve
+					// only after that write has established the file's backing storage.
+					if (!download_file_reserve_attempted && download_file_size_hint > 0) {
+						download_file_reserve_attempted = true;
+						file->reserve(download_file_size_hint);
+						if (file->get_error() != OK) {
+							_defer_done(RESULT_DOWNLOAD_FILE_WRITE_ERROR, response_code, response_headers, PackedByteArray());
+							return true;
+						}
+					}
 				} else {
 					body.append_array(chunk);
 				}
@@ -607,6 +618,17 @@ String HTTPRequest::get_download_file() const {
 	return download_to_file;
 }
 
+void HTTPRequest::set_download_file_size_hint(int64_t p_bytes) {
+	ERR_FAIL_COND(get_http_client_status() != HTTPClient::STATUS_DISCONNECTED);
+	ERR_FAIL_COND_MSG(p_bytes < -1 || p_bytes > INT32_MAX, "Download file size hint must be -1 or between 0 and 2147483647 bytes.");
+
+	download_file_size_hint = p_bytes;
+}
+
+int64_t HTTPRequest::get_download_file_size_hint() const {
+	return download_file_size_hint;
+}
+
 void HTTPRequest::set_download_chunk_size(int p_chunk_size) {
 	ERR_FAIL_COND(get_http_client_status() != HTTPClient::STATUS_DISCONNECTED);
 
@@ -686,6 +708,8 @@ void HTTPRequest::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_download_file", "path"), &HTTPRequest::set_download_file);
 	ClassDB::bind_method(D_METHOD("get_download_file"), &HTTPRequest::get_download_file);
+	ClassDB::bind_method(D_METHOD("set_download_file_size_hint", "bytes"), &HTTPRequest::set_download_file_size_hint);
+	ClassDB::bind_method(D_METHOD("get_download_file_size_hint"), &HTTPRequest::get_download_file_size_hint);
 
 	ClassDB::bind_method(D_METHOD("get_downloaded_bytes"), &HTTPRequest::get_downloaded_bytes);
 	ClassDB::bind_method(D_METHOD("get_body_size"), &HTTPRequest::get_body_size);
@@ -700,6 +724,7 @@ void HTTPRequest::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_https_proxy", "host", "port"), &HTTPRequest::set_https_proxy);
 
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "download_file", PROPERTY_HINT_FILE_PATH), "set_download_file", "get_download_file");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "download_file_size_hint", PROPERTY_HINT_RANGE, "-1,2147483647,suffix:B"), "set_download_file_size_hint", "get_download_file_size_hint");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "download_chunk_size", PROPERTY_HINT_RANGE, "256,16777216,suffix:B"), "set_download_chunk_size", "get_download_chunk_size");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "use_threads"), "set_use_threads", "is_using_threads");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "accept_gzip"), "set_accept_gzip", "is_accepting_gzip");

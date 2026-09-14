@@ -84,6 +84,8 @@ private:
 	Vector<String> response_headers;
 
 	String download_to_file;
+	int64_t download_file_size_hint = -1;
+	bool download_file_reserve_attempted = false;
 
 	Ref<StreamPeerGZIP> decompressor;
 	Ref<FileAccess> file;
@@ -143,6 +145,8 @@ public:
 
 	void set_download_file(const String &p_file);
 	String get_download_file() const;
+	void set_download_file_size_hint(int64_t p_bytes);
+	int64_t get_download_file_size_hint() const;
 
 	void set_download_chunk_size(int p_chunk_size);
 	int get_download_chunk_size() const;

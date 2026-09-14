@@ -246,6 +246,15 @@ const GodotFetch = {
 		return 0;
 	},
 
+	godot_js_fetch_get_buffered_size__proxy: 'sync',
+	godot_js_fetch_get_buffered_size__sig: 'ii',
+	godot_js_fetch_get_buffered_size: function (p_id) {
+		const obj = IDHandler.get(p_id);
+		// A browser read can overshoot BUFFER_CAP by one chunk. Clamp the ABI's
+		// signed integer result; the consumer's smaller read limit still applies.
+		return obj && obj.response ? Math.min(obj.buffered, 0x7fffffff) : 0;
+	},
+
 	godot_js_fetch_read_chunk__proxy: 'sync',
 	godot_js_fetch_read_chunk__sig: 'iiii',
 	godot_js_fetch_read_chunk: function (p_id, p_buf, p_buf_size) {
@@ -262,8 +271,10 @@ const GodotFetch = {
 			// while the queue could never hold more than one chunk).
 			const dst = p_buf + (p_buf_size - to_read);
 			if (chunk.length > to_read) {
-				GodotRuntime.heapCopy(HEAP8, chunk.slice(0, to_read), dst);
-				chunks[0] = chunk.slice(to_read);
+				// Fetch exclusively owns these immutable byte chunks. Views avoid
+				// copying both halves whenever a poll ends partway through one.
+				GodotRuntime.heapCopy(HEAP8, chunk.subarray(0, to_read), dst);
+				chunks[0] = chunk.subarray(to_read);
 				obj.buffered -= to_read;
 				to_read = 0;
 			} else {

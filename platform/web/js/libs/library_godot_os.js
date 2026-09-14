@@ -113,7 +113,7 @@ const GodotFS = {
 #if WASMFS
 	$GodotFS__deps: ['$FS', '$GodotRuntime'],
 #else
-	$GodotFS__deps: ['$FS', '$IDBFS', '$GodotRuntime'],
+	$GodotFS__deps: ['$FS', '$IDBFS', '$MEMFS', '$GodotRuntime'],
 #endif
 	$GodotFS__postset: [
 		'Module["initFS"] = GodotFS.init;',
@@ -210,6 +210,30 @@ const GodotFS = {
 			FS.writeFile(path, new Uint8Array(buffer));
 		},
 #else
+		reserve_file: function (p_fd, p_capacity) {
+			try {
+				if (!Number.isSafeInteger(p_capacity) || p_capacity < 0) {
+					return 0;
+				}
+				const stream = FS.getStream(p_fd);
+				const node = stream && stream.node;
+				if (!node || !FS.isFile(node.mode) || node.stream_ops?.write !== MEMFS.stream_ops.write
+						|| !ArrayBuffer.isView(node.contents)
+						|| !Number.isSafeInteger(node.usedBytes) || node.usedBytes < 0
+						|| node.usedBytes > node.contents.byteLength) {
+					return 0;
+				}
+				if (node.contents.byteLength < p_capacity) {
+					MEMFS.expandFileStorage(node, p_capacity);
+				}
+				return node.contents.byteLength >= p_capacity ? 1 : 0;
+			} catch (e) {
+				// Reserving is an optimization. Allocation failure leaves normal
+				// incremental MEMFS growth available to the caller.
+				return 0;
+			}
+		},
+
 		// Initialize godot file system, setting up persistent paths.
 		// Returns a promise that resolves when the FS is ready.
 		// We keep track of mount_points, so that we can properly close the IDBFS
@@ -386,6 +410,16 @@ const GodotOS = {
 		GodotOS._fs_sync_promise.then(function (err) {
 			func();
 		});
+	},
+
+	godot_js_os_fs_reserve__proxy: 'sync',
+	godot_js_os_fs_reserve__sig: 'iii',
+	godot_js_os_fs_reserve: function (p_fd, p_capacity) {
+#if WASMFS
+		return 0;
+#else
+		return GodotFS.reserve_file(p_fd, p_capacity);
+#endif
 	},
 
 	godot_js_os_has_feature__proxy: 'sync',
