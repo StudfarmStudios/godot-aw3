@@ -648,12 +648,13 @@ public:
 		}
 	}
 
-	// Direct CPU->GPU layered texture initialization. Writes `p_layer_count`
+	// Direct CPU->GPU texture initialization. Writes `p_layer_count`
 	// consecutive array layers into `p_dst_texture` from a contiguous CPU
-	// buffer at `p_cpu_data`. Used by RenderingDevice::_texture_initialize_layered
-	// when API_TRAIT_TEXTURE_INITIALIZE_DIRECT_WRITE is non-zero, as an
-	// alternative to the transfer-worker path (which requires a GPU staging
-	// buffer + command encoder).
+	// buffer at `p_cpu_data`. Used by RenderingDevice::_texture_initialize and
+	// `_texture_initialize_layered` when
+	// API_TRAIT_TEXTURE_INITIALIZE_DIRECT_WRITE is non-zero, as an alternative
+	// to the transfer-worker path (which requires a GPU staging buffer + command
+	// encoder).
 	//
 	// Layout of `p_cpu_data`: `p_layer_count` contiguous layer images, each
 	// of size `p_aligned_bpr * p_rows_per_image`. Total = `p_total_size`.
@@ -1023,8 +1024,9 @@ public:
 		// CPU-only staging path that bypasses transfer workers entirely (no
 		// GPU staging buffer, no command encoder, no barriers). The driver
 		// writes directly from a CPU pointer via
-		// `texture_initialize_direct_layered`. Useful on backends (e.g.
-		// WebGPU) where a synchronous CPU->GPU `writeTexture` API exists and
+		// `texture_initialize_direct_layered`. Used for both layered and ordinary
+		// initial uploads on backends (e.g. WebGPU) where a synchronous CPU->GPU
+		// `writeTexture` API exists and
 		// the transfer worker's GPU staging buffer would be wasted (peak
 		// memory drops by ~N bytes per upload, where N is the staging size).
 		API_TRAIT_TEXTURE_INITIALIZE_DIRECT_WRITE,

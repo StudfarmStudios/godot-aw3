@@ -959,7 +959,7 @@ Error RenderingDevice::_staging_buffer_allocate(StagingBuffers &p_staging_buffer
 
 			int32_t available_bytes = int32_t(p_staging_buffers.block_size) - int32_t(write_from);
 
-			if ((int32_t)p_amount < available_bytes) {
+			if ((int32_t)p_amount <= available_bytes) {
 				// All is good, we should be ok, all will fit.
 				r_alloc_offset = write_from;
 			} else if (p_can_segment && available_bytes >= (int32_t)p_required_align) {
@@ -2189,6 +2189,44 @@ static _ALWAYS_INLINE_ void _copy_region_block_or_regular(const uint8_t *p_read_
 	}
 }
 
+struct TextureDirectUploadLayout {
+	uint32_t source_row_pitch = 0;
+	uint32_t row_pitch = 0;
+	uint32_t rows_per_image = 0;
+	uint32_t upload_size = 0;
+};
+
+// Calculate the CPU buffer layout consumed by texture_initialize_direct_layered.
+// Width and height are already rounded up to the format's block dimensions by
+// get_image_format_required_size(). Keep all intermediates wide so an unusual
+// large format falls back to the existing transfer path instead of overflowing.
+static bool _texture_direct_upload_layout(uint32_t p_width, uint32_t p_height, uint32_t p_pixel_size, uint32_t p_staging_pixel_size, uint32_t p_pixel_rshift, uint32_t p_block_width, uint32_t p_block_height, uint32_t p_row_pitch_step, TextureDirectUploadLayout &r_layout) {
+	if (p_pixel_size == 0 || p_staging_pixel_size == 0 || p_pixel_rshift >= 64 ||
+			p_block_width == 0 || p_block_height == 0 || p_row_pitch_step == 0 || p_height % p_block_height != 0 ||
+			p_width > UINT64_MAX / p_pixel_size || (uint64_t)p_width * p_pixel_size > UINT64_MAX / p_block_width ||
+			p_width > UINT64_MAX / p_staging_pixel_size || (uint64_t)p_width * p_staging_pixel_size > UINT64_MAX / p_block_width) {
+		return false;
+	}
+
+	const uint64_t source_row_pitch = ((uint64_t)p_width * p_pixel_size * p_block_width) >> p_pixel_rshift;
+	const uint64_t unaligned_row_pitch = ((uint64_t)p_width * p_staging_pixel_size * p_block_width) >> p_pixel_rshift;
+	if (source_row_pitch == 0 || unaligned_row_pitch == 0 || source_row_pitch > UINT32_MAX || unaligned_row_pitch > UINT32_MAX) {
+		return false;
+	}
+	const uint64_t row_pitch = ((unaligned_row_pitch + p_row_pitch_step - 1) / p_row_pitch_step) * p_row_pitch_step;
+	const uint64_t rows_per_image = p_height / p_block_height;
+	const uint64_t upload_size = row_pitch * rows_per_image;
+	if (row_pitch > UINT32_MAX || rows_per_image > UINT32_MAX || upload_size > INT32_MAX) {
+		return false;
+	}
+
+	r_layout.source_row_pitch = (uint32_t)source_row_pitch;
+	r_layout.row_pitch = (uint32_t)row_pitch;
+	r_layout.rows_per_image = (uint32_t)rows_per_image;
+	r_layout.upload_size = (uint32_t)upload_size;
+	return true;
+}
+
 uint32_t RenderingDevice::_texture_layer_count(Texture *p_texture) const {
 	switch (p_texture->type) {
 		case TEXTURE_TYPE_CUBE:
@@ -2261,6 +2299,102 @@ Error RenderingDevice::_texture_initialize(RID p_texture, uint32_t p_layer, cons
 	// format and the data must be converted during upload.
 	uint32_t gpu_pixel_size = driver->texture_get_gpu_pixel_size(texture->driver_id);
 	uint32_t staging_pixel_size = (gpu_pixel_size > 0) ? gpu_pixel_size : pixel_size;
+
+	// WebGPU can initialize ordinary color textures directly from CPU memory.
+	// Preflight all mip layouts before issuing a queue write so any unsupported
+	// shape or oversized scratch allocation falls back without a partial upload.
+	const bool direct_texture_type = texture->type == TEXTURE_TYPE_2D || texture->type == TEXTURE_TYPE_2D_ARRAY ||
+			texture->type == TEXTURE_TYPE_CUBE || texture->type == TEXTURE_TYPE_CUBE_ARRAY;
+	if (driver->api_trait_get(RDD::API_TRAIT_TEXTURE_INITIALIZE_DIRECT_WRITE) && direct_texture_type &&
+			texture->samples == TEXTURE_SAMPLES_1 && !p_immediate_flush &&
+			!format_has_depth(texture->format) && !format_has_stencil(texture->format)) {
+		struct DirectMipUpload {
+			TextureDirectUploadLayout layout;
+			uint32_t source_offset = 0;
+			uint32_t source_size = 0;
+			uint32_t aligned_width = 0;
+			uint32_t aligned_height = 0;
+			uint32_t logical_width = 0;
+			uint32_t logical_height = 0;
+		};
+
+		LocalVector<DirectMipUpload> uploads;
+		uploads.resize(texture->mipmaps);
+		uint32_t source_offset = 0;
+		uint32_t logical_width = texture->width;
+		uint32_t logical_height = texture->height;
+		uint32_t largest_scratch = 0;
+		bool layouts_valid = true;
+		for (uint32_t mip = 0; mip < texture->mipmaps; mip++) {
+			uint32_t aligned_width = 0;
+			uint32_t aligned_height = 0;
+			uint32_t depth = 0;
+			const uint32_t image_total = get_image_format_required_size(texture->format, texture->width, texture->height, texture->depth, mip + 1, &aligned_width, &aligned_height, &depth);
+			DirectMipUpload &upload = uploads[mip];
+			if (image_total < source_offset) {
+				layouts_valid = false;
+				break;
+			}
+			upload.source_offset = source_offset;
+			upload.source_size = image_total - source_offset;
+			upload.aligned_width = aligned_width;
+			upload.aligned_height = aligned_height;
+			upload.logical_width = logical_width;
+			upload.logical_height = logical_height;
+
+			if (depth != 1 || !_texture_direct_upload_layout(aligned_width, aligned_height, pixel_size, staging_pixel_size,
+					pixel_rshift, block_w, block_h, driver->api_trait_get(RDD::API_TRAIT_TEXTURE_DATA_ROW_PITCH_STEP), upload.layout) ||
+					(uint64_t)upload.layout.source_row_pitch * upload.layout.rows_per_image != upload.source_size) {
+				layouts_valid = false;
+				break;
+			}
+
+			const bool requires_conversion = gpu_pixel_size > 0 && block_w == 1 && block_h == 1;
+			if (requires_conversion || upload.layout.source_row_pitch != upload.layout.row_pitch) {
+				largest_scratch = MAX(largest_scratch, upload.layout.upload_size);
+			}
+			source_offset = image_total;
+			logical_width = MAX(1u, logical_width >> 1);
+			logical_height = MAX(1u, logical_height >> 1);
+		}
+		layouts_valid = layouts_valid && source_offset == (uint32_t)p_data.size();
+
+		if (layouts_valid) {
+			Vector<uint8_t> scratch;
+			if (largest_scratch > 0 && scratch.resize_uninitialized(largest_scratch) != OK) {
+				layouts_valid = false;
+			}
+			if (layouts_valid) {
+				const uint8_t *source = p_data.ptr();
+				for (uint32_t mip = 0; mip < texture->mipmaps; mip++) {
+					const DirectMipUpload &upload = uploads[mip];
+					const uint8_t *upload_data = source + upload.source_offset;
+					uint32_t upload_size = upload.source_size;
+					const bool requires_conversion = gpu_pixel_size > 0 && block_w == 1 && block_h == 1;
+					if (requires_conversion || upload.layout.source_row_pitch != upload.layout.row_pitch) {
+						upload_data = scratch.ptrw();
+						upload_size = upload.layout.upload_size;
+						if (requires_conversion) {
+							driver->texture_upload_convert(texture->driver_id, source + upload.source_offset,
+									upload.layout.source_row_pitch, scratch.ptrw(), upload.layout.row_pitch,
+									upload.aligned_width, upload.aligned_height);
+						} else {
+							_copy_region_block_or_regular(source + upload.source_offset, scratch.ptrw(), 0, 0,
+									upload.aligned_width, upload.aligned_width, upload.aligned_height,
+									block_w, block_h, upload.layout.row_pitch, pixel_size, block_size);
+						}
+					}
+
+					driver->texture_initialize_direct_layered(texture->driver_id, p_dst_layout, upload_data, upload_size,
+							upload.layout.row_pitch, upload.layout.rows_per_image, upload.logical_width, upload.logical_height,
+							/*layer_count*/ 1, p_layer, mip);
+				}
+				// queue.writeTexture is ordered before later queue submissions, and no
+				// transfer worker operation needs to be published to the draw graph.
+				return OK;
+			}
+		}
+	}
 
 	// The algorithm operates on two passes, one to figure out the total size the staging buffer will require to allocate and another one where the copy is actually performed.
 	uint32_t staging_worker_offset = 0;

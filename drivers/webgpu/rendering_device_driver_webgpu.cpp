@@ -7784,9 +7784,10 @@ void RenderingDeviceDriverWebGPU::command_copy_buffer_to_texture_layered(Command
 	}
 }
 
-// Direct CPU->GPU multi-layer texture write. Mirrors the writeTexture branch
-// of command_copy_buffer_to_texture_layered, but takes a CPU pointer directly
-// instead of going through a transfer worker's GPU staging buffer + shadow_map.
+// Direct CPU->GPU texture write for one or more layers. Mirrors the writeTexture
+// branch of command_copy_buffer_to_texture_layered, but takes a CPU pointer
+// directly instead of going through a transfer worker's GPU staging buffer +
+// shadow_map.
 //
 // Save vs transfer-worker path on tier 1024 (75 layers, 300 MB total):
 //   - 1x wgpuDeviceCreateBuffer(300 MB) eliminated (peak VRAM -300 MB)
@@ -10626,11 +10627,11 @@ uint64_t RenderingDeviceDriverWebGPU::api_trait_get(ApiTrait p_trait) {
 		// driver->texture_get_data() handles this with a persistent staging buffer
 		// + frame-deferred async map (see ASYNC BUFFER READBACK section).
 		case API_TRAIT_TEXTURE_GET_DATA_VIA_DRIVER: return 1;
-		// Skip transfer-worker path for layered Texture2DArray uploads; we
+		// Skip transfer-worker paths for eligible initial texture uploads; we
 		// implement texture_initialize_direct_layered using wgpuQueueWriteTexture
 		// directly (no GPU staging buffer, no command encoder, no barriers).
-		// Eliminates a same-size wasted VRAM allocation per Texture2DArray
-		// upload and the queue serialization that came with it.
+		// Eliminates same-size wasted VRAM allocations and the queue
+		// serialization that came with them.
 		case API_TRAIT_TEXTURE_INITIALIZE_DIRECT_WRITE: return 1;
 		// Use mappedAtCreation for buffer creation with initial data —
 		// bypasses staging buffer + wgpuQueueWriteBuffer overhead entirely.
