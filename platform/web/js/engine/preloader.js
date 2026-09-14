@@ -10,32 +10,84 @@ const Preloader = /** @constructor */ function () { // eslint-disable-line no-un
 		performance.mark(`godot-web-${phase}-${basename}`);
 	}
 
-	function getTrackedResponse(response, load_status) {
-		function onloadprogress(reader, controller) {
-			return reader.read().then(function (result) {
-				if (load_status.done) {
-					return Promise.resolve();
-				}
-				if (result.value) {
-					controller.enqueue(result.value);
-					load_status.loaded += result.value.length;
-				}
-				if (!result.done) {
-					return onloadprogress(reader, controller);
-				}
-				load_status.done = true;
-				markDownload(load_status.file, 'download-end');
+	function onloadprogress(reader, load_status, controller) {
+		return reader.read().then(function (result) {
+			if (load_status.done) {
 				return Promise.resolve();
-			});
-		}
+			}
+			if (result.value) {
+				if (controller) {
+					controller.enqueue(result.value);
+				}
+				load_status.loaded += result.value.length;
+			}
+			if (!result.done) {
+				return onloadprogress(reader, load_status, controller);
+			}
+			load_status.done = true;
+			markDownload(load_status.file, 'download-end');
+			return Promise.resolve();
+		});
+	}
+
+	function getTrackedResponse(response, load_status) {
 		const reader = response.body.getReader();
 		return new Response(new ReadableStream({
 			start: function (controller) {
-				onloadprogress(reader, controller).then(function () {
+				onloadprogress(reader, load_status, controller).then(function () {
 					controller.close();
 				});
 			},
 		}), { headers: response.headers });
+	}
+
+	function hasWasmContentType(response) {
+		const contentType = response.headers.get('content-type');
+		// WebAssembly.instantiateStreaming requires this exact MIME value. A
+		// parameter or different casing must use the corrected fallback below.
+		return contentType === 'application/wasm';
+	}
+
+	function withWasmContentType(response) {
+		if (hasWasmContentType(response)) {
+			// Keep the browser's original Response. In particular, this retains its
+			// URL and native clone/cache metadata for WebAssembly streaming.
+			return response;
+		}
+		const headers = new Headers(response.headers);
+		headers.set('content-type', 'application/wasm');
+		const init = { headers };
+		// Opaque responses have status 0, which Response() does not accept. The
+		// normal same-origin path keeps the original status and status text.
+		if (response.status >= 200 && response.status <= 599) {
+			init.status = response.status;
+			init.statusText = response.statusText;
+		}
+		return new Response(response.clone().body, init);
+	}
+
+	function getNativeTrackedResponse(response, load_status) {
+		try {
+			// Read a clone solely for progress. Returning the original Response lets
+			// instantiateStreaming retain its URL and browser code-cache identity.
+			const progressResponse = response.clone();
+			const reader = progressResponse.body && progressResponse.body.getReader();
+			if (!reader) {
+				load_status.done = true;
+				markDownload(load_status.file, 'download-end');
+				return response;
+			}
+			onloadprogress(reader, load_status, null).catch(function () {
+				// Keep a failed progress side-channel from producing an unhandled
+				// rejection or keeping the loading indicator alive forever.
+				load_status.done = true;
+			});
+		} catch (e) {
+			// Older/incomplete Fetch implementations may not support clone(). The
+			// caller still receives the response and can consume it normally.
+			load_status.done = true;
+		}
+		return response;
 	}
 
 	function loadFetch(file, tracker, fileSize, raw) {
@@ -50,10 +102,10 @@ const Preloader = /** @constructor */ function () { // eslint-disable-line no-un
 			if (!response.ok) {
 				return Promise.reject(new Error(`Failed loading file '${file}'`));
 			}
-			const tr = getTrackedResponse(response, tracker[file]);
 			if (raw) {
-				return Promise.resolve(tr);
+				return Promise.resolve(getNativeTrackedResponse(withWasmContentType(response), tracker[file]));
 			}
+			const tr = getTrackedResponse(response, tracker[file]);
 			return tr.arrayBuffer();
 		});
 	}

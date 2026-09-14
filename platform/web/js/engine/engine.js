@@ -100,9 +100,11 @@ const Engine = (function () {
 					// Make sure to test that when refactoring.
 					return new Promise(function (resolve, reject) {
 						promise.then(function (response) {
-							const cloned = new Response(response.clone().body, { 'headers': [['content-type', 'application/wasm']] });
 							markStartupPhase('runtime-init-start');
-							Godot(me.config.getModuleConfig(loadPath, cloned)).then(function (module) {
+							// Engine.load() may be reused for a second instance/start. Keep
+							// the preloader's response body available for that restart while
+							// retaining native Response URL/cache metadata.
+							Godot(me.config.getModuleConfig(loadPath, response.clone())).then(function (module) {
 								markStartupPhase('runtime-init-end');
 								const paths = me.config.persistentPaths;
 								markStartupPhase('fs-init-start');
