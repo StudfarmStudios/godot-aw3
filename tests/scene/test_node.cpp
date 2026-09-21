@@ -110,6 +110,197 @@ public:
 	}
 };
 
+class ProcessOrderNode : public Node {
+	GDCLASS(ProcessOrderNode, Node);
+
+public:
+	enum Mutation {
+		MUTATION_NONE,
+		MUTATION_REPARENT_SELF,
+		MUTATION_REPARENT_TARGET,
+		MUTATION_ADD_TARGET,
+	};
+
+	int order_id = -1;
+	bool physics = false;
+	Vector<int> *callback_order = nullptr;
+	Mutation mutation = MUTATION_NONE;
+	ProcessOrderNode *mutation_target = nullptr;
+	Node *mutation_parent = nullptr;
+	bool mutation_done = false;
+
+protected:
+	static void _bind_methods() {}
+
+	void _notification(int p_what) {
+		if ((physics && p_what != NOTIFICATION_PHYSICS_PROCESS) || (!physics && p_what != NOTIFICATION_PROCESS)) {
+			return;
+		}
+
+		if (callback_order) {
+			callback_order->push_back(order_id);
+		}
+
+		if (mutation_done) {
+			return;
+		}
+		mutation_done = true;
+		switch (mutation) {
+			case MUTATION_NONE:
+				break;
+			case MUTATION_REPARENT_SELF:
+				mutation_parent->remove_child(this);
+				mutation_parent->add_child(this);
+				break;
+			case MUTATION_REPARENT_TARGET:
+				mutation_parent->remove_child(mutation_target);
+				mutation_parent->add_child(mutation_target);
+				break;
+			case MUTATION_ADD_TARGET:
+				mutation_parent->add_child(mutation_target);
+				break;
+		}
+	}
+};
+
+static void process_order_set_enabled(ProcessOrderNode *p_node, bool p_enabled, bool p_physics) {
+	if (p_physics) {
+		p_node->set_physics_process(p_enabled);
+	} else {
+		p_node->set_process(p_enabled);
+	}
+}
+
+static void process_order_set_priority(ProcessOrderNode *p_node, int p_priority, bool p_physics) {
+	if (p_physics) {
+		p_node->set_physics_process_priority(p_priority);
+	} else {
+		p_node->set_process_priority(p_priority);
+	}
+}
+
+static void process_order_step(bool p_physics) {
+	if (p_physics) {
+		SceneTree::get_singleton()->physics_process(0.0);
+	} else {
+		SceneTree::get_singleton()->process(0.0);
+	}
+}
+
+static Vector<Vector<int>> run_process_order_mutation_scenario(bool p_physics, bool p_own_process_group) {
+	SceneTree *tree = SceneTree::get_singleton();
+
+	Vector<Vector<int>> frames;
+	Vector<int> callback_order;
+	Node *container = memnew(Node);
+	if (p_own_process_group) {
+		container->set_process_thread_group(Node::PROCESS_THREAD_GROUP_MAIN_THREAD);
+	}
+	Node *holder = memnew(Node);
+	container->add_child(holder);
+	tree->get_root()->add_child(container);
+
+	Vector<ProcessOrderNode *> nodes;
+	for (int i = 0; i < 6; i++) {
+		ProcessOrderNode *node = memnew(ProcessOrderNode);
+		node->order_id = i;
+		node->physics = p_physics;
+		node->callback_order = &callback_order;
+		process_order_set_enabled(node, true, p_physics);
+		nodes.push_back(node);
+		if (i < 5) {
+			container->add_child(node);
+		}
+	}
+
+	auto capture_frame = [&]() {
+		callback_order.clear();
+		process_order_step(p_physics);
+		frames.push_back(callback_order);
+	};
+
+	// Establish a sorted prefix, then exercise every mutation that can affect the
+	// process vector or the tree-order tie breaker used by Node's comparator.
+	capture_frame();
+	container->add_child(nodes[5]);
+	capture_frame();
+	process_order_set_enabled(nodes[2], false, p_physics);
+	process_order_set_enabled(nodes[2], true, p_physics);
+	capture_frame();
+	process_order_set_priority(nodes[4], -10, p_physics);
+	capture_frame();
+	container->move_child(nodes[3], 0);
+	// A sibling move alone does not dirty the existing process vector. Preserve
+	// that behavior, but invalidate its prefix before the next actual repair.
+	capture_frame();
+	process_order_set_enabled(nodes[1], false, p_physics);
+	process_order_set_enabled(nodes[1], true, p_physics);
+	capture_frame();
+	nodes[2]->reparent(holder);
+	capture_frame();
+
+	// A node removed before its turn must be skipped in the current nodes_copy,
+	// even if it is re-added immediately. It appears in the following frame.
+	nodes[4]->mutation = ProcessOrderNode::MUTATION_REPARENT_TARGET;
+	nodes[4]->mutation_target = nodes[3];
+	nodes[4]->mutation_parent = container;
+	nodes[4]->mutation_done = false;
+	capture_frame();
+	capture_frame();
+
+	// Removing and re-adding the currently executing node must not invoke it twice.
+	nodes[4]->mutation = ProcessOrderNode::MUTATION_REPARENT_SELF;
+	nodes[4]->mutation_parent = container;
+	nodes[4]->mutation_done = false;
+	capture_frame();
+	capture_frame();
+
+	// A newly added processing node is absent from the current snapshot and joins
+	// the dirty tail for the next frame.
+	ProcessOrderNode *added = memnew(ProcessOrderNode);
+	added->order_id = 6;
+	added->physics = p_physics;
+	added->callback_order = &callback_order;
+	process_order_set_enabled(added, true, p_physics);
+	nodes[4]->mutation = ProcessOrderNode::MUTATION_ADD_TARGET;
+	nodes[4]->mutation_target = added;
+	nodes[4]->mutation_done = false;
+	capture_frame();
+	capture_frame();
+
+	memdelete(container);
+	return frames;
+}
+
+static Vector<Vector<int>> get_expected_process_order_frames() {
+	Vector<Vector<int>> frames;
+	frames.push_back(Vector<int>({ 0, 1, 2, 3, 4 }));
+	frames.push_back(Vector<int>({ 0, 1, 2, 3, 4, 5 }));
+	frames.push_back(Vector<int>({ 0, 1, 2, 3, 4, 5 }));
+	frames.push_back(Vector<int>({ 4, 0, 1, 2, 3, 5 }));
+	frames.push_back(Vector<int>({ 4, 0, 1, 2, 3, 5 }));
+	frames.push_back(Vector<int>({ 4, 3, 0, 1, 2, 5 }));
+	frames.push_back(Vector<int>({ 4, 3, 2, 0, 1, 5 }));
+	frames.push_back(Vector<int>({ 4, 2, 0, 1, 5 }));
+	frames.push_back(Vector<int>({ 4, 2, 0, 1, 5, 3 }));
+	frames.push_back(Vector<int>({ 4, 2, 0, 1, 5, 3 }));
+	frames.push_back(Vector<int>({ 4, 2, 0, 1, 5, 3 }));
+	frames.push_back(Vector<int>({ 4, 2, 0, 1, 5, 3 }));
+	frames.push_back(Vector<int>({ 4, 2, 0, 1, 5, 3, 6 }));
+	return frames;
+}
+
+static void check_process_order_frames_equal(const Vector<Vector<int>> &p_expected, const Vector<Vector<int>> &p_actual) {
+	REQUIRE_EQ(p_actual.size(), p_expected.size());
+	for (int frame = 0; frame < p_expected.size(); frame++) {
+		INFO("Process callback frame: " << frame);
+		REQUIRE_EQ(p_actual[frame].size(), p_expected[frame].size());
+		for (int index = 0; index < p_expected[frame].size(); index++) {
+			CHECK_EQ(p_actual[frame][index], p_expected[frame][index]);
+		}
+	}
+}
+
 TEST_CASE("[SceneTree][Node] Testing node operations with a very simple scene tree") {
 	Node *node = memnew(Node);
 
@@ -916,6 +1107,26 @@ TEST_CASE("[SceneTree][Node] Test the process priority") {
 	memdelete(node2);
 	memdelete(node3);
 	memdelete(node4);
+}
+
+TEST_CASE("[SceneTree][Node] Sorted process prefix preserves callback ordering") {
+	const Vector<Vector<int>> expected = get_expected_process_order_frames();
+
+	SUBCASE("Idle processing in the default process group") {
+		check_process_order_frames_equal(expected, run_process_order_mutation_scenario(false, false));
+	}
+
+	SUBCASE("Physics processing in the default process group") {
+		check_process_order_frames_equal(expected, run_process_order_mutation_scenario(true, false));
+	}
+
+	SUBCASE("Idle processing in a dedicated process group") {
+		check_process_order_frames_equal(expected, run_process_order_mutation_scenario(false, true));
+	}
+
+	SUBCASE("Physics processing in a dedicated process group") {
+		check_process_order_frames_equal(expected, run_process_order_mutation_scenario(true, true));
+	}
 }
 
 } // namespace TestNode

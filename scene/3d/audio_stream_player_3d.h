@@ -31,6 +31,7 @@
 #pragma once
 
 #include "core/templates/fixed_vector.h"
+#include "core/templates/local_vector.h"
 #include "scene/3d/node_3d.h"
 #include "servers/audio/audio_server.h"
 
@@ -38,6 +39,7 @@
 class Area3D;
 #endif // PHYSICS_3D_DISABLED
 struct AudioFrame;
+class Camera3D;
 class AudioStream;
 class AudioStreamPlayback;
 class AudioStreamPlayerInternal;
@@ -127,6 +129,9 @@ private:
 	/// Hash map storing the bus volumes during the panning update.
 	/// This hash map is stored as member for efficiency reasons.
 	HashMap<StringName, Vector<AudioFrame>> bus_volumes;
+	// Preserve the World3D camera iteration order without allocating a temporary
+	// HashSet for every active player's panning update.
+	LocalVector<Camera3D *> camera_snapshot;
 
 protected:
 	void _validate_property(PropertyInfo &p_property) const;

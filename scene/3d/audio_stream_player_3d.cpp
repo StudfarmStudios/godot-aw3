@@ -400,8 +400,16 @@ Vector<AudioFrame> AudioStreamPlayer3D::_update_panning() {
 	Ref<World3D> world_3d = get_world_3d();
 	ERR_FAIL_COND_V(world_3d.is_null(), output_volume_vector);
 
-	HashSet<Camera3D *> cameras(world_3d->get_cameras());
-	cameras.insert(get_viewport()->get_camera_3d());
+	const HashSet<Camera3D *> &world_cameras = world_3d->get_cameras();
+	camera_snapshot.clear();
+	camera_snapshot.reserve(world_cameras.size() + 1);
+	for (Camera3D *camera : world_cameras) {
+		camera_snapshot.push_back(camera);
+	}
+	Camera3D *current_camera = get_viewport()->get_camera_3d();
+	if (!world_cameras.has(current_camera)) {
+		camera_snapshot.push_back(current_camera);
+	}
 
 #ifndef PHYSICS_3D_DISABLED
 	PhysicsDirectSpaceState3D *space_state = PhysicsServer3D::get_singleton()->space_get_direct_state(world_3d->get_space());
@@ -422,7 +430,7 @@ Vector<AudioFrame> AudioStreamPlayer3D::_update_panning() {
 
 	bool has_any_listener_in_range = false;
 	linear_attenuation = 0;
-	for (Camera3D *camera : cameras) {
+	for (Camera3D *camera : camera_snapshot) {
 		if (!camera) {
 			continue;
 		}

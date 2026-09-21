@@ -1,0 +1,15 @@
+config_version=5
+
+[application]
+config/name="CSharp notification fast-path regression"
+run/main_scene="res://NotificationProbe.tscn"
+
+[dotnet]
+project/assembly_name="NotificationProbe"
+
+[display]
+window/size/viewport_width=64
+window/size/viewport_height=64
+
+[rendering]
+renderer/rendering_method="gl_compatibility"

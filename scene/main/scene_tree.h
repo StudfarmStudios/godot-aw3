@@ -101,6 +101,12 @@ private:
 		CallQueue call_queue;
 		Vector<Node *> nodes;
 		Vector<Node *> physics_nodes;
+		Vector<Node *> node_sort_scratch;
+		Vector<Node *> physics_node_sort_scratch;
+		uint32_t node_sorted_prefix = 0;
+		uint32_t physics_node_sorted_prefix = 0;
+		uint64_t node_tree_order_generation = 0;
+		uint64_t physics_node_tree_order_generation = 0;
 		bool node_order_dirty = true;
 		bool physics_node_order_dirty = true;
 		bool removed = false;
@@ -118,6 +124,7 @@ private:
 	bool process_groups_dirty = true;
 	LocalVector<ProcessGroup *> local_process_group_cache; // Used when processing to group what needs to
 	uint64_t process_last_pass = 1;
+	SafeNumeric<uint64_t> process_tree_order_generation{ 1 };
 
 	ProcessGroup default_process_group;
 
@@ -245,6 +252,7 @@ private:
 	void _add_process_group(Node *p_node);
 	void _remove_node_from_process_group(Node *p_node, Node *p_owner);
 	void _add_node_to_process_group(Node *p_node, Node *p_owner);
+	void _notify_process_tree_order_changed();
 
 	void _call_group_flags(const Variant **p_args, int p_argcount, Callable::CallError &r_error);
 	void _call_group(const Variant **p_args, int p_argcount, Callable::CallError &r_error);

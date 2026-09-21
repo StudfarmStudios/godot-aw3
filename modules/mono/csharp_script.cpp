@@ -63,6 +63,8 @@
 #include "core/os/thread.h"
 #include "servers/text/text_server.h"
 
+#include <atomic>
+
 #ifdef TOOLS_ENABLED
 #include "core/os/keyboard.h"
 #include "editor/editor_node.h"
@@ -78,6 +80,15 @@
 // Types that will be skipped over (in favor of their base types) when setting up instance bindings.
 // This must be a superset of `ignored_types` in bindings_generator.cpp.
 const Vector<String> ignored_types = {};
+
+namespace {
+
+// Script notifications may replace their own ScriptInstance. A generation
+// disambiguates allocator address reuse when validating the instance after the
+// managed callback returns. This increments only when an instance is created.
+static std::atomic<uint64_t> csharp_instance_generation{ 1 };
+
+} // namespace
 
 CSharpLanguage *CSharpLanguage::singleton = nullptr;
 
@@ -1950,10 +1961,44 @@ void CSharpInstance::notification(int p_notification, bool p_reversed) {
 		return;
 	}
 
-	_call_notification(p_notification, p_reversed);
+	if (notification_override_state == NOTIFICATION_OVERRIDE_ABSENT) {
+		return;
+	}
+	if (notification_override_state == NOTIFICATION_OVERRIDE_PRESENT) {
+		_call_notification(p_notification, p_reversed);
+		return;
+	}
+
+	// A managed notification may synchronously free its owner or replace its
+	// script instance. Keep only values on the stack across the callback.
+	const ObjectID owner_id = owner->get_instance_id();
+	const CSharpInstance *instance_before_call = this;
+	const uint64_t generation_before_call = notification_cache_generation;
+	const Callable::CallError::Error error = _call_notification(p_notification, p_reversed);
+
+	Object *live_owner = ObjectDB::get_instance(owner_id);
+	ScriptInstance *live_script_instance = live_owner ? live_owner->get_script_instance() : nullptr;
+	if (live_script_instance != instance_before_call || !live_script_instance || live_script_instance->get_language() != CSharpLanguage::get_singleton()) {
+		return;
+	}
+	CSharpInstance *live_instance = static_cast<CSharpInstance *>(live_script_instance);
+	if (live_instance->notification_cache_generation != generation_before_call) {
+		return;
+	}
+
+	if (live_instance->notification_override_state == NOTIFICATION_OVERRIDE_UNKNOWN) {
+		if (error == Callable::CallError::CALL_ERROR_INVALID_METHOD) {
+			live_instance->notification_override_state = NOTIFICATION_OVERRIDE_ABSENT;
+		} else if (error == Callable::CallError::CALL_OK) {
+			// The managed bridge leaves CALL_OK unchanged when the invoked override
+			// throws. Treat that as present so an exception can never suppress later
+			// lifecycle notifications.
+			live_instance->notification_override_state = NOTIFICATION_OVERRIDE_PRESENT;
+		}
+	}
 }
 
-void CSharpInstance::_call_notification(int p_notification, bool p_reversed) {
+Callable::CallError::Error CSharpInstance::_call_notification(int p_notification, bool p_reversed) {
 	Variant arg = p_notification;
 	const Variant *args[1] = { &arg };
 
@@ -1961,6 +2006,7 @@ void CSharpInstance::_call_notification(int p_notification, bool p_reversed) {
 	Callable::CallError call_error;
 	GDMonoCache::managed_callbacks.CSharpInstanceBridge_Call(
 			gchandle.get_intptr(), &SNAME("_notification"), args, 1, &call_error, &ret);
+	return call_error.error;
 }
 
 String CSharpInstance::to_string(bool *r_valid) {
@@ -1986,6 +2032,7 @@ ScriptLanguage *CSharpInstance::get_language() {
 }
 
 CSharpInstance::CSharpInstance(const Ref<CSharpScript> &p_script) :
+		notification_cache_generation(csharp_instance_generation.fetch_add(1, std::memory_order_relaxed)),
 		script(p_script) {
 }
 

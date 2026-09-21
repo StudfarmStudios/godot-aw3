@@ -1,0 +1,22 @@
+[application]
+
+config/name="Particle Cull Order Probe"
+run/main_scene="res://probe.tscn"
+
+[display]
+
+window/size/viewport_width=960
+window/size/viewport_height=360
+window/size/window_width_override=960
+window/size/window_height_override=360
+window/stretch/mode="canvas_items"
+
+[rendering]
+
+rendering_device/fallback_to_opengl3=false
+renderer/rendering_method="forward_plus"
+renderer/rendering_method.mobile="mobile"
+limits/spatial_indexer/threaded_cull_minimum_instances=32
+limits/spatial_indexer/threaded_cull_minimum_instances.particle_cull_serial=65536
+limits/spatial_indexer/threaded_cull_minimum_instances.particle_cull_threaded=32
+textures/default_filters/use_nearest_mipmap_filter=false
