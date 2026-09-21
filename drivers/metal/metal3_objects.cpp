@@ -60,13 +60,14 @@
 
 using namespace MTL3;
 
-MDCommandBuffer::MDCommandBuffer(MTL::CommandQueue *p_queue, ::RenderingDeviceDriverMetal *p_device_driver) :
+MDCommandBuffer::MDCommandBuffer(MTL::CommandQueue *p_queue, MTL3::RenderingDeviceDriverMetal *p_device_driver) :
 		_scratch(p_device_driver->get_allocator()), queue(p_queue) {
 	device_driver = p_device_driver;
 	type = MDCommandBufferStateType::None;
 	sync_mode = device_driver->sync_mode;
 	if (sync_mode != RDM::SyncMode::HazardTracking) {
 		_create_level_fences(p_device_driver->get_device());
+		command_buffer_start_event = NS::TransferPtr(p_device_driver->get_device()->newEvent());
 	}
 }
 
@@ -230,6 +231,7 @@ void MDCommandBuffer::_pop_active_encoder_labels() {
 
 void MDCommandBuffer::_begin() {
 	DEV_ASSERT(!commandBuffer && !state_begin);
+	DEV_ASSERT(sync_mode == RDM::SyncMode::HazardTracking || command_buffer_start_event);
 	state_begin = true;
 	binding_cache.clear();
 	_scratch.reset();
@@ -257,6 +259,12 @@ void MDCommandBuffer::_end() {
 }
 
 void MDCommandBuffer::_commit() {
+	ERR_FAIL_COND_MSG(sync_mode == RDM::SyncMode::Barriers,
+			"Barrier-mode Metal command buffers must be committed through the driver's ordered submission path.");
+	_commit_native();
+}
+
+void MDCommandBuffer::_commit_native() {
 	end();
 #ifdef DEBUG_ENABLED
 	commandBuffer->addCompletedHandler([](MTL::CommandBuffer *p_cb) {
@@ -289,6 +297,13 @@ void MDCommandBuffer::_commit() {
 	state_begin = false;
 }
 
+void MDCommandBuffer::_commit_ordered() {
+	DEV_ASSERT(sync_mode == RDM::SyncMode::Barriers);
+	_commit_native();
+	// MDCommandBufferBase::commit() normally performs this step after _commit().
+	advance_sync_level();
+}
+
 MTL::CommandBuffer *MDCommandBuffer::command_buffer() {
 	DEV_ASSERT(state_begin);
 	if (commandBuffer.get() == nullptr) {
@@ -303,6 +318,12 @@ MTL::CommandBuffer *MDCommandBuffer::command_buffer() {
 #else
 		commandBuffer = NS::RetainPtr(queue->commandBuffer());
 #endif
+		if (sync_mode == RDM::SyncMode::Barriers) {
+			// This wait is the first GPU command. A small release command buffer,
+			// created in submission order, signals this wrapper-local event.
+			command_buffer_start_value++;
+			commandBuffer->encodeWait(command_buffer_start_event.get(), command_buffer_start_value);
+		}
 	}
 	return commandBuffer.get();
 }
@@ -1626,11 +1647,16 @@ void MDCommandBuffer::compute_begin_pass() {
 		compute.encoder = NS::RetainPtr(command_buffer()->computeCommandEncoder(MTL::DispatchTypeConcurrent));
 		_encode_residency(compute.encoder.get());
 		_fence_wait(compute.encoder.get());
+	} else if (sync_mode == RDM::SyncMode::Barriers) {
+		// A later logical list can introduce new heaps or imported resources.
+		_encode_residency(compute.encoder.get());
 	}
 }
 
 void MDCommandBuffer::compute_end_pass() {
-	if (type == MDCommandBufferStateType::Compute) {
+	// Independent logical lists in one render-graph group can share an encoder.
+	// command_group_end() closes it before the next dependency level.
+	if (type == MDCommandBufferStateType::Compute && sync_mode != RDM::SyncMode::Barriers) {
 		_end_compute_dispatch();
 	}
 }
@@ -1653,9 +1679,7 @@ void MDCommandBuffer::_compute_set_dirty_state() {
 		}
 	}
 
-	if (sync_mode == RDM::SyncMode::HazardTracking) {
-		compute.resource_tracker.encode(compute.encoder.get());
-	}
+	compute.resource_tracker.encode(compute.encoder.get());
 
 	compute.dirty.clear();
 }

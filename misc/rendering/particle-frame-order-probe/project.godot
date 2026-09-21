@@ -1,0 +1,17 @@
+config_version=5
+
+[application]
+config/name="GPU particle frame-order probe"
+
+[display]
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/size/window_width_override=1280
+window/size/window_height_override=720
+
+[rendering]
+
+rendering_device/fallback_to_opengl3=false
+renderer/rendering_method="forward_plus"
+renderer/rendering_method.mobile="forward_plus"
+environment/defaults/default_clear_color=Color(0.008, 0.01, 0.02, 1)

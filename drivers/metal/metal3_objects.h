@@ -61,6 +61,8 @@
 
 namespace MTL3 {
 
+class RenderingDeviceDriverMetal;
+
 // These types are defined in the global namespace (metal_objects_shared.h / rendering_device_driver_metal.h)
 using ::MDAttachment;
 using ::MDAttachmentType;
@@ -298,6 +300,7 @@ public:
 
 class API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0)) MDCommandBuffer : public MDCommandBufferBase {
 	friend class MDUniformSet;
+	friend class RenderingDeviceDriverMetal;
 
 private:
 #pragma mark - Common State
@@ -336,9 +339,13 @@ private:
 
 	MTL::CommandQueue *queue = nullptr;
 	NS::SharedPtr<MTL::CommandBuffer> commandBuffer;
+	NS::SharedPtr<MTL::Event> command_buffer_start_event;
+	uint64_t command_buffer_start_value = 0;
 	bool state_begin = false;
 
 	MTL::CommandBuffer *command_buffer();
+	void _commit_native();
+	void _commit_ordered();
 
 	void _end_compute_dispatch();
 	void _end_inline_render();
@@ -630,7 +637,7 @@ public:
 	void begin_label(const char *p_label_name, const Color &p_color) override;
 	void end_label() override;
 
-	MDCommandBuffer(MTL::CommandQueue *p_queue, ::RenderingDeviceDriverMetal *p_device_driver);
+	MDCommandBuffer(MTL::CommandQueue *p_queue, RenderingDeviceDriverMetal *p_device_driver);
 	MDCommandBuffer() = default;
 };
 

@@ -43,6 +43,12 @@ class API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0)) RenderingDeviceDriverMet
 
 	NS::SharedPtr<MTL::CommandQueue> device_queue;
 
+	// Submission-ordered dependency chain for untracked resources that persist
+	// across native command buffers.
+	NS::SharedPtr<MTL::Event> command_buffer_order_event;
+	uint64_t command_buffer_order_value = 0;
+	Mutex command_buffer_submit_mutex;
+
 	struct Fence {
 		virtual void signal(MTL::CommandBuffer *p_cmd_buffer) = 0;
 		virtual Error wait(uint32_t p_timeout_ms) = 0;
