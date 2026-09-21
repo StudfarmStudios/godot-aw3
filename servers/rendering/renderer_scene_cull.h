@@ -466,6 +466,9 @@ public:
 		bool update_dependencies;
 
 		SelfList<Instance> update_item;
+		SelfList<Instance> dependency_update_item;
+		// Preserve general dirty-list LIFO order when an AABB-only entry is later upgraded.
+		uint64_t update_queue_order = 0;
 
 		AABB *custom_aabb = nullptr; // <Zylann> would using aabb directly with a bool be better?
 		float extra_margin;
@@ -561,7 +564,8 @@ public:
 
 		Instance() :
 				scenario_item(this),
-				update_item(this) {
+				update_item(this),
+				dependency_update_item(this) {
 			base_type = RSE::INSTANCE_NONE;
 			cast_shadows = RSE::SHADOW_CASTING_SETTING_ON;
 			receive_shadows = true;
@@ -616,7 +620,17 @@ public:
 		}
 	};
 
+	struct InstanceDependencyUpdateOrder {
+		_FORCE_INLINE_ bool operator()(const Instance &p_a, const Instance &p_b) const {
+			return p_a.update_queue_order > p_b.update_queue_order;
+		}
+	};
+
 	mutable SelfList<Instance>::List _instance_update_list;
+	mutable SelfList<Instance>::List _instance_dependency_update_list;
+	mutable uint32_t pending_dependency_updates = 0;
+	mutable uint64_t instance_update_queue_order = 0;
+	mutable bool instance_dependency_update_list_sort_dirty = false;
 	void _instance_queue_update(Instance *p_instance, bool p_update_aabb, bool p_update_dependencies = false) const;
 
 	struct InstanceGeometryData : public InstanceBaseData {
@@ -893,6 +907,7 @@ public:
 		PagedArray<RID> voxel_gi_instances;
 		PagedArray<RID> mesh_instances;
 		PagedArray<RID> fog_volumes;
+		PagedArray<RID> particle_view_axis_updates;
 
 		struct DirectionalShadow {
 			PagedArray<RenderGeometryInstance *> cascade_geometry_instances[RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES];
@@ -911,6 +926,7 @@ public:
 			voxel_gi_instances.clear();
 			mesh_instances.clear();
 			fog_volumes.clear();
+			particle_view_axis_updates.clear();
 			for (int i = 0; i < RendererSceneRender::MAX_DIRECTIONAL_LIGHTS; i++) {
 				for (int j = 0; j < RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES; j++) {
 					directional_shadows[i].cascade_geometry_instances[j].clear();
@@ -936,6 +952,7 @@ public:
 			voxel_gi_instances.reset();
 			mesh_instances.reset();
 			fog_volumes.reset();
+			particle_view_axis_updates.reset();
 			for (int i = 0; i < RendererSceneRender::MAX_DIRECTIONAL_LIGHTS; i++) {
 				for (int j = 0; j < RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES; j++) {
 					directional_shadows[i].cascade_geometry_instances[j].reset();
@@ -961,6 +978,7 @@ public:
 			voxel_gi_instances.merge_unordered(p_cull_result.voxel_gi_instances);
 			mesh_instances.merge_unordered(p_cull_result.mesh_instances);
 			fog_volumes.merge_unordered(p_cull_result.fog_volumes);
+			particle_view_axis_updates.merge_unordered(p_cull_result.particle_view_axis_updates);
 
 			for (int i = 0; i < RendererSceneRender::MAX_DIRECTIONAL_LIGHTS; i++) {
 				for (int j = 0; j < RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES; j++) {
@@ -987,6 +1005,7 @@ public:
 			voxel_gi_instances.set_page_pool(p_rid_pool);
 			mesh_instances.set_page_pool(p_rid_pool);
 			fog_volumes.set_page_pool(p_rid_pool);
+			particle_view_axis_updates.set_page_pool(p_rid_pool);
 			for (int i = 0; i < RendererSceneRender::MAX_DIRECTIONAL_LIGHTS; i++) {
 				for (int j = 0; j < RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES; j++) {
 					directional_shadows[i].cascade_geometry_instances[j].set_page_pool(p_geometry_instance_pool);
@@ -1152,7 +1171,6 @@ public:
 
 	void _scene_cull_threaded(uint32_t p_thread, CullData *cull_data);
 	void _scene_cull(CullData &cull_data, InstanceCullResult &cull_result, uint64_t p_from, uint64_t p_to);
-	static void _scene_particles_set_view_axis(RID p_particles, const Vector3 &p_axis, const Vector3 &p_up_axis);
 	_FORCE_INLINE_ bool _visibility_parent_check(const CullData &p_cull_data, const InstanceData &p_instance_data);
 
 	bool _render_reflection_probe_step(Instance *p_instance, int p_step);

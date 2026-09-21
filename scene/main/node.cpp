@@ -562,6 +562,7 @@ void Node::_move_child(Node *p_child, int p_index, bool p_ignore_end) {
 	data.children_cache.insert(p_index, p_child);
 
 	if (data.tree) {
+		data.tree->_notify_process_tree_order_changed();
 		data.tree->tree_changed();
 	}
 

@@ -311,6 +311,15 @@ class CSharpInstance : public ScriptInstance {
 	bool unsafe_referenced = false;
 	bool predelete_notified = false;
 	bool destructing_script_instance = false;
+	enum NotificationOverrideState : uint8_t {
+		NOTIFICATION_OVERRIDE_UNKNOWN,
+		NOTIFICATION_OVERRIDE_PRESENT,
+		NOTIFICATION_OVERRIDE_ABSENT,
+	};
+	// Fail closed: dispatch normally until the call bridge explicitly reports
+	// that `_notification` is absent. Bridge failures leave this unknown/present.
+	NotificationOverrideState notification_override_state = NOTIFICATION_OVERRIDE_UNKNOWN;
+	uint64_t notification_cache_generation = 0;
 
 	Ref<CSharpScript> script;
 	MonoGCHandleData gchandle;
@@ -370,7 +379,7 @@ public:
 	const Variant get_rpc_config() const override;
 
 	void notification(int p_notification, bool p_reversed = false) override;
-	void _call_notification(int p_notification, bool p_reversed = false);
+	Callable::CallError::Error _call_notification(int p_notification, bool p_reversed = false);
 
 	String to_string(bool *r_valid) override;
 

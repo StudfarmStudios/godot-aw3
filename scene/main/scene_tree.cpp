@@ -72,6 +72,57 @@ STATIC_ASSERT_INCOMPLETE_TYPE(class, RenderingServer);
 #include "servers/physics_3d/physics_server_3d.h"
 #endif // PHYSICS_3D_DISABLED
 
+namespace {
+
+template <typename Comparator>
+static void repair_process_node_order(Vector<Node *> &r_nodes, Vector<Node *> &r_scratch, uint32_t &r_sorted_prefix, uint64_t &r_tree_order_generation, uint64_t p_current_tree_order_generation) {
+	const uint32_t node_count = r_nodes.size();
+	const bool prefix_valid = r_sorted_prefix <= node_count && r_tree_order_generation == p_current_tree_order_generation;
+	const uint32_t tail_size = prefix_valid ? node_count - r_sorted_prefix : node_count;
+
+	// When the unsorted tail is at least half the list, merging cannot recover enough
+	// comparator work to justify copying the whole list into scratch storage.
+	if (!prefix_valid || r_sorted_prefix == 0 || tail_size >= r_sorted_prefix) {
+		r_nodes.sort_custom<Comparator>();
+		r_sorted_prefix = node_count;
+		r_tree_order_generation = p_current_tree_order_generation;
+		return;
+	}
+
+	Node **nodes = r_nodes.ptrw();
+	SortArray<Node *, Comparator> sorter;
+	sorter.sort_range(r_sorted_prefix, node_count, nodes);
+
+	r_scratch.resize(node_count);
+	Node **merged = r_scratch.ptrw();
+	Comparator compare;
+	uint32_t prefix_index = 0;
+	uint32_t tail_index = r_sorted_prefix;
+	uint32_t output_index = 0;
+	while (prefix_index < r_sorted_prefix && tail_index < node_count) {
+		if (compare(nodes[tail_index], nodes[prefix_index])) {
+			merged[output_index++] = nodes[tail_index++];
+		} else {
+			merged[output_index++] = nodes[prefix_index++];
+		}
+	}
+	while (prefix_index < r_sorted_prefix) {
+		merged[output_index++] = nodes[prefix_index++];
+	}
+	while (tail_index < node_count) {
+		merged[output_index++] = nodes[tail_index++];
+	}
+	DEV_ASSERT(output_index == node_count);
+
+	Vector<Node *> old_nodes = std::move(r_nodes);
+	r_nodes = std::move(r_scratch);
+	r_scratch = std::move(old_nodes);
+	r_sorted_prefix = node_count;
+	r_tree_order_generation = p_current_tree_order_generation;
+}
+
+} // namespace
+
 void SceneTreeTimer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_time_left", "time"), &SceneTreeTimer::set_time_left);
 	ClassDB::bind_method(D_METHOD("get_time_left"), &SceneTreeTimer::get_time_left);
@@ -1187,12 +1238,12 @@ void SceneTree::_process_group(ProcessGroup *p_group, bool p_physics) {
 
 	if (p_physics) {
 		if (p_group->physics_node_order_dirty) {
-			nodes.sort_custom<Node::ComparatorWithPhysicsPriority>();
+			repair_process_node_order<Node::ComparatorWithPhysicsPriority>(nodes, p_group->physics_node_sort_scratch, p_group->physics_node_sorted_prefix, p_group->physics_node_tree_order_generation, process_tree_order_generation.get());
 			p_group->physics_node_order_dirty = false;
 		}
 	} else {
 		if (p_group->node_order_dirty) {
-			nodes.sort_custom<Node::ComparatorWithPriority>();
+			repair_process_node_order<Node::ComparatorWithPriority>(nodes, p_group->node_sort_scratch, p_group->node_sorted_prefix, p_group->node_tree_order_generation, process_tree_order_generation.get());
 			p_group->node_order_dirty = false;
 		}
 	}
@@ -1402,14 +1453,26 @@ void SceneTree::_remove_node_from_process_group(Node *p_node, Node *p_owner) {
 	ProcessGroup *pg = p_owner ? (ProcessGroup *)p_owner->data.process_group : &default_process_group;
 
 	if (p_node->is_processing() || p_node->is_processing_internal()) {
-		bool found = pg->nodes.erase(p_node);
-		ERR_FAIL_COND(!found);
+		const int64_t index = pg->nodes.find(p_node);
+		ERR_FAIL_COND(index < 0);
+		pg->nodes.remove_at(index);
+		if ((uint64_t)index < pg->node_sorted_prefix) {
+			pg->node_sorted_prefix--;
+		}
 	}
 
 	if (p_node->is_physics_processing() || p_node->is_physics_processing_internal()) {
-		bool found = pg->physics_nodes.erase(p_node);
-		ERR_FAIL_COND(!found);
+		const int64_t index = pg->physics_nodes.find(p_node);
+		ERR_FAIL_COND(index < 0);
+		pg->physics_nodes.remove_at(index);
+		if ((uint64_t)index < pg->physics_node_sorted_prefix) {
+			pg->physics_node_sorted_prefix--;
+		}
 	}
+}
+
+void SceneTree::_notify_process_tree_order_changed() {
+	process_tree_order_generation.increment();
 }
 
 void SceneTree::_add_node_to_process_group(Node *p_node, Node *p_owner) {

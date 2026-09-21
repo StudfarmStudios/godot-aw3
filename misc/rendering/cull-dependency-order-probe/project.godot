@@ -1,0 +1,17 @@
+[application]
+
+config/name="Cull Dependency Order Probe"
+run/main_scene="res://probe.tscn"
+
+[display]
+
+window/size/viewport_width=640
+window/size/viewport_height=480
+window/size/window_width_override=640
+window/size/window_height_override=480
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+rendering_device/fallback_to_opengl3=false
+textures/default_filters/use_nearest_mipmap_filter=false

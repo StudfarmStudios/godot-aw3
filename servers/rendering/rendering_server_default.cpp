@@ -298,6 +298,11 @@ void RenderingServerDefault::finish() {
 			server_task_id = WorkerThreadPool::INVALID_TASK_ID;
 		}
 		server_thread = Thread::MAIN_ID;
+		DisplayServer::get_singleton()->gl_window_make_current(DisplayServerEnums::MAIN_WINDOW_ID);
+		if (RenderingDevice *rd = RenderingDevice::get_singleton()) {
+			// DisplayServer later destroys the main RD on this caller thread.
+			rd->make_current();
+		}
 	} else {
 		_finish();
 	}

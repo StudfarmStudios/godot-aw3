@@ -33,7 +33,6 @@
 #include "core/config/engine.h"
 #include "core/config/project_settings.h"
 #include "core/math/geometry_3d.h"
-#include "core/object/callable_mp.h"
 #include "core/object/worker_thread_pool.h"
 #include "servers/rendering/rendering_light_culler.h"
 #include "servers/rendering/rendering_server.h"
@@ -529,15 +528,28 @@ void RendererSceneCull::_instance_queue_update(Instance *p_instance, bool p_upda
 	if (p_update_aabb) {
 		p_instance->update_aabb = true;
 	}
-	if (p_update_dependencies) {
+	bool dependency_update_added = false;
+	if (p_update_dependencies && !p_instance->update_dependencies) {
 		p_instance->update_dependencies = true;
+		pending_dependency_updates++;
+		dependency_update_added = true;
 	}
 
-	if (p_instance->update_item.in_list()) {
-		return;
+	if (!p_instance->update_item.in_list()) {
+		instance_update_queue_order++;
+		DEV_ASSERT(instance_update_queue_order != 0);
+		p_instance->update_queue_order = instance_update_queue_order;
+		_instance_update_list.add(&p_instance->update_item);
+		if (p_instance->dependency_update_item.in_list()) {
+			instance_dependency_update_list_sort_dirty = true;
+		}
 	}
 
-	_instance_update_list.add(&p_instance->update_item);
+	if (dependency_update_added) {
+		DEV_ASSERT(!p_instance->dependency_update_item.in_list());
+		_instance_dependency_update_list.add(&p_instance->dependency_update_item);
+		instance_dependency_update_list_sort_dirty = true;
+	}
 }
 
 RID RendererSceneCull::instance_allocate() {
@@ -3000,7 +3012,7 @@ void RendererSceneCull::_scene_cull(CullData &cull_data, InstanceCullResult &cul
 							RSG::particles_storage->particles_request_process(idata.base_rid);
 							cull_data.cull->lock.unlock();
 
-							RS::get_singleton()->call_on_render_thread(callable_mp_static(&RendererSceneCull::_scene_particles_set_view_axis).bind(idata.base_rid, -cull_data.cam_transform.basis.get_column(2).normalized(), cull_data.cam_transform.basis.get_column(1).normalized()));
+							cull_result.particle_view_axis_updates.push_back(idata.base_rid);
 							//particles visible? request redraw
 							RenderingServerDefault::redraw_request();
 						}
@@ -3290,10 +3302,6 @@ void RendererSceneCull::_scene_cull(CullData &cull_data, InstanceCullResult &cul
 	}
 }
 
-void RendererSceneCull::_scene_particles_set_view_axis(RID p_particles, const Vector3 &p_axis, const Vector3 &p_up_axis) {
-	RSG::particles_storage->particles_set_view_axis(p_particles, p_axis, p_up_axis);
-}
-
 void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_camera_data, const Ref<RenderSceneBuffers> &p_render_buffers, RID p_environment, RID p_force_camera_attributes, RID p_compositor, uint32_t p_visible_layers, RID p_scenario, RID p_viewport, RID p_shadow_atlas, RID p_reflection_probe, int p_reflection_probe_pass, float p_screen_mesh_lod_threshold, float p_window_output_max_value, bool p_using_shadows, RenderingServerTypes::RenderInfo *r_render_info) {
 	Instance *render_reflection_probe = instance_owner.get_or_null(p_reflection_probe); //if null, not rendering to it
 
@@ -3460,6 +3468,15 @@ void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_c
 		time_count++;
 		print_line("time taken: " + rtos(time_avg / time_count));
 #endif
+
+		// Particle sorting and alignment must use this draw's camera. Worker culling
+		// cannot enqueue this work through the public render-thread command queue,
+		// which may already contain commands for a later frame.
+		const Vector3 particle_view_axis = -cull_data.cam_transform.basis.get_column(2).normalized();
+		const Vector3 particle_up_axis = cull_data.cam_transform.basis.get_column(1).normalized();
+		for (uint64_t i = 0; i < scene_cull_result.particle_view_axis_updates.size(); i++) {
+			RSG::particles_storage->particles_set_view_axis(scene_cull_result.particle_view_axis_updates[i], particle_view_axis, particle_up_axis);
+		}
 
 		if (scene_cull_result.mesh_instances.size()) {
 			for (uint64_t i = 0; i < scene_cull_result.mesh_instances.size(); i++) {
@@ -4351,6 +4368,12 @@ void RendererSceneCull::_update_dirty_instance(Instance *p_instance) const {
 
 	p_instance->teleported = false;
 	p_instance->update_aabb = false;
+	if (p_instance->update_dependencies) {
+		DEV_ASSERT(pending_dependency_updates > 0);
+		DEV_ASSERT(p_instance->dependency_update_item.in_list());
+		_instance_dependency_update_list.remove(&p_instance->dependency_update_item);
+		pending_dependency_updates--;
+	}
 	p_instance->update_dependencies = false;
 }
 
@@ -4358,6 +4381,8 @@ void RendererSceneCull::update_dirty_instances() const {
 	while (_instance_update_list.first()) {
 		_update_dirty_instance(_instance_update_list.first()->self());
 	}
+	DEV_ASSERT(!_instance_dependency_update_list.first());
+	DEV_ASSERT(pending_dependency_updates == 0);
 
 	// Update dirty resources after dirty instances as instance updates may affect resources.
 	RSG::utilities->update_dirty_resources();
@@ -4411,9 +4436,30 @@ bool RendererSceneCull::free(RID p_rid) {
 	} else if (instance_owner.owns(p_rid)) {
 		// delete the instance
 
-		update_dirty_instances();
-
 		Instance *instance = instance_owner.get_or_null(p_rid);
+		// Register pending dependencies before teardown frees referenced resources,
+		// while leaving unrelated transform-only work for the ordinary scene update.
+		auto flush_teardown_updates = [&]() {
+			while (true) {
+				while (_instance_dependency_update_list.first()) {
+					if (instance_dependency_update_list_sort_dirty) {
+						_instance_dependency_update_list.sort_custom<InstanceDependencyUpdateOrder>();
+						instance_dependency_update_list_sort_dirty = false;
+					}
+					_update_dirty_instance(_instance_dependency_update_list.first()->self());
+				}
+				DEV_ASSERT(pending_dependency_updates == 0);
+				if (!instance->update_item.in_list()) {
+					break;
+				}
+				_update_dirty_instance(instance);
+			}
+
+			// Resource updates may queue more instances. Teardown invokes this again,
+			// and the final local assertions protect the instance being destroyed.
+			RSG::utilities->update_dirty_resources();
+		};
+		flush_teardown_updates();
 
 		instance_geometry_set_lightmap(p_rid, RID(), Rect2(), 0);
 		instance_set_scenario(p_rid, RID());
@@ -4423,8 +4469,12 @@ bool RendererSceneCull::free(RID p_rid) {
 		instance_attach_skeleton(p_rid, RID());
 
 		instance->instance_uniforms.free(instance->self);
-		update_dirty_instances(); //in case something changed this
+		flush_teardown_updates(); // In case teardown queued the instance again.
 
+		DEV_ASSERT(!instance->update_item.in_list());
+		DEV_ASSERT(!instance->dependency_update_item.in_list());
+		DEV_ASSERT(!instance->update_aabb);
+		DEV_ASSERT(!instance->update_dependencies);
 		instance_owner.free(p_rid);
 	} else {
 		return false;

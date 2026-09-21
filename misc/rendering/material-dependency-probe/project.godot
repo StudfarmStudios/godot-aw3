@@ -1,0 +1,13 @@
+[application]
+config/name="Pending Material Dependency Probe"
+run/main_scene="res://probe.tscn"
+
+[display]
+window/size/viewport_width=512
+window/size/viewport_height=384
+window/size/window_width_override=512
+window/size/window_height_override=384
+
+[rendering]
+renderer/rendering_method="forward_plus"
+rendering_device/fallback_to_opengl3=false
