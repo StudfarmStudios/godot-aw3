@@ -1349,6 +1349,9 @@ RDD::UniformSetID RenderingDeviceDriverMetal::uniform_set_create(VectorView<Boun
 		GODOT_CLANG_WARNING_PUSH_AND_IGNORE("-Wunguarded-availability-new")
 		uint64_t *ptr = (uint64_t *)arg_buffer_data.ptrw();
 
+		// useHeap(s) supplies only the default read declaration for resources reached
+		// through argument buffers. Compute writes still require explicit useResources
+		// declarations, including in Barriers mode, so collect usage unconditionally.
 		HashMap<MTL::Resource *, StageResourceUsage, HashMapHasherDefault> bound_resources;
 		auto add_usage = [&bound_resources](MTL::Resource *res, BitField<RDD::ShaderStage> stage, MTL::ResourceUsage usage) {
 			StageResourceUsage *sru = bound_resources.getptr(res);
@@ -1365,10 +1368,6 @@ RDD::UniformSetID RenderingDeviceDriverMetal::uniform_set_create(VectorView<Boun
 				*sru |= stage_resource_usage(RDD::SHADER_STAGE_COMPUTE, usage);
 			}
 		};
-#define ADD_USAGE(res, stage, usage) \
-	if (sync_mode == HazardTracking) { \
-		add_usage(res, stage, usage); \
-	}
 
 		// Ensure the argument buffer exists for this set as some shader pipelines may
 		// have been generated with argument buffers enabled.
@@ -1393,7 +1392,7 @@ RDD::UniformSetID RenderingDeviceDriverMetal::uniform_set_create(VectorView<Boun
 						*(MTL::ResourceID *)(ptr + idx.texture + j) = texture->gpuResourceID();
 						*(MTL::ResourceID *)(ptr + idx.sampler + j) = sampler->gpuResourceID();
 
-						ADD_USAGE(texture, ui.active_stages, ui.usage);
+						add_usage(texture, ui.active_stages, ui.usage);
 					}
 				} break;
 				case UNIFORM_TYPE_TEXTURE: {
@@ -1402,7 +1401,7 @@ RDD::UniformSetID RenderingDeviceDriverMetal::uniform_set_create(VectorView<Boun
 						MTL::Texture *texture = ((TextureInfo *)uniform.ids[j].id)->texture.get();
 						*(MTL::ResourceID *)(ptr + idx.texture + j) = texture->gpuResourceID();
 
-						ADD_USAGE(texture, ui.active_stages, ui.usage);
+						add_usage(texture, ui.active_stages, ui.usage);
 					}
 				} break;
 				case UNIFORM_TYPE_IMAGE: {
@@ -1410,7 +1409,7 @@ RDD::UniformSetID RenderingDeviceDriverMetal::uniform_set_create(VectorView<Boun
 					for (size_t j = 0; j < count; j += 1) {
 						MTL::Texture *texture = ((TextureInfo *)uniform.ids[j].id)->texture.get();
 						*(MTL::ResourceID *)(ptr + idx.texture + j) = texture->gpuResourceID();
-						ADD_USAGE(texture, ui.active_stages, ui.usage);
+						add_usage(texture, ui.active_stages, ui.usage);
 
 						if (idx.buffer != UINT32_MAX) {
 							// Emulated atomic image access.
@@ -1418,7 +1417,7 @@ RDD::UniformSetID RenderingDeviceDriverMetal::uniform_set_create(VectorView<Boun
 							MTL::Buffer *buffer = (parent ? parent : texture)->buffer();
 							*(MTLGPUAddress *)(ptr + idx.buffer + j) = buffer->gpuAddress();
 
-							ADD_USAGE(buffer, ui.active_stages, ui.usage);
+							add_usage(buffer, ui.active_stages, ui.usage);
 						}
 					}
 				} break;
@@ -1436,7 +1435,7 @@ RDD::UniformSetID RenderingDeviceDriverMetal::uniform_set_create(VectorView<Boun
 					const BufferInfo *buffer = (const BufferInfo *)uniform.ids[0].id;
 					*(MTLGPUAddress *)(ptr + idx.buffer) = buffer->buffer.get()->gpuAddress();
 
-					ADD_USAGE(buffer->buffer.get(), ui.active_stages, ui.usage);
+					add_usage(buffer->buffer.get(), ui.active_stages, ui.usage);
 				} break;
 				case UNIFORM_TYPE_INPUT_ATTACHMENT: {
 					size_t count = uniform.ids.size();
@@ -1444,7 +1443,7 @@ RDD::UniformSetID RenderingDeviceDriverMetal::uniform_set_create(VectorView<Boun
 						MTL::Texture *texture = ((TextureInfo *)uniform.ids[j].id)->texture.get();
 						*(MTL::ResourceID *)(ptr + idx.texture + j) = texture->gpuResourceID();
 
-						ADD_USAGE(texture, ui.active_stages, ui.usage);
+						add_usage(texture, ui.active_stages, ui.usage);
 					}
 				} break;
 				case UNIFORM_TYPE_UNIFORM_BUFFER_DYNAMIC:
@@ -1453,7 +1452,7 @@ RDD::UniformSetID RenderingDeviceDriverMetal::uniform_set_create(VectorView<Boun
 					const MetalBufferDynamicInfo *buffer = (const MetalBufferDynamicInfo *)uniform.ids[0].id;
 					*(MTLGPUAddress *)(ptr + idx.buffer) = buffer->buffer.get()->gpuAddress();
 
-					ADD_USAGE(buffer->buffer.get(), ui.active_stages, ui.usage);
+					add_usage(buffer->buffer.get(), ui.active_stages, ui.usage);
 				} break;
 				default: {
 					DEV_ASSERT(false);
@@ -1461,18 +1460,14 @@ RDD::UniformSetID RenderingDeviceDriverMetal::uniform_set_create(VectorView<Boun
 			}
 		}
 
-#undef ADD_USAGE
-
-		if (sync_mode == HazardTracking) {
-			for (const KeyValue<MTL::Resource *, StageResourceUsage> &keyval : bound_resources) {
-				ResourceVector *resources = set->usage_to_resources.getptr(keyval.value);
-				if (resources == nullptr) {
-					resources = &set->usage_to_resources.insert(keyval.value, ResourceVector())->value;
-				}
-				int64_t pos = resources->span().bisect(keyval.key, true);
-				if (pos == resources->size() || (*resources)[pos] != keyval.key) {
-					resources->insert(pos, keyval.key);
-				}
+		for (const KeyValue<MTL::Resource *, StageResourceUsage> &keyval : bound_resources) {
+			ResourceVector *resources = set->usage_to_resources.getptr(keyval.value);
+			if (resources == nullptr) {
+				resources = &set->usage_to_resources.insert(keyval.value, ResourceVector())->value;
+			}
+			int64_t pos = resources->span().bisect(keyval.key, true);
+			if (pos == resources->size() || (*resources)[pos] != keyval.key) {
+				resources->insert(pos, keyval.key);
 			}
 		}
 

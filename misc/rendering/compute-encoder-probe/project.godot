@@ -1,0 +1,14 @@
+config_version=5
+
+[application]
+config/name="RenderingDevice compute encoder regression probe"
+
+[display]
+window/size/viewport_width=320
+window/size/viewport_height=200
+
+[rendering]
+
+rendering_device/fallback_to_opengl3=false
+renderer/rendering_method="forward_plus"
+shader_compiler/shader_cache/enabled=false

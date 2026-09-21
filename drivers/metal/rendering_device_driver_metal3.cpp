@@ -133,6 +133,10 @@ void RenderingDeviceDriverMetal::_resolve_sync_mode() {
 Error RenderingDeviceDriverMetal::initialize(uint32_t p_device_index, uint32_t p_frame_count) {
 	Error err = _initialize(p_device_index, p_frame_count);
 	ERR_FAIL_COND_V(err, err);
+	if (sync_mode == Barriers) {
+		command_buffer_order_event = NS::TransferPtr(device->newEvent());
+		ERR_FAIL_NULL_V(command_buffer_order_event.get(), ERR_CANT_CREATE);
+	}
 
 	return OK;
 }
@@ -196,48 +200,65 @@ Error RenderingDeviceDriverMetal::_execute_and_present_barriers(CommandQueueID p
 		return OK;
 	}
 
-	if (p_wait_sem.size() > 0) {
-		MTL::CommandBuffer *cb = device_queue->commandBuffer();
-#ifdef DEV_ENABLED
-		cb->setLabel(MTLSTR("Wait Command Buffer"));
-#endif
-		for (uint32_t i = 0; i < p_wait_sem.size(); i++) {
-			Semaphore *sem = (Semaphore *)p_wait_sem[i].id;
-			cb->encodeWait(sem->event.get(), sem->value);
-		}
-		cb->commit();
-	}
-
-	for (uint32_t i = 0; i < size - 1; i++) {
+	// Native command buffers can be recorded by multiple producers in an order
+	// different from submission. Serialize the release/work pairs so the global
+	// event values always describe actual queue submission order.
+	MutexLock submit_lock(command_buffer_submit_mutex);
+	for (uint32_t i = 0; i < size; i++) {
 		MDCommandBuffer *cmd_buffer = (MDCommandBuffer *)(p_cmd_buffers[i].id);
-		cmd_buffer->commit();
-	}
-
-	// The last command buffer will signal the fence and semaphores.
-	MDCommandBuffer *cmd_buffer = (MDCommandBuffer *)(p_cmd_buffers[size - 1].id);
-	Fence *fence = (Fence *)(p_cmd_fence.id);
-	if (fence != nullptr) {
 		cmd_buffer->end();
-		MTL::CommandBuffer *cb = cmd_buffer->get_command_buffer();
-		fence->signal(cb);
-	}
+		// Ensure even an empty submitted wrapper owns a native CB and has encoded
+		// its wrapper-local start wait.
+		MTL::CommandBuffer *work_cb = cmd_buffer->command_buffer();
+		DEV_ASSERT(cmd_buffer->command_buffer_start_event);
+		DEV_ASSERT(cmd_buffer->command_buffer_start_value > 0);
 
-	for (uint32_t i = 0; i < p_swap_chains.size(); i++) {
-		SwapChain *swap_chain = (SwapChain *)(p_swap_chains[i].id);
-		RenderingContextDriverMetal::Surface *metal_surface = (RenderingContextDriverMetal::Surface *)(swap_chain->surface);
-		metal_surface->present(cmd_buffer);
-	}
+		MTL::CommandBuffer *release_cb = device_queue->commandBuffer();
+		ERR_FAIL_NULL_V(release_cb, ERR_CANT_CREATE);
+#ifdef DEV_ENABLED
+		release_cb->setLabel(MTLSTR("Godot Metal CB Submission Gate"));
+#endif
 
-	cmd_buffer->commit();
-
-	if (p_cmd_sem.size() > 0) {
-		MTL::CommandBuffer *cb = device_queue->commandBuffer();
-		for (uint32_t i = 0; i < p_cmd_sem.size(); i++) {
-			Semaphore *sem = (Semaphore *)p_cmd_sem[i].id;
-			sem->value++;
-			cb->encodeSignalEvent(sem->event.get(), sem->value);
+		// External waits gate the first work command buffer in this batch.
+		if (i == 0) {
+			for (uint32_t wait_index = 0; wait_index < p_wait_sem.size(); wait_index++) {
+				Semaphore *sem = (Semaphore *)p_wait_sem[wait_index].id;
+				release_cb->encodeWait(sem->event.get(), sem->value);
+			}
 		}
-		cb->commit();
+		if (command_buffer_order_value > 0) {
+			release_cb->encodeWait(command_buffer_order_event.get(), command_buffer_order_value);
+		}
+		release_cb->encodeSignalEvent(cmd_buffer->command_buffer_start_event.get(), cmd_buffer->command_buffer_start_value);
+
+		const bool is_last = i == size - 1;
+		if (is_last) {
+			Fence *fence = (Fence *)(p_cmd_fence.id);
+			if (fence != nullptr) {
+				fence->signal(work_cb);
+			}
+
+			for (uint32_t swap_index = 0; swap_index < p_swap_chains.size(); swap_index++) {
+				SwapChain *swap_chain = (SwapChain *)(p_swap_chains[swap_index].id);
+				RenderingContextDriverMetal::Surface *metal_surface = (RenderingContextDriverMetal::Surface *)(swap_chain->surface);
+				metal_surface->present(cmd_buffer);
+			}
+
+			for (uint32_t signal_index = 0; signal_index < p_cmd_sem.size(); signal_index++) {
+				Semaphore *sem = (Semaphore *)p_cmd_sem[signal_index].id;
+				sem->value++;
+				work_cb->encodeSignalEvent(sem->event.get(), sem->value);
+			}
+		}
+
+		command_buffer_order_value++;
+		work_cb->encodeSignalEvent(command_buffer_order_event.get(), command_buffer_order_value);
+
+		// The work CB's first command waits for this per-wrapper gate. The gate
+		// waits for the previously submitted work CB, forming a strict FIFO chain
+		// without relying on native command-buffer creation order.
+		release_cb->commit();
+		cmd_buffer->_commit_ordered();
 	}
 
 	return OK;
@@ -359,6 +380,10 @@ void RenderingDeviceDriverMetal::command_timestamp_write(CommandBufferID p_cmd_b
 RDD::CommandBufferID RenderingDeviceDriverMetal::command_buffer_create(CommandPoolID p_cmd_pool) {
 	MTL::CommandQueue *queue = reinterpret_cast<MTL::CommandQueue *>(p_cmd_pool.id);
 	MDCommandBuffer *obj = memnew(MDCommandBuffer(queue, this));
+	if (sync_mode == Barriers && !obj->command_buffer_start_event) {
+		memdelete(obj);
+		ERR_FAIL_V_MSG(CommandBufferID(), "Failed to create Metal command-buffer submission event.");
+	}
 	command_buffers.push_back(obj);
 	return CommandBufferID(obj);
 }
