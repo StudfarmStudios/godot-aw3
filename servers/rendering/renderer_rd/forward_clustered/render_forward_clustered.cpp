@@ -326,8 +326,15 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 	uint32_t prev_pipeline_hash = 0;
 
 	bool shadow_pass = (p_pass_mode == PASS_MODE_SHADOW) || (p_pass_mode == PASS_MODE_SHADOW_DP);
+	bool first_instance_eligible_pass = use_first_instance &&
+			p_pass_mode != PASS_MODE_DEPTH_MATERIAL &&
+			p_pass_mode != PASS_MODE_SDF;
+	bool pc_set_for_current_pipeline = false;
+	SceneState::PushConstant prev_fi_push_constant = {};
+	size_t prev_fi_push_constant_size = 0;
+	bool have_prev_fi_push_constant = false;
 
-	SceneState::PushConstant push_constant;
+	SceneState::PushConstant push_constant = {};
 
 	if constexpr (p_pass_mode == PASS_MODE_DEPTH_MATERIAL) {
 		push_constant.uv_offset = Math::make_half_float(p_params->uv_offset.y) << 16;
@@ -563,6 +570,8 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 
 			if (!pipeline_rd.is_null()) {
 				RD::get_singleton()->draw_list_bind_render_pipeline(draw_list, pipeline_rd);
+				pc_set_for_current_pipeline = false;
+				have_prev_fi_push_constant = false;
 			}
 
 			if (xforms_uniform_set.is_valid() && prev_xforms_uniform_set != xforms_uniform_set) {
@@ -598,24 +607,52 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 				push_constant_size = sizeof(SceneState::PushConstant) - sizeof(SceneState::PushConstantUbershader);
 			}
 
-			RD::get_singleton()->draw_list_set_push_constant(draw_list, &push_constant, push_constant_size);
-
 			uint32_t instance_count = surf->owner->instance_count > 1 ? surf->owner->instance_count : element_info.repeat;
 			if (surf->flags & GeometryInstanceSurfaceDataCache::FLAG_USES_PARTICLE_TRAILS) {
 				instance_count /= surf->owner->trail_steps;
 			}
 
 			bool indirect = bool(surf->owner->base_flags & INSTANCE_DATA_FLAG_MULTIMESH_INDIRECT);
+			bool can_use_first_instance = first_instance_eligible_pass &&
+					instance_count == 1 && !indirect && !emulate_point_size &&
+					!(surf->owner->base_flags & (INSTANCE_DATA_FLAG_MULTIMESH | INSTANCE_DATA_FLAG_PARTICLES)) &&
+					!surf->owner->mesh_instance.is_valid() && !shader->uses_instance_id;
 
-			if (emulate_point_size) {
-				if (indirect) {
-					WARN_PRINT("Indirect draws are not supported when emulating point size.");
+			if (can_use_first_instance) {
+				uint32_t actual_base_index = push_constant.base_index;
+				push_constant.base_index = 0;
+
+				bool need_pc = !pc_set_for_current_pipeline;
+				if (!need_pc && have_prev_fi_push_constant && prev_fi_push_constant_size == push_constant_size) {
+					need_pc = memcmp(&push_constant, &prev_fi_push_constant, push_constant_size) != 0;
+				} else if (!need_pc) {
+					need_pc = true;
 				}
-				RD::get_singleton()->draw_list_draw(draw_list, false, mesh_storage->mesh_surface_get_vertex_count(mesh_surface), instance_count * 6);
-			} else if (indirect) {
-				RD::get_singleton()->draw_list_draw_indirect(draw_list, index_array_rd.is_valid(), mesh_storage->_multimesh_get_command_buffer_rd_rid(surf->owner->data->base), surf->surface_index * sizeof(uint32_t) * mesh_storage->INDIRECT_MULTIMESH_COMMAND_STRIDE, 1, 0);
+
+				if (need_pc) {
+					RD::get_singleton()->draw_list_set_push_constant(draw_list, &push_constant, push_constant_size);
+					prev_fi_push_constant = push_constant;
+					prev_fi_push_constant_size = push_constant_size;
+					have_prev_fi_push_constant = true;
+					pc_set_for_current_pipeline = true;
+				}
+
+				RD::get_singleton()->draw_list_draw(draw_list, index_array_rd.is_valid(), 1, 0, actual_base_index);
 			} else {
-				RD::get_singleton()->draw_list_draw(draw_list, index_array_rd.is_valid(), instance_count);
+				have_prev_fi_push_constant = false;
+				RD::get_singleton()->draw_list_set_push_constant(draw_list, &push_constant, push_constant_size);
+				pc_set_for_current_pipeline = true;
+
+				if (emulate_point_size) {
+					if (indirect) {
+						WARN_PRINT("Indirect draws are not supported when emulating point size.");
+					}
+					RD::get_singleton()->draw_list_draw(draw_list, false, mesh_storage->mesh_surface_get_vertex_count(mesh_surface), instance_count * 6);
+				} else if (indirect) {
+					RD::get_singleton()->draw_list_draw_indirect(draw_list, index_array_rd.is_valid(), mesh_storage->_multimesh_get_command_buffer_rd_rid(surf->owner->data->base), surf->surface_index * sizeof(uint32_t) * mesh_storage->INDIRECT_MULTIMESH_COMMAND_STRIDE, 1, 0);
+				} else {
+					RD::get_singleton()->draw_list_draw(draw_list, index_array_rd.is_valid(), instance_count);
+				}
 			}
 		}
 
@@ -5109,6 +5146,7 @@ void RenderForwardClustered::_update_shader_quality_settings() {
 
 RenderForwardClustered::RenderForwardClustered() {
 	singleton = this;
+	use_first_instance = RD::get_singleton()->supports_first_instance_index();
 
 	/* SCENE SHADER */
 

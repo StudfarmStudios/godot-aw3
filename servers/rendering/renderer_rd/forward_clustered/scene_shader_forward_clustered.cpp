@@ -59,6 +59,7 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 	int cull_modei = RSE::CULL_MODE_BACK;
 
 	uses_point_size = false;
+	uses_instance_id = false;
 	uses_alpha = false;
 	uses_alpha_clip = false;
 	uses_alpha_antialiasing = false;
@@ -141,6 +142,7 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 
 	actions.usage_flag_pointers["POINT_SIZE"] = &uses_point_size;
 	actions.usage_flag_pointers["POINT_COORD"] = &uses_point_size;
+	actions.usage_flag_pointers["INSTANCE_ID"] = &uses_instance_id;
 
 	actions.usage_flag_pointers["TANGENT"] = &uses_tangent;
 	actions.usage_flag_pointers["BINORMAL"] = &uses_tangent;
