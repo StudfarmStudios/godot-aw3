@@ -113,15 +113,39 @@ stub for the same purpose, so the publish fails with `CS8802: Only one
 compilation unit can have top-level statements`. Delete one of the two.
 (`wasm.sh` surfaces the CS8802 line itself, so this diagnoses quickly.)
 
+### Startup
+
+A build with the harvested shader caches installed and the packs split reaches
+the menu in **6.1 s** from a cold browser profile, against **35.5 s** for the
+same build without them. The long black screen before the menu on an
+unharvested build is shader compilation, not anything specific to this mode: the
+ordinary template measures 33.9 s cold and 4.5 s warm against 35.5 s and 5.3 s
+here.
+
+The harvest itself runs fine in the application Worker — the game's own
+`?shader-precompile` coverage cycled the menus and two arenas inside it and
+produced a 7.5 MB WGSL seed plus 204 ShaderRD caches.
+
+### Gameplay
+
+Played hands-on by Jaakko on the split-pack, harvested-shader build and reported
+working. That is a person playing it rather than an automated check, so treat it
+as "the mode is not fundamentally broken for gameplay" rather than as coverage.
+
 ## Not verified
 
-- **Gameplay.** Only the menu has been reached. Entering a match — audio,
-  networking, threaded physics, particles — has not been tried, nor has the rest
-  of the main-thread-proxied JS surface (fullscreen, pointer lock,
-  drag-and-drop, the virtual keyboard).
 - **That it is faster.** No measurement has been taken. The whole premise is
   that freeing the browser main thread helps, and that is still an assumption
-  here.
+  here. Cold start came out within ~1 s of the ordinary template either way, so
+  if there is a win it is in frame pacing during play, which is where it should
+  be measured.
+- **Subsystem detail.** Nothing has been deliberately exercised for audio,
+  networking, threaded physics or particles, nor for the rest of the
+  main-thread-proxied JS surface (fullscreen, pointer lock, drag-and-drop, the
+  virtual keyboard). Hands-on play covers some of that incidentally and none of
+  it rigorously.
+- **Shader coverage** was harvested from the menus plus `spacejunk_mayhem_2` and
+  `spacejunk_ctf_2` only; anything outside that still compiles on demand.
 - **The ordinary (non-`proxy_to_pthread`) web template** has not been rebuilt
   since the display change. That path is unchanged by construction — it keeps
   the same two assignments behind `if (!transferred)` — but it has not been run.
