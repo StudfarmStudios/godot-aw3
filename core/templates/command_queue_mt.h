@@ -33,7 +33,6 @@
 #include "core/object/worker_thread_pool.h"
 #include "core/os/condition_variable.h"
 #include "core/os/mutex.h"
-#include "core/os/semaphore.h"
 #include "core/os/thread.h"
 #include "core/templates/local_vector.h"
 #include "core/templates/simple_type.h"
@@ -119,8 +118,17 @@ class CommandQueueMT {
 	uint32_t sync_awaiters = 0;
 	WorkerThreadPool::TaskID pump_task_id = WorkerThreadPool::INVALID_TASK_ID;
 	// A consumer that is not a WorkerThreadPool task (the web render thread)
-	// waits on this instead of being pumped; posted for every push.
-	Semaphore *consumer_semaphore = nullptr;
+	// is told about every push through this instead of being pumped. Called
+	// with the queue mutex held; the callee must not block.
+	void (*consumer_notify)(void *p_userdata) = nullptr;
+	void *consumer_notify_userdata = nullptr;
+	// A command may ask the flush to stop right after it (request_flush_pause());
+	// the rest stays queued and the same thread's next flush resumes it. The
+	// web render thread pauses before each frame's draw so the draw runs from
+	// its animation-frame callback.
+	bool flush_pause_requested = false;
+	bool flush_paused = false;
+	Thread::ID flush_paused_thread = Thread::UNASSIGNED_ID;
 	uint64_t flush_read_ptr = 0;
 	std::atomic<bool> pending{ false };
 
@@ -146,8 +154,8 @@ class CommandQueueMT {
 		if (pump_task_id != WorkerThreadPool::INVALID_TASK_ID) {
 			WorkerThreadPool::get_singleton()->notify_yield_over(pump_task_id);
 		}
-		if (consumer_semaphore) {
-			consumer_semaphore->post();
+		if (consumer_notify) {
+			consumer_notify(consumer_notify_userdata);
 		}
 
 		if constexpr (NeedsSync) {
@@ -175,7 +183,7 @@ class CommandQueueMT {
 
 		MutexLock lock(mutex);
 
-		if (unlikely(flush_read_ptr)) {
+		if (unlikely(flush_paused ? flush_paused_thread != Thread::get_caller_id() : flush_read_ptr != 0)) {
 			// Another thread is flushing.
 			lock.temp_unlock(); // Not really temp.
 #ifdef WEB_ENABLED
@@ -204,6 +212,8 @@ class CommandQueueMT {
 			return;
 		}
 
+		flush_paused = false; // Either nothing was paused, or this thread is resuming its own pause.
+
 		alignas(uint64_t) char cmd_local_mem[MAX_COMMAND_SIZE];
 
 		while (flush_read_ptr < command_mem.size()) {
@@ -231,6 +241,24 @@ class CommandQueueMT {
 			cmd_local->~CommandBase();
 
 			flush_read_ptr += size;
+
+			if (unlikely(flush_pause_requested)) {
+				// Drop what ran so far, so a queue that is never caught empty (a
+				// producer that always beats the resume to the next push) cannot
+				// grow without bound. Commands are relocatable: they are memcpy'd
+				// out to run in any case.
+				uint64_t remaining = command_mem.size() - flush_read_ptr;
+				if (remaining) {
+					memmove(command_mem.ptr(), command_mem.ptr() + flush_read_ptr, remaining);
+				}
+				command_mem.resize(remaining);
+				flush_read_ptr = 0;
+				flush_pause_requested = false;
+				flush_paused = true;
+				flush_paused_thread = Thread::get_caller_id();
+				flushing = false;
+				return; // What is left stays queued until this thread flushes again.
+			}
 		}
 
 		command_mem.clear();
@@ -299,9 +327,20 @@ public:
 		_flush();
 	}
 
-	void set_consumer_semaphore(Semaphore *p_semaphore) {
+	// From inside a command being flushed: stop the flush after this command.
+	void request_flush_pause() {
+		flush_pause_requested = true;
+	}
+
+	// Consumer thread only: a paused flush is resumed by flush_all().
+	bool is_flush_paused() const {
+		return flush_paused;
+	}
+
+	void set_consumer_notify(void (*p_notify)(void *), void *p_userdata) {
 		MutexLock lock(mutex);
-		consumer_semaphore = p_semaphore;
+		consumer_notify = p_notify;
+		consumer_notify_userdata = p_userdata;
 	}
 
 	void set_pump_task_id(WorkerThreadPool::TaskID p_task_id) {

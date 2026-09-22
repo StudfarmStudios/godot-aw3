@@ -38,8 +38,9 @@
 #include "servers/rendering/renderer_compositor.h"
 
 #if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED)
+#include <emscripten/atomic.h>
 #include <pthread.h>
-#include "core/os/semaphore.h"
+#include <atomic>
 #endif
 #include "servers/rendering/renderer_viewport.h"
 #include "servers/rendering/rendering_method.h"
@@ -96,18 +97,25 @@ class RenderingServerDefault : public RenderingServer {
 #if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED)
 	// On the web the render thread is a dedicated pthread rather than a
 	// WorkerThreadPool task: it has to be created with the canvas transferred to
-	// it, it requests the WebGPU device in its own Worker realm, and it drains the
-	// command queue from a requestAnimationFrame loop so the browser gets a
-	// presentation opportunity every frame. See _web_start_render_thread().
+	// it and it requests the WebGPU device in its own Worker realm. It runs from
+	// its event loop: pushes wake it through an Atomics.waitAsync on web_wake and
+	// it drains up to the frame marker; the frame itself is drawn from its
+	// requestAnimationFrame callback, the only place the browser presents a
+	// GPU-heavy frame at full rate. See _web_start_render_thread().
 	pthread_t web_render_thread = 0;
 	bool web_render_thread_started = false;
-	Semaphore web_wake; // Posted by the command queue on every push; the render thread waits on it.
-	bool web_frame_drawn = false;
+	std::atomic<bool> web_render_ready{ false }; // The render thread owns a device; commands may run.
+	std::atomic<uint32_t> web_wake{ 0 }; // Bumped by every push; the render thread's async wait sits on it.
 	static RenderingServerDefault *web_render_self;
 	void _web_start_render_thread();
 	static void *_web_render_thread_entry(void *p_self);
 	static void _web_render_device_ready(int p_error);
-	static int _web_render_tick(void *p_self);
+	static void _web_notify(void *p_self);
+	static void _web_wake_cb(int32_t *p_addr, uint32_t p_value, ATOMICS_WAIT_RESULT_T p_result, void *p_self);
+	void _web_arm_wait();
+	void _web_drain();
+	void _web_frame_marker();
+	static bool _web_render_raf(double p_time, void *p_self);
 #endif
 
 	void _draw(bool p_swap_buffers, double frame_step);

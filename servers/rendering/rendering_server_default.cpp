@@ -44,7 +44,6 @@
 // to keep the server layer free of the platform include path.
 extern "C" void godot_js_webgpu_worker_preinitialize(void (*p_callback)(int p_error));
 extern "C" void godot_js_webgpu_worker_cleanup();
-extern "C" void godot_js_immediate_loop(int (*p_cb)(void *p_arg), void *p_arg);
 
 RenderingServerDefault *RenderingServerDefault::web_render_self = nullptr;
 #endif
@@ -230,9 +229,6 @@ void RenderingServerDefault::_draw(bool p_swap_buffers, double frame_step) {
 
 	GodotProfileZoneGrouped(_profile_zone, "memory_info");
 	RSG::utilities->update_memory_info();
-#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED)
-	web_frame_drawn = web_frame_drawn || p_swap_buffers;
-#endif
 }
 
 void RenderingServerDefault::_run_post_draw_steps() {
@@ -323,9 +319,14 @@ void RenderingServerDefault::finish() {
 		command_queue.push(this, &RenderingServerDefault::_thread_exit);
 #if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED)
 		if (web_render_thread_started) {
-			// The render tick sees `exit`, finalizes the GPU objects in its own
-			// realm and calls pthread_exit; this thread is a pthread, so it can wait.
-			pthread_join(web_render_thread, nullptr);
+			// _thread_exit finalizes the GPU objects in the render thread's realm
+			// and stops its loops; this sync returns once that has run. The thread
+			// is neither joined nor exited: the device's JS callbacks can still
+			// fire in that Worker afterwards, and one that ran after the thread
+			// had exited (its TLS gone) wedged the malloc lock for every thread.
+			// A page ends with its process, so the idle thread costs nothing.
+			command_queue.sync();
+			pthread_detach(web_render_thread);
 			web_render_thread_started = false;
 		}
 #endif
@@ -461,6 +462,13 @@ void RenderingServerDefault::_assign_mt_ids(WorkerThreadPool::TaskID p_pump_task
 
 void RenderingServerDefault::_thread_exit() {
 	exit = true;
+#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED)
+	if (web_render_thread_started) {
+		// Still inside the flush finish() is waiting on, so the DisplayServer's
+		// GPU objects are gone before the game thread tears anything else down.
+		DisplayServer::get_singleton()->deferred_rendering_finalize();
+	}
+#endif
 }
 
 #if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED)
@@ -478,7 +486,7 @@ void RenderingServerDefault::_web_start_render_thread() {
 		pthread_attr_destroy(&attr);
 		ERR_FAIL_MSG(vformat("Web: cannot mark #canvas for transfer to the render thread (%d).", canvas_err));
 	}
-	command_queue.set_consumer_semaphore(&web_wake);
+	command_queue.set_consumer_notify(&RenderingServerDefault::_web_notify, this);
 	int err = pthread_create(&web_render_thread, &attr, &RenderingServerDefault::_web_render_thread_entry, this);
 	pthread_attr_destroy(&attr);
 	ERR_FAIL_COND_MSG(err != 0, vformat("Web: pthread_create for the render thread failed (%d).", err));
@@ -513,36 +521,93 @@ void RenderingServerDefault::_web_render_device_ready(int p_error) {
 		emscripten_force_exit(EXIT_FAILURE);
 		return;
 	}
-	// Drain the queue from an immediate loop rather than once per animation
-	// frame: the main thread's sync() and every push_and_ret() block until this
-	// thread has run their command, and a drain that only happens on the next
-	// requestAnimationFrame charges each of them up to a whole frame — which
-	// halved the frame rate — while a setTimeout(0) loop is clamped to 4 ms by
-	// the browser once nested. godot_js_immediate_loop (a MessageChannel post)
-	// has neither limit. Returning to the event loop after every drain is
-	// still what lets the browser present; an OffscreenCanvas presents at the
-	// compositor's next frame after any task boundary.
-	godot_js_immediate_loop(&RenderingServerDefault::_web_render_tick, self);
+	// This thread runs from its event loop from here on. Two entry points, both
+	// tasks on that loop: a wake (Atomics.waitAsync on web_wake, notified by the
+	// game thread's pushes) drains queued commands up to the frame marker that
+	// draw() queues in front of every _draw, and the animation-frame callback
+	// resumes from that marker, so the frame is always drawn there. A standalone
+	// test of a twice-transferred OffscreenCanvas showed why: with a GPU-heavy
+	// frame, draws issued from ordinary tasks presented at ~5 fps even with an
+	// idle animation-frame loop alongside, while draws inside the callback
+	// presented every frame. The wake deliberately avoids Emscripten's mailbox,
+	// whose notification is a postMessage routed through the browser main
+	// thread. The keepalive is what stops Emscripten treating the thread as
+	// finished after the unwind above.
+	emscripten_runtime_keepalive_push();
+	// Only now may queued commands run: _assign_mt_ids and _init were pushed
+	// the moment the thread was created, and executing them without a device
+	// dies in the renderer's bring-up. Wakes so far were ignored (_web_drain),
+	// so take the first drain explicitly before arming the wait.
+	self->web_render_ready = true;
+	self->_web_drain();
+	self->_web_arm_wait();
+	emscripten_request_animation_frame_loop(&RenderingServerDefault::_web_render_raf, self);
 }
 
-int RenderingServerDefault::_web_render_tick(void *p_self) {
+void RenderingServerDefault::_web_notify(void *p_self) {
+	// Called by the command queue, under its mutex, on every push. Never blocks.
 	RenderingServerDefault *self = static_cast<RenderingServerDefault *>(p_self);
-	// Run commands as they arrive; only go back to the event loop once a frame
-	// has been drawn, which is when the browser needs a task boundary to present
-	// it. In between, block on the semaphore the queue posts for every push, so
-	// the thread neither polls nor adds a timer's latency to the handoff.
-	for (;;) {
-		self->web_frame_drawn = false;
-		self->command_queue.flush_all();
-		if (self->exit) {
-			DisplayServer::get_singleton()->deferred_rendering_finalize();
-			pthread_exit(nullptr);
-		}
-		if (self->web_frame_drawn) {
-			return 1;
-		}
-		self->web_wake.wait();
+	if (!self->web_render_thread_started) {
+		return;
 	}
+	self->web_wake.fetch_add(1, std::memory_order_release);
+	emscripten_atomic_notify(&self->web_wake, 1);
+}
+
+void RenderingServerDefault::_web_arm_wait() {
+	// Render thread. A push that landed since the last drain makes the wait
+	// refuse to register (NOT_EQUAL); drain and try again.
+	while (true) {
+		uint32_t seen = web_wake.load(std::memory_order_acquire);
+		ATOMICS_WAIT_TOKEN_T token = emscripten_atomic_wait_async(&web_wake, seen, &RenderingServerDefault::_web_wake_cb, this, EMSCRIPTEN_WAIT_ASYNC_INFINITY);
+		if (EMSCRIPTEN_IS_VALID_WAIT_TOKEN(token)) {
+			return;
+		}
+		_web_drain();
+	}
+}
+
+void RenderingServerDefault::_web_wake_cb(int32_t *p_addr, uint32_t p_value, ATOMICS_WAIT_RESULT_T p_result, void *p_self) {
+	RenderingServerDefault *self = static_cast<RenderingServerDefault *>(p_self);
+	self->_web_drain();
+	if (!self->exit) {
+		self->_web_arm_wait();
+	}
+}
+
+void RenderingServerDefault::_web_drain() {
+	// Render thread, from a wake. Runs queued commands until the queue is empty
+	// or the frame marker pauses the flush; a paused flush is left for the
+	// animation-frame callback. After exit the thread simply stays idle:
+	// nothing re-arms the wait, the animation-frame loop stops, and the
+	// keepalive is kept so Emscripten does not retire the thread under the
+	// device's remaining callbacks.
+	if (!web_render_ready) {
+		return;
+	}
+	if (!command_queue.is_flush_paused()) {
+		command_queue.flush_all();
+	}
+}
+
+void RenderingServerDefault::_web_frame_marker() {
+	// Queued by draw() right before _draw; see _web_render_raf.
+	command_queue.request_flush_pause();
+}
+
+bool RenderingServerDefault::_web_render_raf(double p_time, void *p_self) {
+	// Once per animation frame, and the only place a frame is drawn: resumes the
+	// flush the frame marker paused, which runs _draw and whatever the game
+	// thread queued after it, up to the next marker. With nothing paused it is a
+	// plain drain.
+	RenderingServerDefault *self = static_cast<RenderingServerDefault *>(p_self);
+	if (self->exit) {
+		return false;
+	}
+	if (self->web_render_ready) {
+		self->command_queue.flush_all();
+	}
+	return true;
 }
 #endif
 
@@ -580,6 +645,13 @@ void RenderingServerDefault::draw(bool p_present, double frame_step) {
 	RS::get_singleton()->emit_signal(SNAME("frame_pre_draw"));
 	changes = 0;
 	if (create_thread) {
+#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED)
+		if (web_render_thread_started) {
+			// The frame must be drawn from the render thread's animation-frame
+			// callback; this stops the drain right before it (see _web_render_raf).
+			command_queue.push(this, &RenderingServerDefault::_web_frame_marker);
+		}
+#endif
 		command_queue.push(this, &RenderingServerDefault::_draw, p_present, frame_step);
 	} else {
 		_draw(p_present, frame_step);
