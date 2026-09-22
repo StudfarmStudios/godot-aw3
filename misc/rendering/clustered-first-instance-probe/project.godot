@@ -1,0 +1,23 @@
+[application]
+
+config/name="Clustered First Instance Probe"
+run/main_scene="res://probe.tscn"
+
+[display]
+
+window/size/viewport_width=720
+window/size/viewport_height=480
+window/size/window_width_override=720
+window/size/window_height_override=480
+window/stretch/mode="canvas_items"
+
+[rendering]
+
+rendering_device/fallback_to_opengl3=false
+renderer/rendering_method="forward_plus"
+renderer/rendering_method.mobile="mobile"
+anti_aliasing/quality/msaa_3d=0
+anti_aliasing/quality/use_taa=false
+anti_aliasing/quality/screen_space_aa=0
+environment/defaults/default_clear_color=Color(0.008, 0.012, 0.022, 1)
+
