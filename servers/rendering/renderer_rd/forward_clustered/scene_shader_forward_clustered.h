@@ -239,6 +239,7 @@ public:
 		int alpha_antialiasing_mode = ALPHA_ANTIALIASING_OFF;
 
 		bool uses_point_size = false;
+		bool uses_instance_id = false;
 		bool uses_alpha = false;
 		bool uses_blend_alpha = false;
 		bool uses_alpha_clip = false;

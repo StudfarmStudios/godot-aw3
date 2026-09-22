@@ -171,6 +171,7 @@ private:
 	virtual void setup_render_buffer_data(Ref<RenderSceneBuffersRD> p_render_buffers) override;
 
 	RID render_base_uniform_set;
+	bool use_first_instance = false; // Cached API_TRAIT_FIRST_INSTANCE_INDEX.
 
 	uint64_t lightmap_texture_array_version = 0xFFFFFFFF;
 
