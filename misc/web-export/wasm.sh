@@ -25,6 +25,7 @@
 #   PRESET            export preset name             (default Web)
 #   JOBS              parallel jobs for scons
 #   FORCE=1           rebuild engine artifacts even if present
+#   APPLICATION_WORKER=1  experimental: run Godot + WebGPU on a pthread
 #
 # Why the export is two passes: the AOT images are linked into the ENGINE
 # template, not into the game's pck, so the template is game-specific. Pass 1
@@ -43,12 +44,16 @@ AOT_MODE="${AOT_MODE:-LLVMOnlyInterp}"
 RENDERING_METHOD="${RENDERING_METHOD:-forward_plus}"
 PRESET="${PRESET:-Web}"
 FORCE="${FORCE:-0}"
+APPLICATION_WORKER="${APPLICATION_WORKER:-0}"
 
 # The template flags. The bootstrap and the per-game relink MUST use the same
 # set, or scons rebuilds the engine from scratch instead of relinking. The
 # stack sizes are not optional (Mono frames blow the default 2 MB pthread
 # stack with no message at all), and webgpu=yes is what makes the renderer.
 TEMPLATE_FLAGS="platform=web target=template_release module_mono_enabled=yes webgpu=yes stack_size=32768 default_pthread_stack_size=32768 initial_memory=256 optimize=speed lto=thin"
+if [[ "$APPLICATION_WORKER" == 1 ]]; then
+    TEMPLATE_FLAGS+=" proxy_to_pthread=yes"
+fi
 
 case "$(uname -s)" in
     Darwin) HOST_PLATFORM=macos ;;

@@ -230,7 +230,7 @@ const GodotDisplayCursor = {
 mergeInto(LibraryManager.library, GodotDisplayCursor);
 
 const GodotDisplayScreen = {
-	$GodotDisplayScreen__deps: ['$GodotConfig', '$GodotOS', '$GL', 'emscripten_webgl_get_current_context'],
+	$GodotDisplayScreen__deps: ['$GodotConfig', '$GodotOS', '$GL', 'emscripten_webgl_get_current_context', '$setCanvasElementSize'],
 	$GodotDisplayScreen: {
 		desired_size: [0, 0],
 		hidpi: true,
@@ -305,10 +305,19 @@ const GodotDisplayScreen = {
 			const canvas = GodotConfig.canvas;
 			let width = dWidth;
 			let height = dHeight;
+			// transferControlToOffscreen() hands the bitmap to the application
+			// Worker, so this thread can neither read nor assign the element's
+			// width/height any more. GodotConfig.canvasSize() reads the size
+			// Emscripten tracks, and setCanvasElementSize() writes it and forwards
+			// the resize to the owning thread.
+			const transferred = !!canvas.controlTransferredOffscreen;
+			const current = GodotConfig.canvasSize();
+			const currentWidth = current[0];
+			const currentHeight = current[1];
 			if (noResize) {
 				// Don't resize canvas, just update GL if needed.
-				if (canvas.width !== width || canvas.height !== height) {
-					GodotDisplayScreen.desired_size = [canvas.width, canvas.height];
+				if (currentWidth !== width || currentHeight !== height) {
+					GodotDisplayScreen.desired_size = [currentWidth, currentHeight];
 					GodotDisplayScreen._updateGL();
 					return 1;
 				}
@@ -322,11 +331,19 @@ const GodotDisplayScreen = {
 			}
 			const csw = `${Math.floor(width / scale)}px`;
 			const csh = `${Math.floor(height / scale)}px`;
-			if (canvas.style.width !== csw || canvas.style.height !== csh || canvas.width !== width || canvas.height !== height) {
+			if (canvas.style.width !== csw || canvas.style.height !== csh || currentWidth !== width || currentHeight !== height) {
 				// Size doesn't match.
 				// Resize canvas, set correct CSS pixel size, update GL.
-				canvas.width = width;
-				canvas.height = height;
+				// Styling stays with the DOM element even after a transfer, so only
+				// the bitmap size has to go through Emscripten. Left as a direct
+				// assignment when we still own the canvas, so the ordinary web
+				// build keeps the exact path it has always taken.
+				if (transferred) {
+					setCanvasElementSize(canvas, width, height);
+				} else {
+					canvas.width = width;
+					canvas.height = height;
+				}
 				canvas.style.width = csw;
 				canvas.style.height = csh;
 				GodotDisplayScreen._updateGL();
@@ -517,8 +534,9 @@ const GodotDisplay = {
 	godot_js_display_window_size_get__proxy: 'sync',
 	godot_js_display_window_size_get__sig: 'vii',
 	godot_js_display_window_size_get: function (p_width, p_height) {
-		GodotRuntime.setHeapValue(p_width, GodotConfig.canvas.width, 'i32');
-		GodotRuntime.setHeapValue(p_height, GodotConfig.canvas.height, 'i32');
+		const size = GodotConfig.canvasSize();
+		GodotRuntime.setHeapValue(p_width, size[0], 'i32');
+		GodotRuntime.setHeapValue(p_height, size[1], 'i32');
 	},
 
 	godot_js_display_has_webgl__proxy: 'sync',
@@ -768,7 +786,7 @@ const GodotDisplay = {
 		GodotDisplayScreen.hidpi = !!p_hidpi;
 		switch (GodotConfig.canvas_resize_policy) {
 		case 0: // None
-			GodotDisplayScreen.desired_size = [canvas.width, canvas.height];
+			GodotDisplayScreen.desired_size = GodotConfig.canvasSize();
 			break;
 		case 1: // Project
 			GodotDisplayScreen.desired_size = [p_width, p_height];

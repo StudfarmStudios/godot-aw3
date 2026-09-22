@@ -34,6 +34,8 @@ if env["target"] == "editor":
     env.add_source_files(web_files, "editor/*.cpp")
 
 sys_env = env.Clone()
+if env["proxy_to_pthread"]:
+    sys_env.Append(CPPDEFINES=["PROXY_TO_PTHREAD_ENABLED"])
 sys_env.AddJSLibraries([
     "js/libs/library_godot_audio.js",
     "js/libs/library_godot_display.js",
@@ -53,6 +55,7 @@ js_post = [
     "js/patches/patch_em_gl.js",
 ]
 if env["webgpu"]:
+    sys_env.AddJSLibraries(["js/libs/library_godot_webgpu_worker.js"])
     js_post.append("js/patches/patch_webgpu.js")
 sys_env.AddJSPost(js_post)
 
@@ -122,7 +125,13 @@ engine = [
     "js/engine/engine.js",
 ]
 externs = [env.File("#platform/web/js/engine/engine.externs.js")]
-js_engine = env.CreateEngineFile("#bin/godot${PROGSUFFIX}.engine.js", engine, externs, env["threads"])
+js_engine = env.CreateEngineFile(
+    "#bin/godot${PROGSUFFIX}.engine.js",
+    engine,
+    externs,
+    env["threads"],
+    env["proxy_to_pthread"],
+)
 env.Depends(js_engine, externs)
 
 wrap_list = [

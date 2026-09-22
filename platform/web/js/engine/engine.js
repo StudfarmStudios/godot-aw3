@@ -9,6 +9,8 @@
  * @header Web export JavaScript reference
  */
 const Engine = (function () {
+	const applicationWorkerEnabled = ___GODOT_PROXY_TO_PTHREAD_ENABLED;
+	const applicationWorkerWebGPUMarker = '--godot-application-worker-webgpu';
 	const preloader = new Preloader();
 	const startupTiming = typeof globalThis !== 'undefined'
 		&& globalThis['GODOT_WEB_STARTUP_TIMING'] === true
@@ -191,7 +193,22 @@ const Engine = (function () {
 						markStartupPhase('pck-install-end');
 						preloader.preloadedFiles.length = 0; // Clear memory
 						markStartupPhase('call-main-start');
-						me.rtenv['callMain'](me.config.args);
+						let args = me.config.args;
+						if (applicationWorkerEnabled && me.config.renderingDriver === 'webgpu') {
+							// PROXY_TO_PTHREAD transfers Module.canvas to the application
+							// Worker when callMain creates the proxied main thread, and
+							// refuses to start without it. Godot never populates that field:
+							// getModuleConfig() (the object Godot() is constructed with) has
+							// no canvas, because the canvas is only resolved later, by
+							// getGodotConfig() above. Hand it over here, after that call.
+							me.rtenv['canvas'] = me.config.canvas;
+							// The C++ entry removes this private marker before Main::setup.
+							// It requests/imports the device in the application Worker's JS
+							// realm before constructing DisplayServerWeb.
+							args = me.config.args.slice();
+							args.push(applicationWorkerWebGPUMarker);
+						}
+						me.rtenv['callMain'](args);
 						markStartupPhase('call-main-end');
 						initPromise = null;
 						me.installServiceWorker();
@@ -228,7 +245,7 @@ const Engine = (function () {
 				// SPIR-V→WGSL conversion is handled by Tint, compiled directly
 				// into the engine WASM — no separate translator module needed.
 				let webgpuReady = Promise.resolve();
-				if (me.config.renderingDriver === 'webgpu' && !me.config.preinitializedWebGPUDevice) {
+				if (!applicationWorkerEnabled && me.config.renderingDriver === 'webgpu' && !me.config.preinitializedWebGPUDevice) {
 					webgpuReady = Engine.requestWebGPUDevice().then(function (device) {
 						me.config.preinitializedWebGPUDevice = device;
 					});

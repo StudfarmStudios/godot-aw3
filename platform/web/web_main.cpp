@@ -48,7 +48,9 @@
 
 #include <emscripten/emscripten.h>
 
+#include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 static OS_Web *os = nullptr;
 #ifndef PROXY_TO_PTHREAD_ENABLED
@@ -57,6 +59,12 @@ static uint64_t target_ticks = 0;
 
 static bool main_started = false;
 static bool shutdown_complete = false;
+
+#if defined(PROXY_TO_PTHREAD_ENABLED) && defined(WEBGPU_ENABLED)
+static constexpr const char *APPLICATION_WORKER_WEBGPU_MARKER = "--godot-application-worker-webgpu";
+static Vector<String> application_worker_args;
+static bool application_worker_webgpu_device = false;
+#endif
 
 void exit_callback() {
 	if (!shutdown_complete) {
@@ -69,6 +77,14 @@ void exit_callback() {
 	int exit_code = OS_Web::get_singleton()->get_exit_code();
 	delete os; // We used a normal new, so it needs a normal delete.
 	os = nullptr;
+#if defined(PROXY_TO_PTHREAD_ENABLED) && defined(WEBGPU_ENABLED)
+	if (application_worker_webgpu_device) {
+		// RenderingContextDriverWebGPU has released its imported C wrapper by
+		// this point. Destroy the raw GPUDevice in its owning Worker realm.
+		godot_js_webgpu_worker_cleanup();
+		application_worker_webgpu_device = false;
+	}
+#endif
 	godot_cleanup_profiler();
 	emscripten_cancel_main_loop(); // We are exiting in this iteration.
 	emscripten_force_exit(exit_code); // Exit runtime.
@@ -130,8 +146,7 @@ void print_web_header() {
 	print_line(vformat("Build configuration: %s.", String(", ").join(build_configuration)));
 }
 
-/// When calling main, it is assumed FS is setup and synced.
-extern EMSCRIPTEN_KEEPALIVE int godot_web_main(int argc, char *argv[]) {
+static int godot_web_main_after_webgpu(int argc, char *argv[]) {
 	godot_init_profiler();
 
 	os = new OS_Web();
@@ -179,4 +194,52 @@ extern EMSCRIPTEN_KEEPALIVE int godot_web_main(int argc, char *argv[]) {
 	main_loop_callback();
 
 	return os->get_exit_code();
+}
+
+#if defined(PROXY_TO_PTHREAD_ENABLED) && defined(WEBGPU_ENABLED)
+static void application_worker_webgpu_ready(int p_error) {
+	if (p_error != 0) {
+		fprintf(stderr, "Application-Worker WebGPU initialization failed.\n");
+		emscripten_force_exit(EXIT_FAILURE);
+		return;
+	}
+
+	application_worker_webgpu_device = true;
+	Vector<CharString> encoded_args;
+	Vector<char *> argv;
+	encoded_args.resize(application_worker_args.size());
+	argv.resize(application_worker_args.size());
+	for (int i = 0; i < application_worker_args.size(); i++) {
+		encoded_args.write[i] = application_worker_args[i].utf8();
+		argv.write[i] = const_cast<char *>(encoded_args[i].get_data());
+	}
+
+	godot_web_main_after_webgpu(argv.size(), argv.ptrw());
+	application_worker_args.clear();
+}
+#endif
+
+/// When calling main, it is assumed FS is setup and synced.
+extern EMSCRIPTEN_KEEPALIVE int godot_web_main(int argc, char *argv[]) {
+#if defined(PROXY_TO_PTHREAD_ENABLED) && defined(WEBGPU_ENABLED)
+	bool worker_webgpu_requested = false;
+	application_worker_args.clear();
+	for (int i = 0; i < argc; i++) {
+		if (i > 0 && strcmp(argv[i], APPLICATION_WORKER_WEBGPU_MARKER) == 0) {
+			worker_webgpu_requested = true;
+			continue;
+		}
+		application_worker_args.push_back(String::utf8(argv[i]));
+	}
+	if (worker_webgpu_requested) {
+		godot_js_webgpu_worker_preinitialize(application_worker_webgpu_ready);
+		// Let the Worker's event loop run the adapter/device Promises. The
+		// callback above resumes normal Godot startup without Asyncify.
+		emscripten_exit_with_live_runtime();
+		return EXIT_SUCCESS;
+	}
+	application_worker_args.clear();
+#endif
+
+	return godot_web_main_after_webgpu(argc, argv);
 }

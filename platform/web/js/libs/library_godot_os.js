@@ -54,9 +54,26 @@ mergeInto(LibraryManager.library, IDHandler);
 
 const GodotConfig = {
 	$GodotConfig__postset: 'Module["initConfig"] = GodotConfig.init_config;',
-	$GodotConfig__deps: ['$GodotRuntime'],
+	$GodotConfig__deps: ['$GodotRuntime', '$getCanvasElementSize'],
 	$GodotConfig: {
 		canvas: null,
+
+		// The canvas' pixel size, from whichever thread asks.
+		//
+		// Under PROXY_TO_PTHREAD the bitmap is transferred to the application
+		// Worker, after which the element's own width/height stop tracking it and
+		// keep reporting whatever they held at transfer time — for a canvas with
+		// no width/height attributes, the HTML default of 300x150. Reading those
+		// gives a window size the game then lays its UI out against, and an
+		// input scale factor that puts clicks in the wrong place. Emscripten
+		// keeps the real size in the canvas' shared block; ask it instead.
+		canvasSize: function () {
+			const canvas = GodotConfig.canvas;
+			if (canvas.controlTransferredOffscreen) {
+				return getCanvasElementSize(canvas);
+			}
+			return [canvas.width, canvas.height];
+		},
 		locale: 'en',
 		canvas_resize_policy: 2, // Adaptive
 		virtual_keyboard: false,
