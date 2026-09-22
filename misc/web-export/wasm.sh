@@ -16,12 +16,16 @@
 #   EMSDK_DIR         emsdk checkout                 (default $WASM_HOME/emsdk)
 #   DOTNET_DIR        .NET 9 SDK with wasm-tools     (default $WASM_HOME/dotnet9)
 #   ENGINE_DIR        the godot-aw3 checkout         (default: the repo this script lives in)
+#   GODOT_EDITOR_BIN  editor executable override     (default <engine>/bin/godot.<host>.editor.<arch>.mono)
+#   NUGET_PACKAGES    NuGet global-packages folder   (default ~/.nuget/packages)
+#   EM_CACHE          Emscripten cache override      (default: selected SDK cache)
 #   AOT_MODE          LLVMOnlyInterp | LLVMOnly      (default LLVMOnlyInterp; see prepare)
 #   RENDERING_METHOD  forward_plus | mobile          (default forward_plus; either selects WebGPU)
 #   CSPROJ            the game's .csproj, when the game dir holds more than one
 #   PRESET            export preset name             (default Web)
 #   JOBS              parallel jobs for scons
 #   FORCE=1           rebuild engine artifacts even if present
+#   APPLICATION_WORKER=1  experimental: run Godot + WebGPU on a pthread
 #
 # Why the export is two passes: the AOT images are linked into the ENGINE
 # template, not into the game's pck, so the template is game-specific. Pass 1
@@ -40,12 +44,16 @@ AOT_MODE="${AOT_MODE:-LLVMOnlyInterp}"
 RENDERING_METHOD="${RENDERING_METHOD:-forward_plus}"
 PRESET="${PRESET:-Web}"
 FORCE="${FORCE:-0}"
+APPLICATION_WORKER="${APPLICATION_WORKER:-0}"
 
 # The template flags. The bootstrap and the per-game relink MUST use the same
 # set, or scons rebuilds the engine from scratch instead of relinking. The
 # stack sizes are not optional (Mono frames blow the default 2 MB pthread
 # stack with no message at all), and webgpu=yes is what makes the renderer.
 TEMPLATE_FLAGS="platform=web target=template_release module_mono_enabled=yes webgpu=yes stack_size=32768 default_pthread_stack_size=32768 initial_memory=256 optimize=speed lto=thin"
+if [[ "$APPLICATION_WORKER" == 1 ]]; then
+    TEMPLATE_FLAGS+=" proxy_to_pthread=yes"
+fi
 
 case "$(uname -s)" in
     Darwin) HOST_PLATFORM=macos ;;
@@ -65,11 +73,18 @@ case "$MACHINE" in
 esac
 JOBS="${JOBS:-$( (sysctl -n hw.ncpu 2>/dev/null || nproc) )}"
 
-EDITOR_BIN="$ENGINE_DIR/bin/godot.$HOST_PLATFORM.editor.$HOST_ARCH.mono"
+EDITOR_BIN="${GODOT_EDITOR_BIN:-$ENGINE_DIR/bin/godot.$HOST_PLATFORM.editor.$HOST_ARCH.mono}"
 TEMPLATE_ZIP="$ENGINE_DIR/bin/godot.web.template_release.wasm32.mono.zip"
 NUPKGS="$ENGINE_DIR/bin/GodotSharp/Tools/nupkgs"
 GODOTSHARP_DLL="$ENGINE_DIR/bin/GodotSharp/Api/Release/GodotSharp.dll"
-if [[ "$HOST_PLATFORM" == macos ]]; then
+NUGET_PACKAGES_DIR="${NUGET_PACKAGES:-$HOME/.nuget/packages}"
+# Normalize lexically: the directory need not exist yet for toolchain, engine,
+# or doctor commands in a fresh checkout.
+EDITOR_BIN_DIR="$(python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(dirname "$EDITOR_BIN")")"
+if [[ -f "$EDITOR_BIN_DIR/._sc_" || -f "$EDITOR_BIN_DIR/_sc_" ]]; then
+    # Godot self-contained mode roots editor data next to the executable.
+    BUILD_LOGS="$EDITOR_BIN_DIR/editor_data/mono/build_logs"
+elif [[ "$HOST_PLATFORM" == macos ]]; then
     BUILD_LOGS="$HOME/Library/Application Support/Godot/mono/build_logs"
 else
     BUILD_LOGS="${XDG_DATA_HOME:-$HOME/.local/share}/godot/mono/build_logs"
@@ -92,8 +107,14 @@ dotnet_env() {
 }
 emsdk_env() {
     [[ -f "$EMSDK_DIR/emsdk_env.sh" ]] || die "no emsdk at $EMSDK_DIR — run: $0 toolchain"
+    local requested_em_cache="${EM_CACHE:-}"
     # shellcheck disable=SC1091
     EMSDK_QUIET=1 source "$EMSDK_DIR/emsdk_env.sh" >/dev/null 2>&1
+    # emsdk activation resets EM_CACHE. Preserve an explicit caller override,
+    # including a workspace-local cache when the shared SDK is read-only.
+    if [[ -n "$requested_em_cache" ]]; then
+        export EM_CACHE="$requested_em_cache"
+    fi
     have emcc || die "emcc not on PATH after sourcing $EMSDK_DIR/emsdk_env.sh"
 }
 
@@ -153,9 +174,9 @@ purge_nuget_cache() {
     # mapping, so a stale or nuget.org copy silently wins over the fork's.
     local p
     for p in godotsharp godotsharpeditor godot.net.sdk godot.sourcegenerators; do
-        rm -rf "$HOME/.nuget/packages/$p"
+        rm -rf "$NUGET_PACKAGES_DIR/$p"
     done
-    info "purged Godot packages from ~/.nuget/packages"
+    info "purged Godot packages from $NUGET_PACKAGES_DIR"
 }
 
 cmd_engine() {
@@ -261,7 +282,7 @@ EOF
         info "wrote nuget.config"
     fi
     # A cached copy from anywhere else wins over the mapping; check provenance.
-    local meta="$HOME/.nuget/packages/godotsharp/4.7.1/.nupkg.metadata"
+    local meta="$NUGET_PACKAGES_DIR/godotsharp/4.7.1/.nupkg.metadata"
     if [[ -f "$meta" ]] && ! grep -qF "$NUPKGS" "$meta"; then
         info "cached GodotSharp 4.7.1 came from $(sed -n 's/.*"source": *"\(.*\)".*/\1/p' "$meta"), not $NUPKGS"
         purge_nuget_cache
@@ -580,12 +601,12 @@ cmd_doctor() {
     if [[ -f "$ENGINE_DIR/.scons_env.json" ]]; then
         info "last web link: mono_aot_dir=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('mono_aot_dir','(none)'))" "$ENGINE_DIR/.scons_env.json" 2>/dev/null || echo '?')"
     fi
-    local meta="$HOME/.nuget/packages/godotsharp/4.7.1/.nupkg.metadata"
+    local meta="$NUGET_PACKAGES_DIR/godotsharp/4.7.1/.nupkg.metadata"
     if [[ -f "$meta" ]]; then
         local src; src="$(sed -n 's/.*"source": *"\(.*\)".*/\1/p' "$meta")"
-        info "nuget cache GodotSharp 4.7.1 from: $src $( [[ "$src" == "$NUPKGS" ]] && echo '(this engine)' || echo '(NOT this engine — prepare purges it)' )"
+        info "nuget cache ($NUGET_PACKAGES_DIR) GodotSharp 4.7.1 from: $src $( [[ "$src" == "$NUPKGS" ]] && echo '(this engine)' || echo '(NOT this engine — prepare purges it)' )"
     else
-        info "nuget cache: no GodotSharp 4.7.1 cached"
+        info "nuget cache ($NUGET_PACKAGES_DIR): no GodotSharp 4.7.1 cached"
     fi
     if [[ -n "${1:-}" ]]; then
         resolve_game "$1"

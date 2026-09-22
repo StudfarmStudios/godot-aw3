@@ -41,6 +41,12 @@ extern "C" {
 // Emscripten
 extern char *godot_js_emscripten_get_version();
 
+// Application-Worker WebGPU bootstrap. These calls are deliberately not
+// proxied to the browser main thread; their JS implementation owns the device
+// in the calling Worker's realm.
+extern void godot_js_webgpu_worker_preinitialize(void (*p_callback)(int p_error));
+extern void godot_js_webgpu_worker_cleanup();
+
 // Config
 extern void godot_js_config_locale_get(char *p_ptr, int p_ptr_max);
 extern void godot_js_config_canvas_id_get(char *p_ptr, int p_ptr_max);

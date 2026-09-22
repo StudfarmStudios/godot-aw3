@@ -356,7 +356,12 @@ def configure(env: "SConsEnvironment"):
     # Run the main application in a web worker
     if env["proxy_to_pthread"]:
         env.Append(LINKFLAGS=["-sPROXY_TO_PTHREAD=1"])
-        env.Append(CPPDEFINES=["PROXY_TO_PTHREAD_ENABLED"])
+        if env["webgpu"]:
+            # PROXY_TO_PTHREAD can transfer Module.canvas to the application
+            # Worker only when OffscreenCanvas support is linked. Emscripten's
+            # transfer registry lives in $GL even though this path uses WebGPU.
+            env.Append(LINKFLAGS=["-sOFFSCREENCANVAS_SUPPORT=1"])
+            env.Append(LINKFLAGS=["-sDEFAULT_LIBRARY_FUNCS_TO_INCLUDE=$$GL"])
 
     # Enable WebAssembly SIMD. Relaxed SIMD on top lets vectorized float math
     # emit fused relaxed_madd & co — every browser that has WebGPU (which the
