@@ -195,6 +195,13 @@ const Engine = (function () {
 						markStartupPhase('call-main-start');
 						let args = me.config.args;
 						if (applicationWorkerEnabled && me.config.renderingDriver === 'webgpu') {
+							// PROXY_TO_PTHREAD transfers Module.canvas to the application
+							// Worker when callMain creates the proxied main thread, and
+							// refuses to start without it. Godot never populates that field:
+							// getModuleConfig() (the object Godot() is constructed with) has
+							// no canvas, because the canvas is only resolved later, by
+							// getGodotConfig() above. Hand it over here, after that call.
+							me.rtenv['canvas'] = me.config.canvas;
 							// The C++ entry removes this private marker before Main::setup.
 							// It requests/imports the device in the application Worker's JS
 							// realm before constructing DisplayServerWeb.
