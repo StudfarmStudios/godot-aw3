@@ -36,6 +36,11 @@
 #include "core/templates/hash_map.h"
 #include "servers/rendering/renderer_canvas_cull.h"
 #include "servers/rendering/renderer_compositor.h"
+
+#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED)
+#include <pthread.h>
+#include "core/os/semaphore.h"
+#endif
 #include "servers/rendering/renderer_viewport.h"
 #include "servers/rendering/rendering_method.h"
 #include "servers/rendering/rendering_server.h"
@@ -87,6 +92,23 @@ class RenderingServerDefault : public RenderingServer {
 	void _assign_mt_ids(WorkerThreadPool::TaskID p_pump_task_id);
 	void _thread_exit();
 	void _thread_loop();
+
+#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED)
+	// On the web the render thread is a dedicated pthread rather than a
+	// WorkerThreadPool task: it has to be created with the canvas transferred to
+	// it, it requests the WebGPU device in its own Worker realm, and it drains the
+	// command queue from a requestAnimationFrame loop so the browser gets a
+	// presentation opportunity every frame. See _web_start_render_thread().
+	pthread_t web_render_thread = 0;
+	bool web_render_thread_started = false;
+	Semaphore web_wake; // Posted by the command queue on every push; the render thread waits on it.
+	bool web_frame_drawn = false;
+	static RenderingServerDefault *web_render_self;
+	void _web_start_render_thread();
+	static void *_web_render_thread_entry(void *p_self);
+	static void _web_render_device_ready(int p_error);
+	static int _web_render_tick(void *p_self);
+#endif
 
 	void _draw(bool p_swap_buffers, double frame_step);
 	void _run_post_draw_steps();

@@ -334,12 +334,24 @@ const GodotDisplayScreen = {
 			if (canvas.style.width !== csw || canvas.style.height !== csh || currentWidth !== width || currentHeight !== height) {
 				// Size doesn't match.
 				// Resize canvas, set correct CSS pixel size, update GL.
-				// Styling stays with the DOM element even after a transfer, so only
-				// the bitmap size has to go through Emscripten. Left as a direct
-				// assignment when we still own the canvas, so the ordinary web
-				// build keeps the exact path it has always taken.
+				// Styling stays with the DOM element even after a transfer. The bitmap
+				// belongs to whichever pthread the canvas was transferred to, and only
+				// that thread resizes it: record the wanted size in Emscripten's shared
+				// size block (what getCanvasElementSize() reads back), and let the
+				// engine's own resize path — which runs on the owning thread — apply
+				// it. Emscripten's setCanvasElementSize() would instead proxy to the
+				// thread named in that block's owner field, and after a second
+				// transfer (application Worker to render thread) that field is stale,
+				// so the proxy fails and aborts the runtime. Left as a direct
+				// assignment when we still own the canvas, so the ordinary web build
+				// keeps the exact path it has always taken.
 				if (transferred) {
-					setCanvasElementSize(canvas, width, height);
+					if (canvas.canvasSharedPtr) {
+						HEAP32[canvas.canvasSharedPtr >> 2] = width;
+						HEAP32[(canvas.canvasSharedPtr >> 2) + 1] = height;
+					} else {
+						setCanvasElementSize(canvas, width, height);
+					}
 				} else {
 					canvas.width = width;
 					canvas.height = height;

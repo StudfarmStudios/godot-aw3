@@ -38,7 +38,9 @@
 #include "core/input/input.h"
 #include "core/input/input_event.h"
 #include "core/os/main_loop.h"
+#include "core/object/callable_mp.h"
 #include "core/os/os.h"
+#include "servers/rendering/rendering_server.h"
 #include "servers/display/native_menu.h"
 #include "servers/rendering/dummy/rasterizer_dummy.h"
 #include "servers/rendering/rendering_device.h"
@@ -72,19 +74,40 @@ DisplayServerWeb *DisplayServerWeb::get_singleton() {
 // Window (canvas)
 bool DisplayServerWeb::check_size_force_redraw() {
 	bool size_changed = godot_js_display_size_update() != 0;
-	if (size_changed && rect_changed_callback.is_valid()) {
-		Size2i window_size = window_get_size();
-		Variant size = Rect2i(Point2i(), window_size); // TODO use window_get_position if implemented.
-		rect_changed_callback.call(size);
-		emscripten_set_canvas_element_size(canvas_id, window_size.x, window_size.y);
-#ifdef WEBGPU_ENABLED
-		// Also update the rendering context surface so the swap chain resizes correctly.
-		if (rendering_context != nullptr) {
-			rendering_context->window_set_size(DisplayServerEnums::MAIN_WINDOW_ID, window_size.x, window_size.y);
-		}
-#endif
+	if (!size_changed) {
+		return false;
 	}
-	return size_changed;
+	Size2i window_size = window_get_size();
+	// The JS side reports a change once. If the root window has not registered
+	// its callback yet (the first frames), remember it and deliver it from
+	// window_set_rect_changed_callback(), or the tree keeps the project size.
+	if (rect_changed_callback.is_valid()) {
+		rect_changed_callback.call(Rect2i(Point2i(), window_size)); // TODO use window_get_position if implemented.
+	} else {
+		rect_changed_pending = true;
+	}
+	// The canvas bitmap is resized here rather than by the JS side because,
+	// once control of the canvas has been transferred to a pthread, only that
+	// thread may resize it. Which thread that is depends on the mode:
+#ifdef WEBGPU_ENABLED
+	if (deferred_rendering) {
+		// the render thread owns the canvas and the surface: do both there. A
+		// resize issued from this thread would be proxied by Emscripten to the
+		// canvas' recorded owner, which is stale after the second transfer.
+		RenderingServer::get_singleton()->call_on_render_thread(callable_mp(this, &DisplayServerWeb::_render_thread_window_set_size).bind(window_size));
+		return true;
+	}
+#endif
+	// otherwise this thread owns it (the application Worker under
+	// PROXY_TO_PTHREAD, or the DOM canvas on an ordinary build).
+	emscripten_set_canvas_element_size(canvas_id, window_size.x, window_size.y);
+#ifdef WEBGPU_ENABLED
+	// Also update the rendering context surface so the swap chain resizes correctly.
+	if (rendering_context != nullptr) {
+		rendering_context->window_set_size(DisplayServerEnums::MAIN_WINDOW_ID, window_size.x, window_size.y);
+	}
+#endif
+	return true;
 }
 
 void DisplayServerWeb::fullscreen_change_callback(int p_fullscreen) {
@@ -1146,46 +1169,39 @@ DisplayServerWeb::DisplayServerWeb(const String &p_rendering_driver, DisplayServ
 	// Expose method for requesting quit.
 	godot_js_os_request_quit_cb(request_quit_callback);
 
+	// setup_canvas above has already sized the canvas to the page, and under
+	// PROXY_TO_PTHREAD it did so by recording the size in Emscripten's shared
+	// block rather than touching the bitmap — which only this thread, as the
+	// canvas' owner, may resize. That first report is consumed here, so the main
+	// loop's size check will not see it again: apply it now, and initialize the
+	// GPU surface to the real size instead of the project resolution. On an
+	// ordinary build this is the same size the JS side already set.
+	Size2i actual_size = window_get_size();
+#ifdef WEBGPU_ENABLED
+	if (p_rendering_driver != "webgpu" || !OS::get_singleton()->is_separate_thread_rendering_enabled()) {
+		emscripten_set_canvas_element_size(canvas_id, actual_size.x, actual_size.y);
+	}
+#else
+	emscripten_set_canvas_element_size(canvas_id, actual_size.x, actual_size.y);
+#endif
+
 #ifdef WEBGPU_ENABLED
 	if (p_rendering_driver == "webgpu") {
-		// The WebGPU device is pre-initialized by the JS shell (navigator.gpu.requestDevice)
-		// and imported via Module["preinitializedWebGPUDevice"]. We initialize the
-		// context driver, create the canvas surface, initialize RenderingDevice, and
-		// register the RD compositor so rendering_server->init() finds it.
-		rendering_context = memnew(RenderingContextDriverWebGPU);
-		if (rendering_context->initialize() != OK) {
-			memdelete(rendering_context);
-			rendering_context = nullptr;
-			r_error = ERR_CANT_CREATE;
-			ERR_FAIL_MSG("WebGPU: Failed to initialize rendering context. Ensure navigator.gpu is available and the device was pre-initialized in the HTML shell.");
+		if (OS::get_singleton()->is_separate_thread_rendering_enabled()) {
+			// The device, its canvas surface and the RenderingDevice are JavaScript
+			// objects bound to the realm of the Worker that imports them, and only
+			// that Worker can ever use them. With a separate render thread that
+			// Worker has to be the render thread — which does not exist yet, so
+			// this is left to deferred_rendering_initialize(), which
+			// RenderingServerDefault calls on that thread once it has requested a
+			// device of its own.
+			deferred_rendering = true;
+			deferred_resolution = actual_size;
+			deferred_vsync_mode = p_vsync_mode;
+		} else {
+			r_error = _webgpu_rendering_initialize(actual_size, p_vsync_mode);
+			ERR_FAIL_COND(r_error != OK);
 		}
-		Error err = rendering_context->window_create(DisplayServerEnums::MAIN_WINDOW_ID, nullptr);
-		if (err != OK) {
-			memdelete(rendering_context);
-			rendering_context = nullptr;
-			r_error = err;
-			ERR_FAIL_MSG("WebGPU: Failed to create canvas surface.");
-		}
-		rendering_context->window_set_size(DisplayServerEnums::MAIN_WINDOW_ID, p_resolution.x, p_resolution.y);
-		rendering_context->window_set_vsync_mode(DisplayServerEnums::MAIN_WINDOW_ID, p_vsync_mode);
-
-		rendering_device = memnew(RenderingDevice);
-		err = rendering_device->initialize(rendering_context, DisplayServerEnums::MAIN_WINDOW_ID);
-		if (err != OK) {
-			memdelete(rendering_device);
-			rendering_device = nullptr;
-			memdelete(rendering_context);
-			rendering_context = nullptr;
-			r_error = err;
-			ERR_FAIL_MSG("WebGPU: Failed to initialize rendering device.");
-		}
-		err = rendering_device->screen_create(DisplayServerEnums::MAIN_WINDOW_ID);
-		if (err != OK) {
-			// Non-fatal: the swapchain may be resized on first frame.
-			WARN_PRINT("WebGPU: screen_create() failed — swapchain will be set up on first frame.");
-		}
-
-		RendererCompositorRD::make_current();
 	} else
 #endif // WEBGPU_ENABLED
 	{
@@ -1256,6 +1272,82 @@ DisplayServerWeb::~DisplayServerWeb() {
 	}
 #endif
 #ifdef WEBGPU_ENABLED
+	// With a render thread these belong to that thread's realm and were torn
+	// down there, in deferred_rendering_finalize(), before it exited.
+	if (!deferred_rendering) {
+		if (rendering_device) {
+			rendering_device->screen_free(DisplayServerEnums::MAIN_WINDOW_ID);
+			memdelete(rendering_device);
+			rendering_device = nullptr;
+		}
+		if (rendering_context) {
+			memdelete(rendering_context);
+			rendering_context = nullptr;
+		}
+	}
+#endif
+}
+
+#ifdef WEBGPU_ENABLED
+Error DisplayServerWeb::_webgpu_rendering_initialize(const Size2i &p_resolution, DisplayServerEnums::VSyncMode p_vsync_mode) {
+	// The WebGPU device is pre-initialized by JS (navigator.gpu.requestDevice) in
+	// this thread's realm and imported via Module["preinitializedWebGPUDevice"].
+	// Initialize the context driver, create the canvas surface, initialize
+	// RenderingDevice, and register the RD compositor so rendering_server->init()
+	// finds it. Must run on the thread that will issue every WebGPU call.
+	rendering_context = memnew(RenderingContextDriverWebGPU);
+	if (rendering_context->initialize() != OK) {
+		memdelete(rendering_context);
+		rendering_context = nullptr;
+		ERR_FAIL_V_MSG(ERR_CANT_CREATE, "WebGPU: Failed to initialize rendering context. Ensure navigator.gpu is available and the device was pre-initialized in this thread's JS realm.");
+	}
+	Error err = rendering_context->window_create(DisplayServerEnums::MAIN_WINDOW_ID, nullptr);
+	if (err != OK) {
+		memdelete(rendering_context);
+		rendering_context = nullptr;
+		ERR_FAIL_V_MSG(err, "WebGPU: Failed to create canvas surface.");
+	}
+	rendering_context->window_set_size(DisplayServerEnums::MAIN_WINDOW_ID, p_resolution.x, p_resolution.y);
+	rendering_context->window_set_vsync_mode(DisplayServerEnums::MAIN_WINDOW_ID, p_vsync_mode);
+
+	rendering_device = memnew(RenderingDevice);
+	err = rendering_device->initialize(rendering_context, DisplayServerEnums::MAIN_WINDOW_ID);
+	if (err != OK) {
+		memdelete(rendering_device);
+		rendering_device = nullptr;
+		memdelete(rendering_context);
+		rendering_context = nullptr;
+		ERR_FAIL_V_MSG(err, "WebGPU: Failed to initialize rendering device.");
+	}
+	err = rendering_device->screen_create(DisplayServerEnums::MAIN_WINDOW_ID);
+	if (err != OK) {
+		// Non-fatal: the swapchain may be resized on first frame.
+		WARN_PRINT("WebGPU: screen_create() failed — swapchain will be set up on first frame.");
+	}
+
+	RendererCompositorRD::make_current();
+	return OK;
+}
+
+Error DisplayServerWeb::deferred_rendering_initialize() {
+	ERR_FAIL_COND_V(!deferred_rendering, ERR_UNCONFIGURED);
+	ERR_FAIL_COND_V_MSG(Thread::is_main_thread(), ERR_INVALID_PARAMETER, "WebGPU: deferred rendering must be initialized on the render thread.");
+	Error err = _webgpu_rendering_initialize(deferred_resolution, deferred_vsync_mode);
+	if (err == OK) {
+		// The JS side has usually already recorded the real window size by now
+		// (setup_canvas ran before this thread existed), and it only ever records
+		// it once — the main loop's size check will not see a change again. The
+		// OffscreenCanvas bitmap in this realm is still at its transfer-time size,
+		// so bring it, and the surface, in line with what the engine believes.
+		_render_thread_window_set_size(window_get_size());
+	}
+	return err;
+}
+
+void DisplayServerWeb::deferred_rendering_finalize() {
+	if (!deferred_rendering) {
+		return;
+	}
 	if (rendering_device) {
 		rendering_device->screen_free(DisplayServerEnums::MAIN_WINDOW_ID);
 		memdelete(rendering_device);
@@ -1265,8 +1357,19 @@ DisplayServerWeb::~DisplayServerWeb() {
 		memdelete(rendering_context);
 		rendering_context = nullptr;
 	}
-#endif
+	// The raw GPUDevice was requested in this Worker's realm; release it here.
+	godot_js_webgpu_worker_cleanup();
 }
+
+void DisplayServerWeb::_render_thread_window_set_size(const Size2i &p_size) {
+	// On the thread that owns the OffscreenCanvas this is a direct resize, no
+	// proxying involved.
+	emscripten_set_canvas_element_size(canvas_id, p_size.x, p_size.y);
+	if (rendering_context != nullptr) {
+		rendering_context->window_set_size(DisplayServerEnums::MAIN_WINDOW_ID, p_size.x, p_size.y);
+	}
+}
+#endif // WEBGPU_ENABLED
 
 bool DisplayServerWeb::has_feature(DisplayServerEnums::Feature p_feature) const {
 	switch (p_feature) {
@@ -1393,6 +1496,11 @@ ObjectID DisplayServerWeb::window_get_attached_instance_id(DisplayServerEnums::W
 
 void DisplayServerWeb::window_set_rect_changed_callback(const Callable &p_callable, DisplayServerEnums::WindowID p_window) {
 	rect_changed_callback = p_callable;
+	if (rect_changed_pending && p_callable.is_valid()) {
+		// A size change arrived before anyone could hear it; see check_size_force_redraw().
+		rect_changed_pending = false;
+		p_callable.call(Rect2i(Point2i(), window_get_size()));
+	}
 }
 
 void DisplayServerWeb::window_set_window_event_callback(const Callable &p_callable, DisplayServerEnums::WindowID p_window) {

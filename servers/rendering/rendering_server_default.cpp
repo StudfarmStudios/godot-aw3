@@ -30,6 +30,25 @@
 
 #include "rendering_server_default.h"
 
+#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED)
+#include <emscripten/emscripten.h>
+#include <emscripten/eventloop.h>
+#include <emscripten/html5.h>
+#include <emscripten/threading.h>
+#include <cstdio>
+#include <cstdlib>
+
+// platform/web/js/libs/library_godot_webgpu_worker.js. Deliberately unproxied:
+// they act on the JS realm of the Worker that calls them, which here must be
+// the render thread. Declared locally rather than through platform/web headers
+// to keep the server layer free of the platform include path.
+extern "C" void godot_js_webgpu_worker_preinitialize(void (*p_callback)(int p_error));
+extern "C" void godot_js_webgpu_worker_cleanup();
+extern "C" void godot_js_immediate_loop(int (*p_cb)(void *p_arg), void *p_arg);
+
+RenderingServerDefault *RenderingServerDefault::web_render_self = nullptr;
+#endif
+
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
 #include "core/profiling/profiling.h"
@@ -211,6 +230,9 @@ void RenderingServerDefault::_draw(bool p_swap_buffers, double frame_step) {
 
 	GodotProfileZoneGrouped(_profile_zone, "memory_info");
 	RSG::utilities->update_memory_info();
+#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED)
+	web_frame_drawn = web_frame_drawn || p_swap_buffers;
+#endif
 }
 
 void RenderingServerDefault::_run_post_draw_steps() {
@@ -276,6 +298,12 @@ void RenderingServerDefault::_finish() {
 
 void RenderingServerDefault::init() {
 	if (create_thread) {
+#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED)
+		if (DisplayServer::get_singleton()->has_deferred_rendering()) {
+			_web_start_render_thread();
+			return;
+		}
+#endif
 		print_verbose("RenderingServerWrapMT: Starting render thread");
 		DisplayServer::get_singleton()->release_rendering_thread();
 		WorkerThreadPool::TaskID tid = WorkerThreadPool::get_singleton()->add_task(callable_mp(this, &RenderingServerDefault::_thread_loop), true, "Rendering Server pump task", true);
@@ -293,6 +321,14 @@ void RenderingServerDefault::finish() {
 	if (create_thread) {
 		command_queue.push(this, &RenderingServerDefault::_finish);
 		command_queue.push(this, &RenderingServerDefault::_thread_exit);
+#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED)
+		if (web_render_thread_started) {
+			// The render tick sees `exit`, finalizes the GPU objects in its own
+			// realm and calls pthread_exit; this thread is a pthread, so it can wait.
+			pthread_join(web_render_thread, nullptr);
+			web_render_thread_started = false;
+		}
+#endif
 		if (server_task_id != WorkerThreadPool::INVALID_TASK_ID) {
 			WorkerThreadPool::get_singleton()->wait_for_task_completion(server_task_id);
 			server_task_id = WorkerThreadPool::INVALID_TASK_ID;
@@ -426,6 +462,89 @@ void RenderingServerDefault::_assign_mt_ids(WorkerThreadPool::TaskID p_pump_task
 void RenderingServerDefault::_thread_exit() {
 	exit = true;
 }
+
+#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED)
+void RenderingServerDefault::_web_start_render_thread() {
+	print_verbose("RenderingServerWrapMT: Starting render thread (web pthread)");
+	web_render_self = this;
+
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+	// Hand the canvas from this (application) Worker to the render Worker. The
+	// surface has to be created in the same realm as the device, and Emscripten
+	// re-transfers a canvas the calling thread already owns.
+	int canvas_err = emscripten_pthread_attr_settransferredcanvases(&attr, "#canvas");
+	if (canvas_err != 0) {
+		pthread_attr_destroy(&attr);
+		ERR_FAIL_MSG(vformat("Web: cannot mark #canvas for transfer to the render thread (%d).", canvas_err));
+	}
+	command_queue.set_consumer_semaphore(&web_wake);
+	int err = pthread_create(&web_render_thread, &attr, &RenderingServerDefault::_web_render_thread_entry, this);
+	pthread_attr_destroy(&attr);
+	ERR_FAIL_COND_MSG(err != 0, vformat("Web: pthread_create for the render thread failed (%d).", err));
+	web_render_thread_started = true;
+
+	// Queued now, run by the render tick once the device exists. push_and_sync
+	// blocks this thread until then; it is a pthread, so that is a real wait and
+	// the render Worker's event loop keeps running underneath it.
+	command_queue.push(this, &RenderingServerDefault::_assign_mt_ids, WorkerThreadPool::INVALID_TASK_ID);
+	command_queue.push_and_sync(this, &RenderingServerDefault::_init);
+}
+
+void *RenderingServerDefault::_web_render_thread_entry(void *p_self) {
+	// Request the device in this Worker's realm. The adapter/device Promises
+	// need this thread's event loop, so unwind to it and continue in the
+	// callback; nothing after the unwind runs.
+	godot_js_webgpu_worker_preinitialize(&RenderingServerDefault::_web_render_device_ready);
+	emscripten_unwind_to_js_event_loop();
+	return nullptr;
+}
+
+void RenderingServerDefault::_web_render_device_ready(int p_error) {
+	RenderingServerDefault *self = web_render_self;
+	if (p_error != 0) {
+		fprintf(stderr, "Web: render thread could not create a WebGPU device.\n");
+		emscripten_force_exit(EXIT_FAILURE);
+		return;
+	}
+	Error err = DisplayServer::get_singleton()->deferred_rendering_initialize();
+	if (err != OK) {
+		fprintf(stderr, "Web: render thread could not initialize rendering (%d).\n", (int)err);
+		emscripten_force_exit(EXIT_FAILURE);
+		return;
+	}
+	// Drain the queue from an immediate loop rather than once per animation
+	// frame: the main thread's sync() and every push_and_ret() block until this
+	// thread has run their command, and a drain that only happens on the next
+	// requestAnimationFrame charges each of them up to a whole frame — which
+	// halved the frame rate — while a setTimeout(0) loop is clamped to 4 ms by
+	// the browser once nested. godot_js_immediate_loop (a MessageChannel post)
+	// has neither limit. Returning to the event loop after every drain is
+	// still what lets the browser present; an OffscreenCanvas presents at the
+	// compositor's next frame after any task boundary.
+	godot_js_immediate_loop(&RenderingServerDefault::_web_render_tick, self);
+}
+
+int RenderingServerDefault::_web_render_tick(void *p_self) {
+	RenderingServerDefault *self = static_cast<RenderingServerDefault *>(p_self);
+	// Run commands as they arrive; only go back to the event loop once a frame
+	// has been drawn, which is when the browser needs a task boundary to present
+	// it. In between, block on the semaphore the queue posts for every push, so
+	// the thread neither polls nor adds a timer's latency to the handoff.
+	for (;;) {
+		self->web_frame_drawn = false;
+		self->command_queue.flush_all();
+		if (self->exit) {
+			DisplayServer::get_singleton()->deferred_rendering_finalize();
+			pthread_exit(nullptr);
+		}
+		if (self->web_frame_drawn) {
+			return 1;
+		}
+		self->web_wake.wait();
+	}
+}
+#endif
 
 void RenderingServerDefault::_thread_loop() {
 	DisplayServer::get_singleton()->gl_window_make_current(DisplayServerEnums::MAIN_WINDOW_ID); // Move GL to this thread.

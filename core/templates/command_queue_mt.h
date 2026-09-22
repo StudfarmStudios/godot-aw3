@@ -33,6 +33,7 @@
 #include "core/object/worker_thread_pool.h"
 #include "core/os/condition_variable.h"
 #include "core/os/mutex.h"
+#include "core/os/semaphore.h"
 #include "core/os/thread.h"
 #include "core/templates/local_vector.h"
 #include "core/templates/simple_type.h"
@@ -117,6 +118,9 @@ class CommandQueueMT {
 	uint32_t sync_tail = 0;
 	uint32_t sync_awaiters = 0;
 	WorkerThreadPool::TaskID pump_task_id = WorkerThreadPool::INVALID_TASK_ID;
+	// A consumer that is not a WorkerThreadPool task (the web render thread)
+	// waits on this instead of being pumped; posted for every push.
+	Semaphore *consumer_semaphore = nullptr;
 	uint64_t flush_read_ptr = 0;
 	std::atomic<bool> pending{ false };
 
@@ -141,6 +145,9 @@ class CommandQueueMT {
 
 		if (pump_task_id != WorkerThreadPool::INVALID_TASK_ID) {
 			WorkerThreadPool::get_singleton()->notify_yield_over(pump_task_id);
+		}
+		if (consumer_semaphore) {
+			consumer_semaphore->post();
 		}
 
 		if constexpr (NeedsSync) {
@@ -290,6 +297,11 @@ public:
 		ERR_FAIL_COND(pump_task_id == WorkerThreadPool::INVALID_TASK_ID);
 		WorkerThreadPool::get_singleton()->wait_for_task_completion(pump_task_id);
 		_flush();
+	}
+
+	void set_consumer_semaphore(Semaphore *p_semaphore) {
+		MutexLock lock(mutex);
+		consumer_semaphore = p_semaphore;
 	}
 
 	void set_pump_task_id(WorkerThreadPool::TaskID p_task_id) {

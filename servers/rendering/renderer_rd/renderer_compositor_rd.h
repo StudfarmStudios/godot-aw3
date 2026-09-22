@@ -32,6 +32,7 @@
 
 #include "core/io/image.h"
 #include "servers/rendering/renderer_compositor.h"
+#include "servers/rendering/rendering_server_globals.h"
 #include "servers/rendering/renderer_rd/environment/fog.h"
 #include "servers/rendering/renderer_rd/framebuffer_cache_rd.h"
 #include "servers/rendering/renderer_rd/renderer_canvas_render_rd.h"
@@ -146,7 +147,20 @@ public:
 	_ALWAYS_INLINE_ virtual uint64_t get_frame_number() const override { return frame; }
 	_ALWAYS_INLINE_ virtual double get_frame_delta_time() const override { return delta; }
 	_ALWAYS_INLINE_ virtual double get_total_time() const override { return time; }
-	_ALWAYS_INLINE_ virtual bool can_create_resources_async() const override { return true; }
+	// Resource creation off the render thread is what RendererRD normally
+	// permits, and what the RenderingServer wrappers use to build textures,
+	// meshes and materials on the calling thread instead of queueing them.
+	// On the web with a separate render thread that is not possible: the
+	// WebGPU device is a JavaScript object bound to the render thread's Worker
+	// realm, and a call from any other thread reaches a realm where the device
+	// simply does not exist. Every creation has to go through the queue there.
+	_ALWAYS_INLINE_ virtual bool can_create_resources_async() const override {
+#ifdef WEB_ENABLED
+		return !RenderingServerGlobals::threaded;
+#else
+		return true;
+#endif
+	}
 
 	virtual bool is_xr_enabled() const override { return RendererCompositor::is_xr_enabled(); }
 

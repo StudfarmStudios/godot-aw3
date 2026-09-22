@@ -159,3 +159,92 @@ as "the mode is not fundamentally broken for gameplay" rather than as coverage.
   of it has all the libc++ wrapper headers but an include ordering that makes
   every `<cstddef>`/`<cmath>`/`<cstring>` fail to find them — which is what
   stopped this work the first time round.
+
+## Separate render thread (`--render-thread separate` / `thread_model=2`)
+
+On top of the application Worker, Godot's own render thread now works on the
+web. It is a dedicated pthread, not a `WorkerThreadPool` task, because it has to
+own three things that are bound to the realm of the Worker that creates them:
+the WebGPU device (requested in that Worker, `library_godot_webgpu_worker.js`),
+the canvas (re-transferred to it with `emscripten_pthread_attr_settransferredcanvases`
+— Emscripten re-transfers a canvas the calling thread already owns), and the
+`RenderingDevice`, which `DisplayServerWeb` therefore no longer creates in its
+constructor: `has_deferred_rendering()` tells `RenderingServerDefault` to call
+`deferred_rendering_initialize()` from the render thread once the device
+exists, and `deferred_rendering_finalize()` there before it exits.
+
+The thread drains the command queue whenever the queue posts its semaphore and
+returns to its event loop only after a frame has been drawn (`web_frame_drawn`),
+which is what the browser needs to present an OffscreenCanvas. Two things that
+do not work: waking on `requestAnimationFrame` (the game thread blocks on
+`sync()`/`push_and_ret()` several times a frame, so each waits up to a frame —
+~25 fps), and `emscripten_set_immediate_loop` (its `postMessage` form is
+rejected by a `DedicatedWorkerGlobalScope`); the game-thread loop uses
+`godot_js_immediate_loop`, a `MessageChannel` post, for the same reason a
+`setTimeout(0)` loop is clamped to 4 ms once nested. Resource creation off the
+render thread (`can_create_resources_async`) is disabled on a threaded web
+renderer: the device does not exist in any other realm.
+
+Canvas sizing is the recurring trap. After `transferControlToOffscreen()` only
+the owning pthread may resize the bitmap, Emscripten's shared size block is the
+only authoritative size, and the JS side reports each change once. Resizes are
+therefore applied by the owner (`check_size_force_redraw()` forwards to the
+render thread with `call_on_render_thread` when deferred), a change that lands
+before the root window registered its callback is delivered late
+(`rect_changed_pending`), and the size `setup_canvas` recorded during
+construction is applied explicitly, because that first report is consumed
+before the main loop exists. Symptom when any of this is missed: a 1920x1080
+bitmap stretched over the page — larger HUD, missing widgets, elliptical fields.
+
+### Audio: the cost of the application Worker
+
+Profiling the game thread in a bot match showed 15% of its time asleep in
+synchronous proxies to the browser main thread — almost all of it the sample
+playback setters (`godot_audio_sample_update_pitch_scale`,
+`set_volumes_linear`, `sample_start`, `sample_stop`), called once per
+positional sound per frame, each a full round trip because the AudioContext
+lives on the main thread. They return nothing and are fire-and-forget now: the
+Worker-side entry copies the pointer arguments (all of them point at the
+caller's temporaries) into heap memory and forwards through an `async` proxy
+whose main-thread body frees them; proxied calls keep their order, and off a
+pthread the body is called directly with the original pointers. The remaining
+synchronous per-frame proxies are small and listed in the numbers below.
+
+### Numbers
+
+M1 Ultra, Chrome (native arm64) with `--disable-frame-rate-limit
+--disable-gpu-vsync`, 3440x1280, `--demo --practice --bots=8
+--arena=spacejunk_mayhem_2`, engine `--print-fps`, two runs each, interleaved:
+
+| Build | Engine FPS |
+| --- | ---: |
+| Production (main thread, PGO) | 120.5 |
+| Ordinary template, this engine (main thread) | 116.8 |
+| Application Worker, no render thread | 95.7 before the audio change, 112.5 after |
+| Application Worker, render thread | 169.4 before, **193.3** after |
+
+Cold start with harvested shaders and split packs: 9.3–10.1 s to the menu with
+the render thread, against 6.1 s without it (the extra is the second device
+request and the deferred GPU bring-up; not yet investigated).
+
+Still synchronous per frame (share of the game thread, after the audio change):
+`display_size_update` 0.95%, `sample_stream_is_registered` 0.79%,
+`window_size_get` 0.67%, `touchscreen_is_available` 0.51%. The page's own
+`requestAnimationFrame` cadence reads a steady ~14 Hz under any Worker build
+with vsync disabled; unexplained, and it does not affect the game (which does
+not run on that thread), but it makes page-rAF-based measurements meaningless
+for these builds — use `--print-fps`.
+
+### Not verified
+
+- Gameplay under the render thread beyond menu, hover input and short demo
+  matches. A HUD direction-arrow lag was reported by hand and is not yet
+  reproduced or explained; `GetGlobalTransformInterpolated()` is scene-side
+  and refreshed before `_Process`, so it is not a stale interpolation read.
+- The engine's own `--max-fps` pacing is compiled out under `PROXY_TO_PTHREAD`,
+  so a render-thread build runs its game loop unpaced; with vsync on the
+  render thread still presents at the display rate.
+
+The ordinary (non-`proxy_to_pthread`) template was rebuilt with every change
+here and boots clean: `WebGPU 1.0 - Forward+`, menus built, no errors, a
+1280x773 bitmap on an untransferred canvas.
