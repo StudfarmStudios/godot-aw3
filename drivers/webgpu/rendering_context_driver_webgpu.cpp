@@ -213,6 +213,15 @@ Error RenderingContextDriverWebGPU::initialize() {
 		}
 	}
 
+	// RendererRD permits resource creation away from the render thread. Native
+	// Dawn must serialize those device and queue calls with render-thread submission.
+	const WGPUFeatureName thread_safety_feature = WGPUFeatureName_ImplicitDeviceSynchronization;
+	if (!_adapter_has_feature(supported_features, thread_safety_feature)) {
+		wgpuSupportedFeaturesFreeMembers(supported_features);
+		ERR_FAIL_V_MSG(ERR_UNAVAILABLE, "WebGPU: Native Dawn does not support implicit device synchronization required for threaded rendering.");
+	}
+	required_features.push_back(thread_safety_feature);
+
 	WGPULimits adapter_limits = WGPU_LIMITS_INIT;
 	bool have_adapter_limits = wgpuAdapterGetLimits(adapter, &adapter_limits) == WGPUStatus_Success;
 	WGPUDeviceDescriptor device_desc = WGPU_DEVICE_DESCRIPTOR_INIT;
