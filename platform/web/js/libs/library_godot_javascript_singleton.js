@@ -342,6 +342,15 @@ mergeInto(LibraryManager.library, GodotJSWrapper);
 
 const GodotEval = {
 	godot_js_eval__deps: ['$GodotRuntime'],
+	// Runs on the browser main thread, like every godot_js_wrapper_* call below.
+	// JavaScriptBridge is defined against the page: eval'd code expects `window`,
+	// which does not exist in a Worker, and anything it defines has to land in
+	// the same realm that godot_js_wrapper_interface_get() later reads from.
+	// Without this, an application-Worker build throws "window is not defined"
+	// and then fails every get_interface() for what the eval was meant to
+	// register. A no-op for the ordinary build, where this already is the main
+	// thread. The heap is shared, so the pointer arguments stay valid.
+	godot_js_eval__proxy: 'sync',
 	godot_js_eval__sig: 'iiiiiii',
 	godot_js_eval: function (p_js, p_use_global_ctx, p_union_ptr, p_byte_arr, p_byte_arr_write, p_callback) {
 		const js_code = GodotRuntime.parseString(p_js);

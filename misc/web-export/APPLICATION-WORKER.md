@@ -32,10 +32,10 @@ which adds `proxy_to_pthread=yes` to the template flags.
   the engine JS substitution, and run Substfile *before* the closure compiler
   rather than instead of it.
 
-## The two integration bugs
+## The integration bugs
 
-Both are about canvas ownership, and neither shows up without
-`proxy_to_pthread`:
+The first two are about canvas ownership; the rest are about which realm code
+runs in. None of them show up without `proxy_to_pthread`:
 
 1. **`pthread_create: could not find canvas with ID "#canvas" to transfer to
    thread!`** — Emscripten transfers `Module.canvas` to the proxied main thread
@@ -56,6 +56,25 @@ Both are about canvas ownership, and neither shows up without
    stands in for that readback so the resize is not re-issued every frame. When
    the canvas has *not* been transferred the old direct assignment is kept
    verbatim, so the ordinary web build takes the path it always has.
+
+3. **`ReferenceError: window is not defined`, then `No interface 'AwBridge'
+   registered`** — `godot_js_eval` had no `__proxy`, so it ran in the Worker,
+   where there is no `window`. Every `godot_js_wrapper_*` function around it is
+   already `__proxy: 'sync'` and runs on the browser main thread, so even an
+   eval that avoided `window` would have defined its globals in the wrong realm
+   for `get_interface()` to find them. `godot_js_eval` is now proxied like its
+   neighbours. The heap is shared, so its pointer arguments stay valid, and on
+   an ordinary build this already is the main thread, which makes it a no-op.
+
+4. **UI laid out for a 300x150 window** — `godot_js_display_window_size_get`
+   read `canvas.width`/`canvas.height` on the main thread. After the transfer
+   those stop tracking the bitmap and keep reporting the value held at transfer
+   time, which for a canvas with no width/height attributes is the HTML default
+   of 300x150. The same stale readback scaled pointer coordinates in
+   `library_godot_input.js`, so clicks landed in the wrong place. Both now go
+   through `GodotConfig.canvasSize()`, which asks Emscripten for the
+   authoritative size when the canvas has been transferred and reads the element
+   directly when it has not.
 
 ## Verified
 
@@ -79,13 +98,27 @@ size`. The cross-thread canvas resize is asynchronous by construction, so the
 surface can lag the configured size for a frame; the driver already handles it
 and the warning does not repeat.
 
+### Assault Wing itself
+
+The real game also builds and runs this way. It boots to
+`WebGPU 1.0 - Forward+`, loads the `menu_battle` arena, starts the menu backdrop
+battle, builds MainMenu/LoadoutMenu/ConfigMenu, renders the main menu correctly
+sized, and logs **no errors**. Hovering two different menu entries by fraction of
+the canvas highlights the entry under the cursor, which is what exercises the
+pointer-coordinate scaling above.
+
+Exporting the game needs one project-level fix: `prepare` writes a
+`GodotAw3WasmEntry.cs` entry stub, and AW3 already carries its own `Program.cs`
+stub for the same purpose, so the publish fails with `CS8802: Only one
+compilation unit can have top-level statements`. Delete one of the two.
+(`wasm.sh` surfaces the CS8802 line itself, so this diagnoses quickly.)
+
 ## Not verified
 
-- **Any real game.** Only the smoke probe has run. Audio, networking, threaded
-  physics, particles and the rest of the main-thread-proxied JS surface
-  (fullscreen, pointer lock, drag-and-drop, the virtual keyboard) are untouched
-  by these fixes and have never run in this mode. The resize path broke this
-  way; others plausibly do too.
+- **Gameplay.** Only the menu has been reached. Entering a match — audio,
+  networking, threaded physics, particles — has not been tried, nor has the rest
+  of the main-thread-proxied JS surface (fullscreen, pointer lock,
+  drag-and-drop, the virtual keyboard).
 - **That it is faster.** No measurement has been taken. The whole premise is
   that freeing the browser main thread helps, and that is still an assumption
   here.
