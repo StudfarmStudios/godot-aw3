@@ -34,8 +34,6 @@ if env["target"] == "editor":
     env.add_source_files(web_files, "editor/*.cpp")
 
 sys_env = env.Clone()
-if env["proxy_to_pthread"]:
-    sys_env.Append(CPPDEFINES=["PROXY_TO_PTHREAD_ENABLED"])
 sys_env.AddJSLibraries([
     "js/libs/library_godot_audio.js",
     "js/libs/library_godot_display.js",

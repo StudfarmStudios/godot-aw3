@@ -2786,6 +2786,15 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 #if !defined(THREADS_ENABLED)
 	separate_thread_render = 0;
 #endif
+#if defined(WEB_ENABLED) && !(defined(PROXY_TO_PTHREAD_ENABLED) && defined(WEBGPU_ENABLED))
+	if (separate_thread_render) {
+		// Only the application-Worker WebGPU template can give a render thread
+		// its own device (see platform/web/display_server_web.cpp); elsewhere
+		// the thread would drive a device that lives in another realm.
+		WARN_PRINT("The separate render thread needs the application-Worker WebGPU web template; rendering on the main thread instead.");
+		separate_thread_render = 0;
+	}
+#endif
 	OS::get_singleton()->_separate_thread_render = separate_thread_render;
 
 	/* Determine audio and video drivers */
