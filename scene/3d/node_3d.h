@@ -198,6 +198,7 @@ protected:
 	void _set_vi_visible(bool p_visible) { data.vi_visible = p_visible; }
 	bool _is_vi_visible() const { return data.vi_visible; }
 	Transform3D _get_global_transform_interpolated(real_t p_interpolation_fraction);
+	Transform3D _get_global_transform_interpolated_from_ancestors() const;
 	const Transform3D &_get_cached_global_transform_interpolated() const { return data.global_transform_interpolated; }
 	void _disable_client_physics_interpolation();
 
