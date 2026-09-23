@@ -182,8 +182,12 @@ void AudioStreamPlayerInternal::set_stream_paused(bool p_pause) {
 	// TODO this does not have perfect recall, fix that maybe? If there are zero playbacks registered with the AudioServer, this bool isn't persisted.
 	for (Ref<AudioStreamPlayback> &playback : stream_playbacks) {
 		AudioServer::get_singleton()->set_playback_paused(playback, p_pause);
-		if (_is_sample() && playback->get_sample_playback().is_valid()) {
-			AudioServer::get_singleton()->set_sample_playback_pause(playback->get_sample_playback(), p_pause);
+		// Take the sample playback once: the driver can clear it as a sample
+		// finishes, so testing one fetch and passing another can hand over a
+		// null that the server then rejects.
+		Ref<AudioSamplePlayback> sample_playback = playback->get_sample_playback();
+		if (_is_sample() && sample_playback.is_valid()) {
+			AudioServer::get_singleton()->set_sample_playback_pause(sample_playback, p_pause);
 		}
 	}
 }
