@@ -52,6 +52,42 @@ const IDHandler = {
 autoAddDeps(IDHandler, '$IDHandler');
 mergeInto(LibraryManager.library, IDHandler);
 
+const GodotImmediateLoop = {
+	$GodotImmediateLoop__deps: ['$GodotRuntime', '$callUserCallback', '$runtimeKeepalivePush', '$runtimeKeepalivePop'],
+	$GodotImmediateLoop: {},
+
+	// Runs `p_cb(p_arg)` again and again from this thread's event loop, for as
+	// long as it returns true, with a task boundary between calls and no timer
+	// in between. setTimeout(0) is clamped to 4 ms by browsers once nested and
+	// Emscripten's emscripten_set_immediate_loop posts a message form that a
+	// DedicatedWorkerGlobalScope rejects; a MessageChannel — the classic
+	// setImmediate polyfill — does neither. Deliberately unproxied: the loop
+	// must live in the calling Worker. The callback runs under
+	// callUserCallback so an unwind or exit inside it is handled, and the
+	// runtime is kept alive between calls, without which Emscripten would
+	// consider an unwound pthread finished and tear down its thread state.
+	godot_js_immediate_loop__sig: 'vpp',
+	godot_js_immediate_loop: function (p_cb, p_arg) {
+		const cb = GodotRuntime.get_func(p_cb);
+		const channel = new MessageChannel();
+		runtimeKeepalivePush();
+		channel.port1.onmessage = function () {
+			callUserCallback(function () {
+				if (cb(p_arg)) {
+					channel.port2.postMessage(0);
+				} else {
+					runtimeKeepalivePop();
+					channel.port1.close();
+					channel.port2.close();
+				}
+			});
+		};
+		channel.port2.postMessage(0);
+	},
+};
+autoAddDeps(GodotImmediateLoop, '$GodotImmediateLoop');
+mergeInto(LibraryManager.library, GodotImmediateLoop);
+
 const GodotConfig = {
 	$GodotConfig__postset: 'Module["initConfig"] = GodotConfig.init_config;',
 	$GodotConfig__deps: ['$GodotRuntime', '$getCanvasElementSize'],

@@ -333,6 +333,11 @@ def configure(env: "SConsEnvironment"):
         print_warning('"threads=no" support requires "proxy_to_pthread=no", disabling proxy to pthread.')
         env["proxy_to_pthread"] = False
 
+    if env["proxy_to_pthread"]:
+        # For every source file, not just platform/web: main.cpp decides the
+        # render thread mode on it.
+        env.Append(CPPDEFINES=["PROXY_TO_PTHREAD_ENABLED"])
+
     if env["lto"] != "none":
         # Workaround https://github.com/emscripten-core/emscripten/issues/16836.
         env.Append(LINKFLAGS=["-Wl,-u,_emscripten_run_callback_on_thread"])

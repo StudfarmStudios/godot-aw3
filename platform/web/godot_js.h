@@ -46,6 +46,8 @@ extern char *godot_js_emscripten_get_version();
 // in the calling Worker's realm.
 extern void godot_js_webgpu_worker_preinitialize(void (*p_callback)(int p_error));
 extern void godot_js_webgpu_worker_cleanup();
+// Clamp-free event-loop iteration on the calling thread; see library_godot_os.js.
+extern void godot_js_immediate_loop(int (*p_cb)(void *p_arg), void *p_arg);
 
 // Config
 extern void godot_js_config_locale_get(char *p_ptr, int p_ptr_max);

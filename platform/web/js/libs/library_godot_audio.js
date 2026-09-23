@@ -1932,32 +1932,46 @@ const _GodotAudio = {
 		}
 	},
 
-	godot_audio_sample_start__proxy: 'sync',
+	// The four sample-control calls below run on the AudioContext, which lives
+	// on the browser main thread. From the application Worker each used to be a
+	// synchronous proxy, and the calling (game) thread slept for the round trip
+	// once per positional sound per frame — 15% of the frame in a bot match.
+	// They return nothing, so they are fire-and-forget now: the Worker-side
+	// entry copies every pointer argument (they all point at the caller's
+	// temporaries) into heap memory the main-thread body owns and frees, and
+	// forwards through an async proxy. Proxied calls stay ordered with each
+	// other and with the remaining synchronous ones, so start/stop/is_active
+	// keep their sequence. Off a pthread the body is called directly with the
+	// original pointers, exactly as before.
+	godot_audio_sample_start__deps: ['godot_audio_sample_start_main', '$GodotRuntime'],
 	godot_audio_sample_start__sig: 'viiiifi',
-	/**
-	 * Starts a sample.
-	 * @param {number} playbackObjectIdStrPtr Playback object id pointer
-	 * @param {number} streamObjectIdStrPtr Stream object id pointer
-	 * @param {number} busIndex Bus index
-	 * @param {number} offset Sample offset
-	 * @param {number} pitchScale Pitch scale
-	 * @param {number} volumePtr Volume pointer
-	 * @returns {void}
-	 */
-	godot_audio_sample_start: function (
-		playbackObjectIdStrPtr,
-		streamObjectIdStrPtr,
-		busIndex,
-		offset,
-		pitchScale,
-		volumePtr
-	) {
+	godot_audio_sample_start: function (playbackObjectIdStrPtr, streamObjectIdStrPtr, busIndex, offset, pitchScale, volumePtr) {
+		if (!ENVIRONMENT_IS_PTHREAD) {
+			_godot_audio_sample_start_main(playbackObjectIdStrPtr, streamObjectIdStrPtr, busIndex, offset, pitchScale, volumePtr, 0);
+			return;
+		}
+		const volume = GodotRuntime.malloc(8 * 4);
+		HEAPF32.set(HEAPF32.subarray(volumePtr >> 2, (volumePtr >> 2) + 8), volume >> 2);
+		_godot_audio_sample_start_main(
+			GodotRuntime.allocString(GodotRuntime.parseString(playbackObjectIdStrPtr)),
+			GodotRuntime.allocString(GodotRuntime.parseString(streamObjectIdStrPtr)),
+			busIndex, offset, pitchScale, volume, 1);
+	},
+	godot_audio_sample_start_main__proxy: 'async',
+	godot_audio_sample_start_main__sig: 'viiiifii',
+	godot_audio_sample_start_main: function (playbackObjectIdStrPtr, streamObjectIdStrPtr, busIndex, offset, pitchScale, volumePtr, owned) {
 		/** @type {string} */
 		const playbackObjectId = GodotRuntime.parseString(playbackObjectIdStrPtr);
 		/** @type {string} */
 		const streamObjectId = GodotRuntime.parseString(streamObjectIdStrPtr);
+		// Copied out before any free: the options object keeps it.
 		/** @type {Float32Array} */
-		const volume = GodotRuntime.heapSub(HEAPF32, volumePtr, 8);
+		const volume = new Float32Array(GodotRuntime.heapSub(HEAPF32, volumePtr, 8));
+		if (owned) {
+			GodotRuntime.free(playbackObjectIdStrPtr);
+			GodotRuntime.free(streamObjectIdStrPtr);
+			GodotRuntime.free(volumePtr);
+		}
 		/** @type {SampleNodeOptions} */
 		const startOptions = {
 			offset,
@@ -1974,15 +1988,22 @@ const _GodotAudio = {
 		);
 	},
 
-	godot_audio_sample_stop__proxy: 'sync',
+	godot_audio_sample_stop__deps: ['godot_audio_sample_stop_main', '$GodotRuntime'],
 	godot_audio_sample_stop__sig: 'vi',
-	/**
-	 * Stops a sample from playing.
-	 * @param {number} playbackObjectIdStrPtr Playback object id pointer
-	 * @returns {void}
-	 */
 	godot_audio_sample_stop: function (playbackObjectIdStrPtr) {
+		if (!ENVIRONMENT_IS_PTHREAD) {
+			_godot_audio_sample_stop_main(playbackObjectIdStrPtr, 0);
+			return;
+		}
+		_godot_audio_sample_stop_main(GodotRuntime.allocString(GodotRuntime.parseString(playbackObjectIdStrPtr)), 1);
+	},
+	godot_audio_sample_stop_main__proxy: 'async',
+	godot_audio_sample_stop_main__sig: 'vii',
+	godot_audio_sample_stop_main: function (playbackObjectIdStrPtr, owned) {
 		const playbackObjectId = GodotRuntime.parseString(playbackObjectIdStrPtr);
+		if (owned) {
+			GodotRuntime.free(playbackObjectIdStrPtr);
+		}
 		GodotAudio.stop_sample(playbackObjectId);
 	},
 
@@ -2026,50 +2047,54 @@ const _GodotAudio = {
 		return sampleNode.getPlaybackPosition();
 	},
 
-	godot_audio_sample_update_pitch_scale__proxy: 'sync',
-	godot_audio_sample_update_pitch_scale__sig: 'vii',
-	/**
-	 * Updates the pitch scale of a sample.
-	 * @param {number} playbackObjectIdStrPtr Playback object id pointer
-	 * @param {number} pitchScale Pitch scale value
-	 * @returns {void}
-	 */
-	godot_audio_sample_update_pitch_scale: function (
-		playbackObjectIdStrPtr,
-		pitchScale
-	) {
+	godot_audio_sample_update_pitch_scale__deps: ['godot_audio_sample_update_pitch_scale_main', '$GodotRuntime'],
+	godot_audio_sample_update_pitch_scale__sig: 'vif',
+	godot_audio_sample_update_pitch_scale: function (playbackObjectIdStrPtr, pitchScale) {
+		if (!ENVIRONMENT_IS_PTHREAD) {
+			_godot_audio_sample_update_pitch_scale_main(playbackObjectIdStrPtr, pitchScale, 0);
+			return;
+		}
+		_godot_audio_sample_update_pitch_scale_main(GodotRuntime.allocString(GodotRuntime.parseString(playbackObjectIdStrPtr)), pitchScale, 1);
+	},
+	godot_audio_sample_update_pitch_scale_main__proxy: 'async',
+	godot_audio_sample_update_pitch_scale_main__sig: 'vifi',
+	godot_audio_sample_update_pitch_scale_main: function (playbackObjectIdStrPtr, pitchScale, owned) {
 		const playbackObjectId = GodotRuntime.parseString(playbackObjectIdStrPtr);
+		if (owned) {
+			GodotRuntime.free(playbackObjectIdStrPtr);
+		}
 		GodotAudio.update_sample_pitch_scale(playbackObjectId, pitchScale);
 	},
 
-	godot_audio_sample_set_volumes_linear__proxy: 'sync',
-	godot_audio_sample_set_volumes_linear__sig: 'vii',
-	/**
-	 * Sets the volumes linear of each mentioned bus for the sample.
-	 * @param {number} playbackObjectIdStrPtr Playback object id pointer
-	 * @param {number} busesPtr Buses array pointer
-	 * @param {number} busesSize Buses array size
-	 * @param {number} volumesPtr Volumes array pointer
-	 * @param {number} volumesSize Volumes array size
-	 * @returns {void}
-	 */
-	godot_audio_sample_set_volumes_linear: function (
-		playbackObjectIdStrPtr,
-		busesPtr,
-		busesSize,
-		volumesPtr,
-		volumesSize
-	) {
+	godot_audio_sample_set_volumes_linear__deps: ['godot_audio_sample_set_volumes_linear_main', '$GodotRuntime'],
+	godot_audio_sample_set_volumes_linear__sig: 'viiiii',
+	godot_audio_sample_set_volumes_linear: function (playbackObjectIdStrPtr, busesPtr, busesSize, volumesPtr, volumesSize) {
+		if (!ENVIRONMENT_IS_PTHREAD) {
+			_godot_audio_sample_set_volumes_linear_main(playbackObjectIdStrPtr, busesPtr, busesSize, volumesPtr, volumesSize, 0);
+			return;
+		}
+		const buses = GodotRuntime.malloc(busesSize * 4);
+		HEAP32.set(HEAP32.subarray(busesPtr >> 2, (busesPtr >> 2) + busesSize), buses >> 2);
+		const volumes = GodotRuntime.malloc(volumesSize * 4);
+		HEAPF32.set(HEAPF32.subarray(volumesPtr >> 2, (volumesPtr >> 2) + volumesSize), volumes >> 2);
+		_godot_audio_sample_set_volumes_linear_main(
+			GodotRuntime.allocString(GodotRuntime.parseString(playbackObjectIdStrPtr)),
+			buses, busesSize, volumes, volumesSize, 1);
+	},
+	godot_audio_sample_set_volumes_linear_main__proxy: 'async',
+	godot_audio_sample_set_volumes_linear_main__sig: 'viiiiii',
+	godot_audio_sample_set_volumes_linear_main: function (playbackObjectIdStrPtr, busesPtr, busesSize, volumesPtr, volumesSize, owned) {
 		/** @type {string} */
 		const playbackObjectId = GodotRuntime.parseString(playbackObjectIdStrPtr);
-
-		// Both stay heap views and are read in place: this runs once per
-		// positional sound per frame.
 		/** @type {Int32Array} */
-		const buses = GodotRuntime.heapSub(HEAP32, busesPtr, busesSize);
+		const buses = owned ? new Int32Array(GodotRuntime.heapSub(HEAP32, busesPtr, busesSize)) : GodotRuntime.heapSub(HEAP32, busesPtr, busesSize);
 		/** @type {Float32Array} */
-		const volumes = GodotRuntime.heapSub(HEAPF32, volumesPtr, volumesSize);
-
+		const volumes = owned ? new Float32Array(GodotRuntime.heapSub(HEAPF32, volumesPtr, volumesSize)) : GodotRuntime.heapSub(HEAPF32, volumesPtr, volumesSize);
+		if (owned) {
+			GodotRuntime.free(playbackObjectIdStrPtr);
+			GodotRuntime.free(busesPtr);
+			GodotRuntime.free(volumesPtr);
+		}
 		GodotAudio.sample_set_volumes_linear(playbackObjectId, buses, volumes);
 	},
 

@@ -147,7 +147,16 @@ const GodotWebGPUWorker = {
 			if (!finished) {
 				console.error('[Godot] Failed to create WebGPU device in the application Worker:', error);
 				finish(1);
+				return;
 			}
+			// The device was delivered and the engine callback itself threw. That
+			// exception unwound straight through the wasm frames of everything the
+			// callback was running — no C++ destructor ran, so any lock those frames
+			// held stays held, and this thread now sits idle with the engine half
+			// started. Swallowing it here turned that into a silent hang; make it
+			// impossible to miss instead.
+			console.error('[Godot] Engine startup threw inside the WebGPU-ready callback (the thread is now idle):', error);
+			throw error;
 		});
 	},
 

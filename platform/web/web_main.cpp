@@ -47,6 +47,7 @@
 #endif
 
 #include <emscripten/emscripten.h>
+#include <emscripten/eventloop.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -61,6 +62,7 @@ static bool main_started = false;
 static bool shutdown_complete = false;
 
 #if defined(PROXY_TO_PTHREAD_ENABLED) && defined(WEBGPU_ENABLED)
+static bool app_loop_finished = false;
 static constexpr const char *APPLICATION_WORKER_WEBGPU_MARKER = "--godot-application-worker-webgpu";
 static Vector<String> application_worker_args;
 static bool application_worker_webgpu_device = false;
@@ -121,11 +123,21 @@ void main_loop_callback() {
 #endif
 
 	if (os->main_loop_iterate()) {
+#if defined(PROXY_TO_PTHREAD_ENABLED) && defined(WEBGPU_ENABLED)
+		app_loop_finished = true; // Stops the immediate loop, if that is what drives us.
+#endif
 		emscripten_cancel_main_loop(); // Cancel current loop and set the cleanup one.
 		emscripten_set_main_loop(exit_callback, -1, false);
 		godot_js_os_finish_async(cleanup_after_sync);
 	}
 }
+
+#if defined(PROXY_TO_PTHREAD_ENABLED) && defined(WEBGPU_ENABLED)
+static int app_immediate_tick(void *) {
+	main_loop_callback();
+	return app_loop_finished ? 0 : 1;
+}
+#endif
 
 void print_web_header() {
 	// Emscripten.
@@ -188,7 +200,20 @@ static int godot_web_main_after_webgpu(int argc, char *argv[]) {
 		SceneTree::get_singleton()->get_root()->emit_signal(SNAME("files_dropped"), ps);
 	}
 #endif
-	emscripten_set_main_loop(main_loop_callback, -1, false);
+#if defined(PROXY_TO_PTHREAD_ENABLED) && defined(WEBGPU_ENABLED)
+	if (OS::get_singleton()->is_separate_thread_rendering_enabled()) {
+		// The canvas now belongs to the render thread, and a Worker without a
+		// canvas is not guaranteed animation frames. Drive this loop from an
+		// immediate loop instead — a setTimeout loop is clamped to 4 ms by the
+		// browser once nested, which costs a frame's worth of latency at 60 Hz.
+		// RenderingServer::sync() paces the iteration to the render thread's
+		// frame rate anyway, exactly as on desktop.
+		godot_js_immediate_loop(app_immediate_tick, nullptr);
+	} else
+#endif
+	{
+		emscripten_set_main_loop(main_loop_callback, -1, false);
+	}
 	// Immediately run the first iteration.
 	// We are inside an animation frame, we want to immediately draw on the newly setup canvas.
 	main_loop_callback();

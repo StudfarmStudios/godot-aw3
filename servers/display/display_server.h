@@ -122,6 +122,17 @@ public:
 	virtual void release_rendering_thread();
 	virtual void swap_buffers();
 
+	// Rendering that can only be brought up on the render thread itself — the
+	// web/WebGPU case, where the device and its canvas surface are JavaScript
+	// objects bound to the realm of the Worker that created them. When this
+	// returns true the constructor has skipped creating the RenderingDevice, and
+	// RenderingServerDefault calls deferred_rendering_initialize() from the render
+	// thread once that thread owns a device, and deferred_rendering_finalize()
+	// from the same thread before it exits.
+	virtual bool has_deferred_rendering() const { return false; }
+	virtual Error deferred_rendering_initialize() { return ERR_UNAVAILABLE; }
+	virtual void deferred_rendering_finalize() {}
+
 	virtual void beep() const;
 
 	/* RENDERING DEVICE */
