@@ -3803,6 +3803,14 @@ RID TextServerAdvanced::_font_get_glyph_texture_rid(const RID &p_font_rid, const
 			if (fd->mipmaps && !img->has_mipmaps()) {
 				img = tex.image->duplicate();
 				img->generate_mipmaps();
+			} else if (img == tex.image) {
+				// texture_2d_update() only queues this image; with a separate
+				// render thread it is read later, while the next glyph rasterised
+				// into this atlas is still writing through ptrw(). The buffer is
+				// copy-on-write and not safe to share across that, and the reader
+				// can catch it mid-reallocation and see no data at all. Hand over
+				// a copy nothing else will touch.
+				img = tex.image->duplicate();
 			}
 			if (tex.texture.is_null()) {
 				tex.texture = ImageTexture::create_from_image(img);
@@ -3853,6 +3861,14 @@ Size2 TextServerAdvanced::_font_get_glyph_texture_size(const RID &p_font_rid, co
 			if (fd->mipmaps && !img->has_mipmaps()) {
 				img = tex.image->duplicate();
 				img->generate_mipmaps();
+			} else if (img == tex.image) {
+				// texture_2d_update() only queues this image; with a separate
+				// render thread it is read later, while the next glyph rasterised
+				// into this atlas is still writing through ptrw(). The buffer is
+				// copy-on-write and not safe to share across that, and the reader
+				// can catch it mid-reallocation and see no data at all. Hand over
+				// a copy nothing else will touch.
+				img = tex.image->duplicate();
 			}
 			if (tex.texture.is_null()) {
 				tex.texture = ImageTexture::create_from_image(img);
@@ -4329,6 +4345,10 @@ void TextServerAdvanced::_font_draw_glyph(const RID &p_font_rid, const RID &p_ca
 				if (fd->mipmaps && !img->has_mipmaps()) {
 					img = tex.image->duplicate();
 					img->generate_mipmaps();
+				} else if (img == tex.image) {
+					// See above: the queued update must not alias the atlas the
+					// text server keeps writing into.
+					img = tex.image->duplicate();
 				}
 				if (tex.texture.is_null()) {
 					tex.texture = ImageTexture::create_from_image(img);
@@ -4468,6 +4488,10 @@ void TextServerAdvanced::_font_draw_glyph_outline(const RID &p_font_rid, const R
 				if (fd->mipmaps && !img->has_mipmaps()) {
 					img = tex.image->duplicate();
 					img->generate_mipmaps();
+				} else if (img == tex.image) {
+					// See above: the queued update must not alias the atlas the
+					// text server keeps writing into.
+					img = tex.image->duplicate();
 				}
 				if (tex.texture.is_null()) {
 					tex.texture = ImageTexture::create_from_image(img);
