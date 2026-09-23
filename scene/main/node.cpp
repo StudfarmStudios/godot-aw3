@@ -1692,16 +1692,9 @@ void Node::_add_child_nocheck(Node *p_child, const StringName &p_name, InternalM
 	p_child->data.parent = this;
 
 	if (!data.children_cache_dirty && can_push_back) {
-		// Appending leaves every existing child's index alone, so orders that
-		// were sorted on tree order are still sorted.
 		data.children_cache.push_back(p_child);
 	} else {
-		// Rebuilding the cache renumbers the children, which reorders them
-		// against the rest of the tree.
 		data.children_cache_dirty = true;
-		if (data.tree) {
-			data.tree->_notify_process_tree_order_changed();
-		}
 	}
 
 	p_child->notification(NOTIFICATION_PARENTED);
@@ -1776,12 +1769,7 @@ void Node::remove_child(RequiredParam<Node> rp_child) {
 
 	data.blocked--;
 
-	// Removing renumbers every later sibling, so anything sorted on tree order
-	// (the process groups) has to be re-sorted rather than merged into.
 	data.children_cache_dirty = true;
-	if (data.tree) {
-		data.tree->_notify_process_tree_order_changed();
-	}
 	bool success = data.children.erase(p_child->data.name);
 	ERR_FAIL_COND_MSG(!success, "Children name does not match parent name in hashtable, this is a bug.");
 

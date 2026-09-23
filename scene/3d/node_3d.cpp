@@ -486,53 +486,6 @@ void Node3D::_disable_client_physics_interpolation() {
 	_set_physics_interpolated_client_side(false);
 }
 
-Transform3D Node3D::_get_global_transform_interpolated_from_ancestors() const {
-	// Walk up to the closest ancestor SceneTreeFTI calculated an interpolated
-	// transform for; failing that, the top of the chain, whose own transform is
-	// interpolated below like any other link.
-	const Node3D *seed = nullptr;
-	const Node3D *s = data.parent;
-	while (s) {
-		if (s->data.fti_global_xform_interp_set) {
-			seed = s;
-			break;
-		}
-		s = s->data.parent;
-	}
-
-	const int32_t depth = _get_scene_tree_depth();
-	if (depth < 1) {
-		// Only reachable if the scene tree depth bookkeeping is broken.
-		ERR_PRINT_ONCE("depth is < 1.");
-		return get_global_transform();
-	}
-
-	const Node3D **parents = (const Node3D **)alloca(sizeof(const Node3D *) * depth);
-	int32_t num_parents = 0;
-	s = this;
-	while (s && s != seed && num_parents < depth) {
-		parents[num_parents++] = s;
-		s = s->data.parent;
-	}
-
-	const real_t interpolation_fraction = Engine::get_singleton()->get_physics_interpolation_fraction();
-	Transform3D xform = seed ? seed->data.global_transform_interpolated : Transform3D();
-	Transform3D local_interp;
-
-	for (int32_t n = num_parents - 1; n >= 0; n--) {
-		s = parents[n];
-		if (s->is_physics_interpolated()) {
-			// get_transform() rather than local_transform, which may be dirty.
-			TransformInterpolator::interpolate_transform_3d(s->data.local_transform_prev, s->get_transform(), local_interp, interpolation_fraction);
-		} else {
-			local_interp = s->get_transform();
-		}
-		xform *= local_interp;
-	}
-
-	return xform;
-}
-
 Transform3D Node3D::_get_global_transform_interpolated(real_t p_interpolation_fraction) {
 	ERR_FAIL_COND_V(!is_inside_tree(), Transform3D());
 
@@ -617,18 +570,8 @@ Transform3D Node3D::get_global_transform_interpolated() {
 		}
 
 		// Simplest case, we can return the interpolated xform calculated by SceneTreeFTI.
-		if (visible_in_tree && data.fti_global_xform_interp_set) {
-			return data.global_transform_interpolated;
-		} else if (visible_in_tree) {
-			// SceneTreeFTI only keeps interpolated global transforms for visual
-			// instances, so a plain Node3D (a CharacterBody3D carrying a mesh, say)
-			// has none. Returning the global transform here hands back the raw
-			// physics pose: callers asking where a node is *on screen* would get a
-			// value a fraction of a tick out of step with the mesh they can see,
-			// which reads as the two moving in different phases. Compose one the
-			// same way the renderer does instead, from the closest ancestor that
-			// has an interpolated transform.
-			return _get_global_transform_interpolated_from_ancestors();
+		if (visible_in_tree) {
+			return data.fti_global_xform_interp_set ? data.global_transform_interpolated : get_global_transform();
 		} else if (visible_parent) {
 			// INVISIBLE case. Not visible, but there is a visible ancestor somewhere in the chain.
 			if (_get_scene_tree_depth() < 1) {
