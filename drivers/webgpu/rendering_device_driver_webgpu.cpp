@@ -9677,7 +9677,10 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 				? map_compare(p_depth_stencil_state.depth_compare_operator)
 				: WGPUCompareFunction_Always;
 
-		if (p_depth_stencil_state.enable_stencil) {
+		// A stencil material also gets pipelines for depth-only passes (shadows, probes).
+		// Vulkan and Metal ignore stencil state without a stencil aspect; WebGPU rejects
+		// the pipeline, so drop it the same way.
+		if (p_depth_stencil_state.enable_stencil && has_stencil_wgpu(ds.format)) {
 			ds.stencilFront.compare = map_compare(p_depth_stencil_state.front_op.compare);
 			ds.stencilFront.failOp = map_stencil_op(p_depth_stencil_state.front_op.fail);
 			ds.stencilFront.depthFailOp = map_stencil_op(p_depth_stencil_state.front_op.depth_fail);
