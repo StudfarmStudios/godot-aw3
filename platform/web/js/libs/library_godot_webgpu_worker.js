@@ -69,6 +69,7 @@ const GodotWebGPUWorker = {
 				'maxSamplersPerShaderStage',
 				'maxStorageTexturesPerShaderStage',
 				'maxColorAttachments',
+				'maxInterStageShaderVariables',
 				'maxBindGroups',
 				'maxStorageBuffersInFragmentStage',
 				'maxStorageBuffersInVertexStage',
