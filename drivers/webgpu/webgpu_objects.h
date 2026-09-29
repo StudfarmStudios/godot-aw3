@@ -52,6 +52,7 @@ struct WGBuffer {
 	bool is_readback = false;      // True for staging buffers that need GPU→CPU readback.
 	bool map_complete = false;     // Set by async map callback.
 	bool map_pending = false;      // True while wgpuBufferMapAsync callback is in flight.
+	WGPUFuture map_future = {};    // The pending map, for native Dawn to wait on (buffer_map).
 	bool freed = false;            // Source freed while map pending; callback will clean up.
 
 	// Dirty range tracking for shadow buffer flushes. On WebGPU, buffer_unmap()

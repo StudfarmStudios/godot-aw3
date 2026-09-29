@@ -310,10 +310,14 @@ public:
 		bool map_pending = false;       ///< True while mapAsync is in flight (not yet completed).
 		bool has_data = false;          ///< True after first successful readback.
 		bool cancelled = false;         ///< Source freed while map pending; callback will clean up.
+		WGPUFuture map_future = {};     ///< The pending map, for native Dawn to wait on.
 	};
 	HashMap<uint64_t, ReadbackEntry *> _readback_cache; ///< Keyed by source buffer/texture pointer.
 	/// Async map callback — copies GPU data to shadow buffer.
 	static void _readback_map_cb(WGPUMapAsyncStatus p_status, WGPUStringView p_message, void *p_userdata1, void *p_userdata2);
+	/// Native Dawn only: block until a readback map has landed (its callback has run).
+	/// The browser cannot block inside a frame; there readback stays frame-deferred.
+	void _wait_for_map(WGPUFuture p_future);
 
 	// Coalesced staging uploads (see WGBuffer::pending_upload_spans). Buffers
 	// with pending spans, flushed with one writeBuffer per merged span right

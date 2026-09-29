@@ -2146,6 +2146,22 @@ uint8_t *RenderingDeviceDriverWebGPU::buffer_map(BufferID p_buffer) {
 			memset(buf->shadow_map, 0, buf->size);
 		}
 
+#ifndef __EMSCRIPTEN__
+		// Native Dawn can block, as fence_wait does, so a synchronous read gets its data:
+		// a buffer nobody has asked to map yet (buffer_get_data's staging buffer, whose copy
+		// the caller has already flushed and waited for) is mapped now, and a pending map is
+		// waited for. Returning the shadow unfilled handed callers zeros (mesh arrays read back
+		// as all-zero vertices). Only the browser has to take whatever has landed (below).
+		if (!buf->map_complete) {
+			if (!buf->map_pending && wgpuBufferGetMapState(buf->handle) == WGPUBufferMapState_Unmapped) {
+				buffer_initiate_async_map(p_buffer);
+			}
+			if (buf->map_pending) {
+				_wait_for_map(buf->map_future);
+			}
+		}
+#endif
+
 		// Try to deliver pending callbacks.
 		WGPUInstance inst = context_driver ? context_driver->get_instance() : nullptr;
 		if (inst) {
@@ -2325,7 +2341,7 @@ void RenderingDeviceDriverWebGPU::buffer_initiate_async_map(BufferID p_buffer) {
 		cb.mode = WGPUCallbackMode_AllowSpontaneous;
 		cb.callback = _buffer_deferred_map_cb;
 		cb.userdata1 = buf;
-		wgpuBufferMapAsync(buf->handle, WGPUMapMode_Read, 0, buf->size, cb);
+		buf->map_future = wgpuBufferMapAsync(buf->handle, WGPUMapMode_Read, 0, buf->size, cb);
 	} else {
 		// Buffer already pending or mapped, skip duplicate mapAsync.
 	}
@@ -2551,7 +2567,26 @@ void RenderingDeviceDriverWebGPU::_readback_map_cb(WGPUMapAsyncStatus p_status, 
 	entry->map_complete = true;
 }
 
+void RenderingDeviceDriverWebGPU::_wait_for_map(WGPUFuture p_future) {
+#ifndef __EMSCRIPTEN__
+	WGPUInstance inst = context_driver ? context_driver->get_instance() : nullptr;
+	ERR_FAIL_NULL(inst);
+	WGPUFutureWaitInfo wait_info = WGPU_FUTURE_WAIT_INFO_INIT;
+	wait_info.future = p_future;
+	WGPUWaitStatus status = wgpuInstanceWaitAny(inst, 1, &wait_info, UINT64_MAX);
+	ERR_FAIL_COND_MSG(status != WGPUWaitStatus_Success || !wait_info.completed,
+			"WebGPU: Failed waiting for a readback map.");
+#endif
+}
+
 bool RenderingDeviceDriverWebGPU::buffer_get_data_direct(BufferID p_buffer, uint64_t p_offset, uint64_t p_size, Vector<uint8_t> &r_data) {
+#ifndef __EMSCRIPTEN__
+	// Native Dawn can wait, so it takes RenderingDevice's ordinary path, as the other drivers
+	// do: a copy through the draw graph, a flush and stall, then buffer_map, which waits for
+	// the map. The frame-deferred cache below is the browser's, which cannot block: its first
+	// read returns nothing and later ones the previous request's snapshot.
+	return false;
+#else
 	WGBuffer *buf = (WGBuffer *)(p_buffer.id);
 	ERR_FAIL_NULL_V(buf, false);
 
@@ -2646,6 +2681,7 @@ bool RenderingDeviceDriverWebGPU::buffer_get_data_direct(BufferID p_buffer, uint
 		r_data.clear();
 		return false; // Not ready — data will be available next frame.
 	}
+#endif
 }
 
 WGPUBufferUsage RenderingDeviceDriverWebGPU::_buffer_usage_to_wgpu(BitField<BufferUsageBits> p_usage) const {
@@ -3088,9 +3124,10 @@ Vector<uint8_t> RenderingDeviceDriverWebGPU::texture_get_data(TextureID p_textur
 	WGTexture *tex = (WGTexture *)(p_texture.id);
 	ERR_FAIL_NULL_V(tex, Vector<uint8_t>());
 
-	// Same frame-deferred readback pattern as buffer_get_data_direct.
-	// First call: copy texture → staging buffer, initiate async map, return zeros.
+	// In the browser: the same frame-deferred readback pattern as buffer_get_data_direct.
+	// First call: copy texture → staging buffer, initiate async map, return empty.
 	// Subsequent calls: return cached data from completed async map.
+	// Native Dawn copies, maps and waits in the one call instead (see below).
 
 	uint64_t key = (uint64_t)(uintptr_t)tex ^ ((uint64_t)p_layer << 48);
 	ReadbackEntry *entry = nullptr;
@@ -3116,6 +3153,45 @@ Vector<uint8_t> RenderingDeviceDriverWebGPU::texture_get_data(TextureID p_textur
 	uint32_t row_pitch = ((mip_w * gpu_bpp + 255) / 256) * 256; // 256-byte aligned
 	uint64_t buffer_size = (uint64_t)row_pitch * mip_h;
 
+	// A completed readback's pixels: un-padded to tightly packed rows, and converted back
+	// where the driver promoted or downgraded the format. Marks the entry consumed.
+	auto deliver = [&](ReadbackEntry *p_entry) {
+		Vector<uint8_t> result;
+		result.resize(mip_w * mip_h * rd_bpp);
+		uint8_t *dst = result.ptrw();
+
+		if (gpu_bpp != rd_bpp) {
+			// Format was promoted or downgraded — convert GPU data back to
+			// the original Godot format (e.g. R32Float→R8, Float16→Float32).
+			uint32_t dst_pitch = mip_w * rd_bpp;
+			texture_readback_convert(p_texture, p_entry->shadow, row_pitch,
+					dst, dst_pitch, mip_w, mip_h);
+		} else {
+			// No format divergence — un-pad from staging to tightly packed output.
+			uint32_t tight_row = mip_w * rd_bpp;
+			for (uint32_t y = 0; y < mip_h; y++) {
+				memcpy(dst + y * tight_row, p_entry->shadow + y * row_pitch, tight_row);
+			}
+		}
+		p_entry->has_data = false;
+		return result;
+	};
+
+#ifndef __EMSCRIPTEN__
+	// Native Dawn can wait, so a read is synchronous and current, as on the other drivers:
+	// RenderingDevice has flushed and stalled, and below the texture is copied, mapped and
+	// waited for, and this call's pixels come back. The frame-deferred cache that follows is
+	// the browser's, which cannot block inside a frame: natively it returned nothing on a
+	// first read (the blank frames of the capture rigs) and an earlier request's pixels after.
+	// So: land any read left in flight, never hand back its pixels, and take a fresh one.
+	if (entry && entry->map_pending) {
+		_wait_for_map(entry->map_future);
+	}
+	if (entry) {
+		entry->has_data = false;
+	}
+#endif
+
 	// If a readback is in flight, deliver pending callbacks and then probe the
 	// buffer's map state directly. emdawnwebgpu may have completed the map at
 	// the JS level even though the C callback hasn't been delivered yet (same
@@ -3140,24 +3216,6 @@ Vector<uint8_t> RenderingDeviceDriverWebGPU::texture_get_data(TextureID p_textur
 
 	// Return cached data if previous readback completed.
 	if (entry && entry->has_data && entry->map_complete) {
-		Vector<uint8_t> result;
-		result.resize(mip_w * mip_h * rd_bpp);
-		uint8_t *dst = result.ptrw();
-
-		if (gpu_bpp != rd_bpp) {
-			// Format was promoted or downgraded — convert GPU data back to
-			// the original Godot format (e.g. R32Float→R8, Float16→Float32).
-			uint32_t dst_pitch = mip_w * rd_bpp;
-			texture_readback_convert(p_texture, entry->shadow, row_pitch,
-					dst, dst_pitch, mip_w, mip_h);
-		} else {
-			// No format divergence — un-pad from staging to tightly packed output.
-			uint32_t tight_row = mip_w * rd_bpp;
-			for (uint32_t y = 0; y < mip_h; y++) {
-				memcpy(dst + y * tight_row, entry->shadow + y * row_pitch, tight_row);
-			}
-		}
-
 		// Mark consumed; do NOT auto-requeue. Each top-level call (e.g.
 		// viewport.get_texture().get_image()) should reflect GPU state at call
 		// time, not the previous call's snapshot. The next call to
@@ -3168,9 +3226,7 @@ Vector<uint8_t> RenderingDeviceDriverWebGPU::texture_get_data(TextureID p_textur
 		// scroll-screenshot to show t_(n-1) on subsequent scrolls because the
 		// post-Path-A copy snapshotted the *post-scroll* frame, not the next
 		// pre-scroll frame.
-		entry->has_data = false;
-
-		return result;
+		return deliver(entry);
 	}
 
 	// First call — create staging buffer and initiate readback.
@@ -3233,7 +3289,15 @@ Vector<uint8_t> RenderingDeviceDriverWebGPU::texture_get_data(TextureID p_textur
 	cb.mode = WGPUCallbackMode_AllowSpontaneous;
 	cb.callback = _readback_map_cb;
 	cb.userdata1 = entry;
-	wgpuBufferMapAsync(entry->staging, WGPUMapMode_Read, 0, entry->size, cb);
+	entry->map_future = wgpuBufferMapAsync(entry->staging, WGPUMapMode_Read, 0, entry->size, cb);
+
+#ifndef __EMSCRIPTEN__
+	_wait_for_map(entry->map_future);
+	if (entry->has_data) {
+		return deliver(entry);
+	}
+	ERR_FAIL_V_MSG(Vector<uint8_t>(), "WebGPU: texture_get_data: the readback map failed.");
+#endif
 
 	// Return empty on first call — signals "not ready" to the caller.
 	// Data will be available on the next call after frame_post_draw.
