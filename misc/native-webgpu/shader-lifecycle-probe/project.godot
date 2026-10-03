@@ -1,0 +1,11 @@
+config_version=5
+[application]
+config/name="WebGPU deferred shader regression"
+run/main_scene="res://main.tscn"
+[display]
+window/size/viewport_width=64
+window/size/viewport_height=64
+[rendering]
+renderer/rendering_method="mobile"
+renderer/rendering_method.web="mobile"
+rendering_device/driver.web="webgpu"

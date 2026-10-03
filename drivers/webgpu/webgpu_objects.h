@@ -34,6 +34,7 @@
 
 #include "core/os/mutex.h"
 #include "servers/rendering/rendering_device_driver.h"
+#include "servers/rendering/rendering_shader_container.h"
 
 #include <webgpu/webgpu.h>
 
@@ -152,6 +153,9 @@ struct WGVertexFormat {
 // =============================================================================
 
 struct WGShader {
+	// Retain compressed SPIR-V only until this variant is first used.
+	Ref<RenderingShaderContainer> pending_container;
+
 	// Per-stage shader modules. Indexed by RDD::ShaderStage enum value.
 	WGPUShaderModule stage_modules[6] = {}; // SHADER_STAGE_MAX = 6 (vertex/frag/tess×2/compute/max)
 	// Create GPU modules only when a pipeline uses this variant. Reflection can

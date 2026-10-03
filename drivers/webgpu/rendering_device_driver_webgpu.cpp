@@ -4613,20 +4613,35 @@ static WGPUShaderStage _stages_to_wgpu_visibility(uint32_t p_stage_mask) {
 }
 
 RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Ref<RenderingShaderContainer> &p_shader_container, const Vector<ImmutableSampler> &p_immutable_samplers) {
-	ERR_FAIL_COND_V(p_shader_container.is_null(), ShaderID());
-
 	Ref<RenderingShaderContainerWebGPU> wg_container = p_shader_container;
 	ERR_FAIL_COND_V(wg_container.is_null(), ShaderID());
 
-	RenderingDeviceCommons::ShaderReflection shader_refl = p_shader_container->get_shader_reflection();
-
 	WGShader *shader = new WGShader();
 	shader->name = String(p_shader_container->shader_name.ptr());
+	// ShaderRD creates every enabled variant when loading a material. Keep the
+	// compressed container until this variant actually supplies a uniform set or
+	// pipeline; translating all of them defeats the renderer's pipeline warmup.
+	shader->pending_container = p_shader_container;
+	return ShaderID(shader);
+}
+
+bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
+	if (shader->pipeline_layout) {
+		return true;
+	}
+	if (shader->pending_container.is_null()) {
+		return false; // A previous initialization attempt failed.
+	}
+
+	Ref<RenderingShaderContainer> p_shader_container = shader->pending_container;
+	shader->pending_container.unref(); // Also release the source after a failed attempt.
+	Ref<RenderingShaderContainerWebGPU> wg_container = p_shader_container;
+	RenderingDeviceCommons::ShaderReflection shader_refl = p_shader_container->get_shader_reflection();
 	shader->push_constant_bind_group = wg_container->get_push_constant_bind_group();
 	shader->push_constant_binding = wg_container->get_push_constant_binding();
 	shader->push_constant_size = shader_refl.push_constant_size;
 
-	print_verbose(vformat("WebGPU: shader_create_from_container '%s' (%d stages, push_const_size=%d)", shader->name, (int)p_shader_container->shaders.size(), (int)shader_refl.push_constant_size));
+	print_verbose(vformat("WebGPU: initializing shader '%s' (%d stages, push_const_size=%d)", shader->name, (int)p_shader_container->shaders.size(), (int)shader_refl.push_constant_size));
 
 	String error_text;
 
@@ -6226,37 +6241,22 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 		goto cleanup;
 	}
 
-	return ShaderID(shader);
+	return true;
 
 	} // End block scope.
 
 cleanup:
-	// Clean up partially-constructed shader (mirrors shader_free).
-	for (int i = 0; i < 6; i++) {
-		if (shader->stage_modules[i]) {
-			wgpuShaderModuleRelease(shader->stage_modules[i]);
-		}
-	}
-	if (shader->pipeline_layout) {
-		wgpuPipelineLayoutRelease(shader->pipeline_layout);
-	}
-	for (WGPUBindGroupLayout &layout : shader->bind_group_layouts) {
-		if (layout) {
-			wgpuBindGroupLayoutRelease(layout);
-		}
-	}
-	if (shader->merged_pc_group_layout) {
-		wgpuBindGroupLayoutRelease(shader->merged_pc_group_layout);
-	}
-	delete shader;
-	ERR_FAIL_V_MSG(ShaderID(), error_text);
+	// shader_free owns any partially initialized resources. Keep the stable
+	// ShaderID valid so callers can report the failure and release it normally.
+	ERR_FAIL_V_MSG(false, error_text);
 }
 
 uint32_t RenderingDeviceDriverWebGPU::shader_get_layout_hash(ShaderID p_shader) {
 	WGShader *shader = (WGShader *)(p_shader.id);
 	if (!shader) return 0;
-	// Use the pipeline layout pointer as a cheap hash identifier.
-	return (uint32_t)(uint64_t)(void *)(shader->pipeline_layout);
+	// The identity must be available before lazy layout initialization and stay
+	// stable afterwards. Layouts are private to their WGShader.
+	return (uint32_t)(uint64_t)(void *)shader;
 }
 
 void RenderingDeviceDriverWebGPU::shader_free(ShaderID p_shader) {
@@ -6285,6 +6285,9 @@ void RenderingDeviceDriverWebGPU::shader_free(ShaderID p_shader) {
 void RenderingDeviceDriverWebGPU::shader_destroy_modules(ShaderID p_shader) {
 	WGShader *shader = (WGShader *)(p_shader.id);
 	ERR_FAIL_NULL(shader);
+	// Uniform sets may still be created after modules are discarded. Preserve
+	// their layout even when no pipeline has initialized this shader yet.
+	ERR_FAIL_COND(!_ensure_shader_layout(shader));
 	for (int i = 0; i < 6; i++) {
 		shader->stage_wgsl[i] = CharString();
 		if (shader->stage_modules[i]) {
@@ -6302,6 +6305,7 @@ void RenderingDeviceDriverWebGPU::shader_destroy_modules(ShaderID p_shader) {
 RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<BoundUniform> p_uniforms, ShaderID p_shader, uint32_t p_set_index, int p_linear_pool_index) {
 	WGShader *shader = (WGShader *)(p_shader.id);
 	ERR_FAIL_NULL_V(shader, UniformSetID());
+	ERR_FAIL_COND_V(!_ensure_shader_layout(shader), UniformSetID());
 	ERR_FAIL_COND_V(p_set_index >= (uint32_t)shader->bind_group_layouts.size(), UniformSetID());
 
 	WGPUBindGroupLayout layout = shader->bind_group_layouts[p_set_index];
@@ -9474,6 +9478,7 @@ WGPUShaderModule RenderingDeviceDriverWebGPU::_create_module_with_spec_constants
 }
 
 bool RenderingDeviceDriverWebGPU::_ensure_shader_modules(WGShader *p_shader) {
+	ERR_FAIL_COND_V(!_ensure_shader_layout(p_shader), false);
 	for (uint32_t i = 0; i < 6; i++) {
 		if (p_shader->stage_modules[i] || p_shader->stage_wgsl[i].is_empty()) {
 			continue;

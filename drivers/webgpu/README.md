@@ -93,8 +93,12 @@ advanced lightmap variants for a large material set. Cache hits and disk flushes
 reuse the stored bytes without transcoding. The v3 disk format and legacy seed
 reader remain compatible.
 
-Shader variants are translated and reflected when loaded, but their GPU shader
-modules are created only when a render or compute pipeline requests them.
+Shader variants defer their GPU shader modules until a render or compute
+pipeline requests them.
+SPIR-V translation and bind group layout construction are also deferred until
+the first uniform set or pipeline uses a variant. Unused variants retain only
+the compressed shader container; a stable shader identity is available before
+layout creation, and freeing an unused variant does not compile it.
 Forward+ enables many variants together; eagerly creating browser modules for
 unused variants can exhaust the GPU process during a large warmup. Deferred
 sources share the translation cache's UTF-8 storage where possible and are
