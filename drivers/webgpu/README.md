@@ -85,6 +85,24 @@ limit when lightmaps are enabled. Metal and Vulkan retain their storage buffer.
 The [lightmap regression probe](../../misc/native-webgpu/lightmap-probe/README.md)
 checks the rendered lightmap color on Forward+, Mobile, and native Metal.
 
+Generated WGSL stays in UTF-8 in the in-memory translation cache, including
+entries loaded from disk or a bundled seed. WebGPU consumes UTF-8 directly;
+storing these sources in Godot's UTF-32 `String` uses four bytes per ASCII
+character and can exhaust the 2 GiB WASM heap when Forward+ compiles the
+advanced lightmap variants for a large material set. Cache hits and disk flushes
+reuse the stored bytes without transcoding. The v3 disk format and legacy seed
+reader remain compatible.
+
+Shader variants are translated and reflected when loaded, but their GPU shader
+modules are created only when a render or compute pipeline requests them.
+Forward+ enables many variants together; eagerly creating browser modules for
+unused variants can exhaust the GPU process during a large warmup. Deferred
+sources share the translation cache's UTF-8 storage where possible and are
+released after module creation.
+Raw SPIR-V is retained only for the specialization fallback. Shaders using
+WGSL pipeline constants, or having no specialization constants, release their
+decompressed stage data after reflection.
+
 ### Barrier No-ops
 WebGPU tracks resource hazards automatically. All barrier/sync commands are
 no-ops.
