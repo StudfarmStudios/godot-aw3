@@ -172,6 +172,7 @@ private:
 
 	RID render_base_uniform_set;
 	bool use_first_instance = false; // Cached API_TRAIT_FIRST_INSTANCE_INDEX.
+	bool use_lightmap_uniform_buffer = false;
 
 	uint64_t lightmap_texture_array_version = 0xFFFFFFFF;
 

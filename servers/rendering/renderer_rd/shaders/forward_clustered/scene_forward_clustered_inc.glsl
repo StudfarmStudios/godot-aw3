@@ -244,8 +244,13 @@ struct Lightmap {
 	uint flags;
 };
 
+#ifdef USE_LIGHTMAP_UNIFORM_BUFFER
+layout(set = 0, binding = 8, std140) uniform Lightmaps {
+	Lightmap data[MAX_LIGHTMAPS];
+#else
 layout(set = 0, binding = 8, std140) restrict readonly buffer Lightmaps {
 	Lightmap data[];
+#endif
 }
 lightmaps;
 
