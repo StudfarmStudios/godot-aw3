@@ -5602,6 +5602,14 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 	}
 
 	shader->has_override_declarations = detected_override_declarations;
+	if (detected_override_declarations || shader_refl.specialization_constants.is_empty()) {
+		// Pipeline constants specialize WGSL directly. Only the fallback path
+		// needs raw SPIR-V; keeping it for every Forward+ variant retains a
+		// second, decompressed copy of the shader cache throughout gameplay.
+		for (PackedByteArray &spirv : shader->stage_spirv) {
+			spirv.clear();
+		}
+	}
 	if (detected_override_declarations) {
 		print_verbose(vformat("WebGPU: shader '%s' has override declarations — will use pipeline constants for specialization.", shader->name));
 	}

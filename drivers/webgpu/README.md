@@ -99,6 +99,9 @@ Forward+ enables many variants together; eagerly creating browser modules for
 unused variants can exhaust the GPU process during a large warmup. Deferred
 sources share the translation cache's UTF-8 storage where possible and are
 released after module creation.
+Raw SPIR-V is retained only for the specialization fallback. Shaders using
+WGSL pipeline constants, or having no specialization constants, release their
+decompressed stage data after reflection.
 
 ### Barrier No-ops
 WebGPU tracks resource hazards automatically. All barrier/sync commands are
