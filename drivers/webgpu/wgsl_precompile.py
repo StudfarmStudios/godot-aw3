@@ -811,7 +811,11 @@ def precompile_wgsl(repo_root, output_path, glslang_path="glslangValidator"):
                 spv_bytes, error = compile_glsl_to_spirv(glsl_source, stage_type, glslang_path)
                 if spv_bytes is None:
                     shader_name = os.path.basename(glsl_rel)
-                    print(f"  FAIL: {shader_name}:{variant_name}:{stage_type} — {error[:120] if error else 'unknown'}")
+                    # These optional variants fall back to runtime translation.
+                    # Keep their compiler diagnostics attached to that context,
+                    # rather than emitting standalone build-error lines.
+                    detail = error.replace("\n", " | ")[:120] if error else "unknown"
+                    print(f"  FAIL: {shader_name}:{variant_name}:{stage_type} — {detail}")
                     failed_compile += 1
                     continue
 

@@ -154,6 +154,9 @@ struct WGVertexFormat {
 struct WGShader {
 	// Per-stage shader modules. Indexed by RDD::ShaderStage enum value.
 	WGPUShaderModule stage_modules[6] = {}; // SHADER_STAGE_MAX = 6 (vertex/frag/tess×2/compute/max)
+	// Create GPU modules only when a pipeline uses this variant. Reflection can
+	// use WGSL without retaining thousands of unused browser compiler objects.
+	CharString stage_wgsl[6];
 	WGPUShaderModule module = nullptr; // Legacy alias — points to first non-null module.
 
 	// Per-stage raw SPIR-V bytes. Stored for deferred specialization constant patching.

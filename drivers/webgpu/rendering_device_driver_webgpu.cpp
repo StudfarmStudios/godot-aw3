@@ -354,7 +354,9 @@ struct SpvStageAnalysis {
 	HashMap<uint32_t, spirv_preprocess::ImageBindingInfo> binding_images;
 };
 
-static HashMap<uint64_t, String> _spv_to_wgsl_cache;
+// WebGPU consumes UTF-8. Keeping generated WGSL in String expands its mostly
+// ASCII source to UTF-32 and can exhaust the WASM heap during Forward+ warmup.
+static HashMap<uint64_t, CharString> _spv_to_wgsl_cache;
 static HashMap<uint64_t, SpvStageAnalysis> _spv_stage_analysis_cache;
 static uint32_t _spv_to_wgsl_cache_hits = 0;
 static uint32_t _spv_to_wgsl_cache_misses = 0;
@@ -692,7 +694,7 @@ static void _wgsl_disk_cache_nuke() {
 
 struct WgslCachePendingEntry {
 	uint64_t hash = 0;
-	String wgsl;
+	CharString wgsl;
 	bool has_analysis = false;
 	SpvStageAnalysis analysis;
 };
@@ -723,7 +725,11 @@ static bool _wgsl_cache_parse_v3_payload(const Vector<uint8_t> &p_payload, WgslC
 	if (memchr(wgsl_bytes, 0, wgsl_size) != nullptr) {
 		return false;
 	}
-	r_entry.wgsl = String::utf8((const char *)wgsl_bytes, wgsl_size);
+	if (r_entry.wgsl.resize_uninitialized(wgsl_size + 1) != OK) {
+		return false;
+	}
+	memcpy(r_entry.wgsl.ptrw(), wgsl_bytes, wgsl_size);
+	r_entry.wgsl.ptrw()[wgsl_size] = 0;
 	offset += wgsl_size;
 
 	uint32_t analysis_version = 0;
@@ -911,7 +917,7 @@ static int _wgsl_cache_parse_file(const String &p_path) {
 				return -1;
 			}
 			raw.write[raw_size] = 0;
-			entry.wgsl = String::utf8((const char *)raw.ptr(), raw_size);
+			entry.wgsl = CharString((const char *)raw.ptr());
 		}
 		pending.push_back(entry);
 	}
@@ -995,11 +1001,11 @@ static void _wgsl_disk_cache_flush() {
 	f->seek_end();
 	uint32_t written = 0;
 	Vector<uint8_t> raw;
-	for (const KeyValue<uint64_t, String> &kv : _spv_to_wgsl_cache) {
+	for (const KeyValue<uint64_t, CharString> &kv : _spv_to_wgsl_cache) {
 		if (_wgsl_disk_cache_persisted.has(kv.key)) {
 			continue;
 		}
-		CharString cs = kv.value.utf8();
+		const CharString &cs = kv.value;
 		const SpvStageAnalysis *analysis = _spv_stage_analysis_cache.getptr(kv.key);
 		if (!_wgsl_cache_build_v3_payload(cs, analysis, raw)) {
 			continue;
@@ -1051,11 +1057,10 @@ static char *_spv_to_wgsl_cached_hashed(const uint8_t *p_spv_ptr, int p_spv_size
 	_wgsl_disk_cache_load();
 
 	// 1. Check in-memory cache (hits on repeated calls within same session).
-	const String *cached = _spv_to_wgsl_cache.getptr(p_spv_hash);
+	const CharString *cached = _spv_to_wgsl_cache.getptr(p_spv_hash);
 	if (cached) {
 		_spv_to_wgsl_cache_hits++;
-		CharString cs = cached->utf8();
-		return _copy_wgsl_for_module(cs.get_data(), (size_t)cs.length());
+		return _copy_wgsl_for_module(cached->get_data(), (size_t)cached->length());
 	}
 
 	// 2. Check build-time precompiled table (eliminates runtime translation for ubershaders).
@@ -1067,7 +1072,7 @@ static char *_spv_to_wgsl_cached_hashed(const uint8_t *p_spv_ptr, int p_spv_size
 				console.log('[SHADER] Precompiled WGSL hit #' + $0);
 			}
 		}, _spv_to_wgsl_precompiled_hits);
-		_spv_to_wgsl_cache[p_spv_hash] = String(precompiled);
+		_spv_to_wgsl_cache[p_spv_hash] = CharString(precompiled);
 		return _copy_wgsl_for_module(precompiled, strlen(precompiled));
 	}
 
@@ -1077,7 +1082,7 @@ static char *_spv_to_wgsl_cached_hashed(const uint8_t *p_spv_ptr, int p_spv_size
 	char *wgsl_str = _translate_spirv_to_wgsl(p_spv_ptr, p_spv_size);
 
 	if (wgsl_str) {
-		_spv_to_wgsl_cache[p_spv_hash] = String(wgsl_str);
+		_spv_to_wgsl_cache[p_spv_hash] = CharString(wgsl_str);
 		_wgsl_disk_cache_pending++;
 		if (_wgsl_disk_cache_pending >= 64) {
 			_wgsl_disk_cache_flush();
@@ -4701,7 +4706,7 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 	// Set of (set << 16 | binding) keys for read-only storage textures converted to texture_2d.
 	HashSet<uint32_t> wgsl_read_storage_to_sampled;
 
-	// --- Create one WGPUShaderModule per stage ---
+	// --- Translate and reflect each stage; GPU modules are created on demand ---
 	bool detected_override_declarations = false;
 	Vector<RenderingShaderContainer::Shader> &stage_shaders = p_shader_container->shaders;
 	for (int i = 0; i < stage_shaders.size(); i++) {
@@ -5251,24 +5256,6 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 		// decoding these large shader strings.
 		const size_t wgsl_length = strlen(wgsl_str);
 		const char *wgsl_end = wgsl_str + wgsl_length;
-		WGPUShaderSourceWGSL wgsl_source = {};
-		wgsl_source.chain.sType = WGPUSType_ShaderSourceWGSL;
-		wgsl_source.code = WGPUStringView{ wgsl_str, wgsl_length };
-
-		WGPUShaderModuleDescriptor mod_desc = {};
-		mod_desc.nextInChain = (WGPUChainedStruct *)&wgsl_source;
-
-		// Label the module so Dawn error messages (and JS-side patch logs) identify it.
-		String _mod_label = "mod:" + shader->name + ":stg" + itos((int)s.shader_stage);
-		CharString _mod_label_cs = _mod_label.utf8();
-		mod_desc.label = { _mod_label_cs.get_data(), (size_t)_mod_label_cs.length() };
-
-		uint64_t _mod_t0 = OS::get_singleton()->get_ticks_usec();
-		WGPUShaderModule mod = wgpuDeviceCreateShaderModule(device, &mod_desc);
-		uint64_t _mod_dt = OS::get_singleton()->get_ticks_usec() - _mod_t0;
-		if (_mod_dt > 3000) {
-			print_line(vformat("[MODTIME] %s %.1fms", _mod_label, _mod_dt / 1000.0));
-		}
 
 		// Scan WGSL for texture dimension declarations so the BGL uses the right viewDimension.
 		// Tint format: "@group(G) @binding(B) var NAME: texture_TYPE<...>;"
@@ -5601,19 +5588,17 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 			}
 		}
 
-		free(wgsl_str); // Free the EM_ASM-allocated string.
-		if (mod == nullptr) {
-			error_text = vformat("WebGPU: wgpuDeviceCreateShaderModule failed for stage %d.", (int)s.shader_stage);
-			break;
-		}
-
 		if (s.shader_stage < 6) {
-			shader->stage_modules[s.shader_stage] = mod;
+			// Share the translation cache's UTF-8 storage when device-specific
+			// rewrites left it unchanged. Otherwise retain the rewritten source.
+			const CharString *cached = _spv_to_wgsl_cache.getptr(spv_hash);
+			if (cached && (size_t)cached->length() == wgsl_length && memcmp(cached->get_data(), wgsl_str, wgsl_length) == 0) {
+				shader->stage_wgsl[s.shader_stage] = *cached;
+			} else {
+				shader->stage_wgsl[s.shader_stage] = CharString(wgsl_str);
+			}
 		}
-		// Set the legacy module alias to the first created module.
-		if (!shader->module) {
-			shader->module = mod;
-		}
+		free(wgsl_str);
 	}
 
 	shader->has_override_declarations = detected_override_declarations;
@@ -6293,6 +6278,7 @@ void RenderingDeviceDriverWebGPU::shader_destroy_modules(ShaderID p_shader) {
 	WGShader *shader = (WGShader *)(p_shader.id);
 	ERR_FAIL_NULL(shader);
 	for (int i = 0; i < 6; i++) {
+		shader->stage_wgsl[i] = CharString();
 		if (shader->stage_modules[i]) {
 			wgpuShaderModuleRelease(shader->stage_modules[i]);
 			shader->stage_modules[i] = nullptr;
@@ -9479,6 +9465,30 @@ WGPUShaderModule RenderingDeviceDriverWebGPU::_create_module_with_spec_constants
 	return mod;
 }
 
+bool RenderingDeviceDriverWebGPU::_ensure_shader_modules(WGShader *p_shader) {
+	for (uint32_t i = 0; i < 6; i++) {
+		if (p_shader->stage_modules[i] || p_shader->stage_wgsl[i].is_empty()) {
+			continue;
+		}
+		const CharString &code = p_shader->stage_wgsl[i];
+		WGPUShaderSourceWGSL source = {};
+		source.chain.sType = WGPUSType_ShaderSourceWGSL;
+		source.code = { code.get_data(), (size_t)code.length() };
+		const CharString label = ("mod:" + p_shader->name + ":stg" + itos(i)).utf8();
+		WGPUShaderModuleDescriptor descriptor = {};
+		descriptor.nextInChain = &source.chain;
+		descriptor.label = { label.get_data(), (size_t)label.length() };
+		WGPUShaderModule module = wgpuDeviceCreateShaderModule(device, &descriptor);
+		ERR_FAIL_NULL_V_MSG(module, false, "WebGPU: failed to create a shader module for " + p_shader->name);
+		p_shader->stage_modules[i] = module;
+		if (!p_shader->module) {
+			p_shader->module = module;
+		}
+		p_shader->stage_wgsl[i] = CharString();
+	}
+	return true;
+}
+
 RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 		ShaderID p_shader,
 		VertexFormatID p_vertex_format,
@@ -9495,6 +9505,7 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 	_pipelines_created_total++;
 	WGShader *shader = (WGShader *)(p_shader.id);
 	ERR_FAIL_COND_V(!shader, PipelineID());
+	ERR_FAIL_COND_V(!_ensure_shader_modules(shader), PipelineID());
 	WGVertexFormat *vf = p_vertex_format.id ? (WGVertexFormat *)(p_vertex_format.id) : nullptr;
 	WGRenderPass *rp = (WGRenderPass *)(p_render_pass.id);
 	ERR_FAIL_COND_V(!rp, PipelineID());
@@ -10175,6 +10186,7 @@ void RenderingDeviceDriverWebGPU::command_compute_dispatch_indirect(CommandBuffe
 RDD::PipelineID RenderingDeviceDriverWebGPU::compute_pipeline_create(ShaderID p_shader, VectorView<PipelineSpecializationConstant> p_specialization_constants) {
 	WGShader *shader = (WGShader *)(p_shader.id);
 	ERR_FAIL_COND_V(!shader, PipelineID());
+	ERR_FAIL_COND_V(!_ensure_shader_modules(shader), PipelineID());
 	ERR_FAIL_COND_V_MSG(!shader->stage_modules[SHADER_STAGE_COMPUTE], PipelineID(),
 			"WebGPU: compute_pipeline_create called with a shader that has no compute stage.");
 
