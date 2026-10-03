@@ -2565,12 +2565,15 @@ Error RenderingDevice::_texture_initialize_layered(RID p_texture, const Vector<V
 	uint32_t gpu_pixel_size = driver->texture_get_gpu_pixel_size(texture->driver_id);
 	uint32_t staging_pixel_size = (gpu_pixel_size > 0) ? gpu_pixel_size : pixel_size;
 
-	// Aligned per-layer staging footprint (matches _texture_initialize math).
+	// Row pitch follows the single-layer upload alignment.
 	uint32_t pitch = (width * staging_pixel_size * block_w) >> pixel_rshift;
 	uint32_t pitch_step = driver->api_trait_get(RDD::API_TRAIT_TEXTURE_DATA_ROW_PITCH_STEP);
 	pitch = STEPIFY(pitch, pitch_step);
-	uint32_t per_layer_staging_size = pitch * height;
-	per_layer_staging_size >>= pixel_rshift;
+	// Pitch is already measured in bytes per block row. A compressed image
+	// contains height / block_h rows, independently of its bytes per pixel.
+	// WebGPU's direct layered write reads consecutive layers at this stride.
+	uint32_t rows_per_image = height / block_h;
+	uint32_t per_layer_staging_size = pitch * rows_per_image;
 
 	// Per-layer alignment within the shared staging buffer. Layers are
 	// packed back-to-back; if required_align > 0 we pad each layer's footprint
@@ -2605,7 +2608,6 @@ Error RenderingDevice::_texture_initialize_layered(RID p_texture, const Vector<V
 			}
 		}
 
-		uint32_t rows_per_image = (block_h > 1) ? (height / block_h) : height;
 		driver->texture_initialize_direct_layered(
 				texture->driver_id,
 				p_dst_layout,
