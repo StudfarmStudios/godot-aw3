@@ -76,6 +76,15 @@ substituting an empty fallback into the pass that creates `hint_depth_texture`.
 See the [rendered depth regression probe](../../misc/native-webgpu/scene-depth-probe/README.md)
 for Forward+ and Mobile checks with and without MSAA.
 
+Forward+ lightmaps enable the advanced shader group, but WebGPU excludes its
+SDF voxelization variants because their image atomics are unsupported. This
+keeps the first baked lightmap from aborting Tint during shader compilation;
+SDFGI remains unsupported. The fixed eight-entry lightmap metadata array uses a
+uniform buffer on WebGPU, keeping Forward+ within the adapter's ten-storage-buffer
+limit when lightmaps are enabled. Metal and Vulkan retain their storage buffer.
+The [lightmap regression probe](../../misc/native-webgpu/lightmap-probe/README.md)
+checks the rendered lightmap color on Forward+, Mobile, and native Metal.
+
 ### Barrier No-ops
 WebGPU tracks resource hazards automatically. All barrier/sync commands are
 no-ops.

@@ -3288,7 +3288,7 @@ void RenderForwardClustered::_update_render_base_uniform_set() {
 		{
 			RD::Uniform u;
 			u.binding = 8;
-			u.uniform_type = RD::UNIFORM_TYPE_STORAGE_BUFFER;
+			u.uniform_type = use_lightmap_uniform_buffer ? RD::UNIFORM_TYPE_UNIFORM_BUFFER : RD::UNIFORM_TYPE_STORAGE_BUFFER;
 			u.append_id(scene_state.lightmap_buffer);
 			uniforms.push_back(u);
 		}
@@ -5147,6 +5147,7 @@ void RenderForwardClustered::_update_shader_quality_settings() {
 RenderForwardClustered::RenderForwardClustered() {
 	singleton = this;
 	use_first_instance = RD::get_singleton()->supports_first_instance_index();
+	use_lightmap_uniform_buffer = RD::get_singleton()->get_device_api_name() == "WebGPU";
 
 	/* SCENE SHADER */
 
@@ -5183,7 +5184,15 @@ RenderForwardClustered::RenderForwardClustered() {
 			defines += "\n#define MAX_LIGHTMAP_TEXTURES " + itos(scene_state.max_lightmaps) + "\n";
 			defines += "\n#define MAX_LIGHTMAPS " + itos(scene_state.max_lightmaps) + "\n";
 
-			scene_state.lightmap_buffer = RD::get_singleton()->storage_buffer_create(sizeof(LightmapData) * scene_state.max_lightmaps);
+			if (use_lightmap_uniform_buffer) {
+				// Lightmaps would be the eleventh fragment storage buffer, exceeding
+				// WebGPU's ten-buffer tier. This small, fixed-size std140 array fits
+				// in a uniform buffer with the same CPU layout.
+				defines += "\n#define USE_LIGHTMAP_UNIFORM_BUFFER\n";
+				scene_state.lightmap_buffer = RD::get_singleton()->uniform_buffer_create(sizeof(LightmapData) * scene_state.max_lightmaps);
+			} else {
+				scene_state.lightmap_buffer = RD::get_singleton()->storage_buffer_create(sizeof(LightmapData) * scene_state.max_lightmaps);
+			}
 		}
 		{
 			//captures

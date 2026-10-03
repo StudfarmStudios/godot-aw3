@@ -693,6 +693,14 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 		dynamic_buffers.push_back(ShaderRD::DynamicBuffer::encode(RenderForwardClustered::RENDER_PASS_UNIFORM_SET, 2));
 		shader.initialize(shader_versions, p_defines, Vector<RD::PipelineImmutableSampler>(), dynamic_buffers);
 
+		if (RD::get_singleton()->get_device_api_name() == "WebGPU") {
+			// Lightmaps also enable the advanced group. Do not compile its unused
+			// SDFGI voxelization variants: they require image atomics, which WebGPU
+			// cannot translate or execute. Keep both specialized and uber variants out.
+			shader.set_variant_enabled(ShaderVersion::SHADER_VERSION_DEPTH_PASS_WITH_SDF, false);
+			shader.set_variant_enabled(ShaderVersion::SHADER_VERSION_DEPTH_PASS_WITH_SDF + ShaderVersion::SHADER_VERSION_COLOR_PASS, false);
+		}
+
 		if (RendererCompositorRD::get_singleton()->is_xr_enabled()) {
 			shader.enable_group(SHADER_GROUP_MULTIVIEW);
 		}

@@ -705,6 +705,9 @@ void ShaderRD::_allocate_placeholders(Version *p_version, int p_group) {
 
 	for (uint32_t i = 0; i < group_to_variant_map[p_group].size(); i++) {
 		int variant_id = group_to_variant_map[p_group][i];
+		if (!variants_enabled[variant_id]) {
+			continue;
+		}
 		RID shader = RD::get_singleton()->shader_create_placeholder();
 		{
 			p_version->variants.write[variant_id] = shader;
