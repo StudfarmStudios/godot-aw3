@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 from misc.utility.scons_hints import *
 
+from emscripten_proxying import add_proxying_objects
+
 from methods import print_error
 
 Import("env")
@@ -97,7 +99,7 @@ if env["dlink_enabled"]:
     sys_env["LINKFLAGS"].remove("-fvisibility=hidden")
 
     # The main emscripten runtime, with exported standard libraries.
-    sys = sys_env.add_program(build_targets, ["web_runtime.cpp"])
+    sys = sys_env.add_program(build_targets, ["web_runtime.cpp"] + add_proxying_objects(sys_env))
 
     # The side library, containing all Godot code.
     wasm = env.add_program("#bin/godot.side${PROGSUFFIX}.wasm", web_files)
@@ -106,7 +108,7 @@ else:
     if not env["wasmfs"]:
         # We use IDBFS. Since Emscripten 1.39.1 it needs to be linked explicitly.
         sys_env.Append(LIBS=["idbfs.js"])
-    build = sys_env.add_program(build_targets, web_files + ["web_runtime.cpp"])
+    build = sys_env.add_program(build_targets, web_files + ["web_runtime.cpp"] + add_proxying_objects(sys_env))
 
 sys_env.Depends(build[0], sys_env["JS_LIBS"])
 sys_env.Depends(build[0], sys_env["JS_PRE"])
