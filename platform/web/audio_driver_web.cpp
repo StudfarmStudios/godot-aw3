@@ -34,6 +34,7 @@
 
 #include "core/config/engine.h"
 #include "core/math/math_funcs_binary.h"
+#include "core/object/callable_mp.h"
 #include "core/object/object.h"
 #include "servers/audio/audio_stream.h"
 
@@ -56,7 +57,19 @@ void AudioDriverWeb::_latency_update_callback(float p_latency) {
 void AudioDriverWeb::_sample_playback_finished_callback(const char *p_playback_object_id) {
 	const ObjectID playback_id = ObjectID(String::to_int(p_playback_object_id));
 
-	Object *playback_object = ObjectDB::get_instance(playback_id);
+#ifdef PROXY_TO_PTHREAD_ENABLED
+	if (!Thread::is_main_thread()) {
+		// WebAudio runs on the browser thread. Resolve the playback and mutate
+		// AudioServer only on the application thread, alongside player updates.
+		callable_mp_static(AudioDriverWeb::_sample_playback_finished).call_deferred(playback_id);
+		return;
+	}
+#endif
+	_sample_playback_finished(playback_id);
+}
+
+void AudioDriverWeb::_sample_playback_finished(ObjectID p_playback_id) {
+	Object *playback_object = ObjectDB::get_instance(p_playback_id);
 	if (playback_object == nullptr) {
 		return;
 	}

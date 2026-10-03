@@ -1,0 +1,13 @@
+config_version=5
+[application]
+config/name="WebAudio sample completion regression"
+run/main_scene="res://main.tscn"
+[display]
+window/size/viewport_width=320
+window/size/viewport_height=200
+[audio]
+general/default_playback_type=1
+[rendering]
+renderer/rendering_method="mobile"
+renderer/rendering_method.web="mobile"
+rendering_device/driver.web="webgpu"
