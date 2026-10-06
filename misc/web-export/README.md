@@ -29,6 +29,17 @@ requires a separate empty output directory, and writes compiler options, input
 and output hashes, intrinsic translations, and profile provenance to
 `pgo-build.json`. Stale control-flow profiles are compiler errors.
 
+Pass `--cache-dir /path/to/local/aot-cache` to reuse individual modules between
+releases. Entries include the original bitcode, profiling mode and profile hash,
+compiler/driver hashes, helper versions, and relevant environment configuration.
+Objects, translated IR, and diagnostics are checked before reuse; corrupt or
+partial entries are misses. Custom compiler wrappers or extra flags bypass the
+cache. The cache is pruned to 8 GiB after successful compilation and is never
+an input authority: registration tables and the complete module inventory still
+come from the current export. Every invocation writes a fresh build record.
+Larger modules start first so small framework assemblies cannot delay the last
+large compilation. This does not change optimization flags or manifest order.
+
 `prepare-pgo-sdk.py` is an opt-in, idempotent Emscripten 4.0.20 compatibility
 patch for LLVM profile metadata symbols containing dots. It backs up
 `tools/shared.py`, changes only their JavaScript identifiers, and refuses an
