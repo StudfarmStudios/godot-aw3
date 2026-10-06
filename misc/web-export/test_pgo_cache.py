@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location("pgo_cache", Path(__file__).with_name("pgo-cache.py"))
+assert spec is not None and spec.loader is not None
 cache_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cache_module)
 
