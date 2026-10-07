@@ -1344,6 +1344,9 @@ RenderingDeviceDriverWebGPU::RenderingDeviceDriverWebGPU(RenderingContextDriverW
 }
 
 RenderingDeviceDriverWebGPU::~RenderingDeviceDriverWebGPU() {
+	for (const KeyValue<uint64_t, WGPURenderPipeline> &entry : depth_rect_clear_pipelines) {
+		wgpuRenderPipelineRelease(entry.value);
+	}
 	// Release push constant resources.
 	if (push_constant_bind_group) {
 		wgpuBindGroupRelease(push_constant_bind_group);
@@ -8345,6 +8348,47 @@ void RenderingDeviceDriverWebGPU::render_pass_free(RenderPassID p_render_pass) {
 	delete rp;
 }
 
+// WebGPU loadOp=Clear clears the entire attachment, unlike Vulkan's render-area
+// clear. A scissored triangle preserves neighboring shadow tiles. The viewport
+// depth range supplies the clear value, avoiding a uniform upload per tile.
+WGPURenderPipeline RenderingDeviceDriverWebGPU::_get_depth_rect_clear_pipeline(WGPUTextureFormat p_format, uint32_t p_samples) {
+	const uint64_t key = (uint64_t(p_format) << 32) | p_samples;
+	if (const WGPURenderPipeline *cached = depth_rect_clear_pipelines.getptr(key)) {
+		return *cached;
+	}
+	const char *source = R"wgsl(
+@vertex fn main(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+    let x = f32((index << 1u) & 2u);
+    let y = f32(index & 2u);
+    return vec4f(x * 2.0 - 1.0, y * 2.0 - 1.0, 0.0, 1.0);
+}
+)wgsl";
+	WGPUShaderSourceWGSL wgsl = {};
+	wgsl.chain.sType = WGPUSType_ShaderSourceWGSL;
+	wgsl.code = { source, WGPU_STRLEN };
+	WGPUShaderModuleDescriptor module_desc = {};
+	module_desc.nextInChain = &wgsl.chain;
+	WGPUShaderModule module = wgpuDeviceCreateShaderModule(device, &module_desc);
+	ERR_FAIL_NULL_V(module, nullptr);
+	WGPUDepthStencilState depth = {};
+	depth.format = p_format;
+	depth.depthWriteEnabled = WGPUOptionalBool_True;
+	depth.depthCompare = WGPUCompareFunction_Always;
+	WGPURenderPipelineDescriptor desc = {};
+	desc.label = { "depth atlas tile clear", WGPU_STRLEN };
+	desc.vertex.module = module;
+	desc.vertex.entryPoint = { "main", WGPU_STRLEN };
+	desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+	desc.depthStencil = &depth;
+	desc.multisample.count = p_samples;
+	desc.multisample.mask = 0xffffffff;
+	WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(device, &desc);
+	wgpuShaderModuleRelease(module);
+	ERR_FAIL_NULL_V(pipeline, nullptr);
+	depth_rect_clear_pipelines.insert(key, pipeline);
+	return pipeline;
+}
+
 void RenderingDeviceDriverWebGPU::command_begin_render_pass(CommandBufferID p_cmd_buffer, RenderPassID p_render_pass, FramebufferID p_framebuffer, CommandBufferType p_cmd_buffer_type, const Rect2i &p_rect, VectorView<RenderPassClearValue> p_clear_values) {
 	WGCommandBuffer *cmd = (WGCommandBuffer *)(p_cmd_buffer.id);
 	WGRenderPass *rp = (WGRenderPass *)(p_render_pass.id);
@@ -8391,52 +8435,9 @@ void RenderingDeviceDriverWebGPU::command_begin_render_pass(CommandBufferID p_cm
 		}
 	}
 
-	// Proactive encoder isolation: if any current-pass attachment has BOTH
-	// TextureBinding and RenderAttachment usage, this pass may cause an
-	// intra-pass sync scope conflict. Split the encoder BEFORE the pass so
-	// previous rendering work is preserved even if this pass's command
-	// buffer gets invalidated by the conflict.
-	{
-		bool has_dual_usage = false;
-		for (uint32_t i = 0; i < cmd->render_state.current_pass_attachment_count; i++) {
-			// We don't have the WGTexture* for current_pass_attachments (only WGPUTexture),
-			// so check the framebuffer's attachments for usage bits.
-			for (uint32_t j = 0; j < fb->attachments.size(); j++) {
-				WGTexture *tex = fb->attachments[j];
-				if (tex) {
-					WGPUTexture gpu_tex = tex->gpu_handle();
-					if (gpu_tex == cmd->render_state.current_pass_attachments[i] &&
-							(tex->usage & WGPUTextureUsage_TextureBinding) &&
-							(tex->usage & WGPUTextureUsage_RenderAttachment)) {
-						has_dual_usage = true;
-						break;
-					}
-				}
-			}
-			if (has_dual_usage) break;
-		}
-		if (has_dual_usage && cmd->encoder) {
-			// Flush push constant ring buffer before mid-frame submit.
-			if (push_constant_shadow_dirty_start < push_constant_shadow_dirty_end) {
-				wgpuQueueWriteBuffer(queue, push_constant_ring_buffer, push_constant_shadow_dirty_start,
-						push_constant_shadow + push_constant_shadow_dirty_start,
-						push_constant_shadow_dirty_end - push_constant_shadow_dirty_start);
-				push_constant_shadow_dirty_start = UINT32_MAX;
-				push_constant_shadow_dirty_end = 0;
-			}
-			// Split: submit everything so far, start a fresh encoder. Any
-			// pending staging spans feed the copies recorded so far.
-			_flush_pending_staging_uploads();
-			WGPUCommandBuffer finished = wgpuCommandEncoderFinish(cmd->encoder, nullptr);
-			if (finished) {
-				wgpuQueueSubmit(queue, 1, &finished);
-				wgpuCommandBufferRelease(finished);
-			}
-			wgpuCommandEncoderRelease(cmd->encoder);
-			cmd->encoder = wgpuDeviceCreateCommandEncoder(device, nullptr);
-			cmd->invalidate_bind_groups();
-		}
-	}
+	// Render passes are separate usage scopes. Sampleable attachments do not
+	// require a queue submission between passes; keep the encoder until the
+	// normal submission path flushes its staged uploads and push constants.
 
 	// --- Helper lambdas for op mapping ---
 	auto map_load_op = [](AttachmentLoadOp op) -> WGPULoadOp {
@@ -8520,6 +8521,8 @@ void RenderingDeviceDriverWebGPU::command_begin_render_pass(CommandBufferID p_cm
 	// --- Build depth/stencil attachment ---
 	WGPURenderPassDepthStencilAttachment ds_att = {};
 	WGPURenderPassDepthStencilAttachment *ds_att_ptr = nullptr;
+	WGPURenderPipeline depth_rect_clear_pipeline = nullptr;
+	float depth_rect_clear_value = 0.0f;
 
 	const RDD::AttachmentReference &ds_ref = subpass.depth_stencil_reference;
 	if (ds_ref.attachment != RDD::AttachmentReference::UNUSED &&
@@ -8544,6 +8547,14 @@ void RenderingDeviceDriverWebGPU::command_begin_render_pass(CommandBufferID p_cm
 					ds_att.depthClearValue = p_clear_values[ds_ref.attachment].depth;
 				} else {
 					ds_att.depthClearValue = 1.0f;
+				}
+				if (ds_att.depthLoadOp == WGPULoadOp_Clear && color_attachments.is_empty() &&
+						p_rect != Rect2i(0, 0, fb->width, fb->height)) {
+					depth_rect_clear_pipeline = _get_depth_rect_clear_pipeline(wgpu_fmt, fb->attachments[ds_ref.attachment]->sample_count);
+					depth_rect_clear_value = ds_att.depthClearValue;
+					ds_att.depthLoadOp = WGPULoadOp_Load;
+					// A partial pass must preserve the rest of the atlas as well.
+					ds_att.depthStoreOp = WGPUStoreOp_Store;
 				}
 			} else {
 				ds_att.depthLoadOp = WGPULoadOp_Undefined;
@@ -8639,6 +8650,16 @@ void RenderingDeviceDriverWebGPU::command_begin_render_pass(CommandBufferID p_cm
 
 	cmd->render_encoder = wgpuCommandEncoderBeginRenderPass(cmd->encoder, &pass_desc);
 	cmd->active_encoder = WGCommandBuffer::RENDER;
+
+	if (depth_rect_clear_pipeline) {
+		wgpuRenderPassEncoderSetPipeline(cmd->render_encoder, depth_rect_clear_pipeline);
+		wgpuRenderPassEncoderSetViewport(cmd->render_encoder, (float)p_rect.position.x, (float)p_rect.position.y,
+				(float)p_rect.size.x, (float)p_rect.size.y, depth_rect_clear_value, depth_rect_clear_value);
+		wgpuRenderPassEncoderSetScissorRect(cmd->render_encoder, p_rect.position.x, p_rect.position.y, p_rect.size.x, p_rect.size.y);
+		wgpuRenderPassEncoderDraw(cmd->render_encoder, 3, 1, 0, 0);
+		perf.draw_calls++;
+		perf.set_pipeline_calls++;
+	}
 
 	// Reset cached state — new render pass requires binding everything fresh.
 	cmd->render_state.current_pipeline = nullptr;
@@ -8827,14 +8848,11 @@ void RenderingDeviceDriverWebGPU::command_render_set_scissor(CommandBufferID p_c
 		uint32_t y = MAX(sr.position.y, 0);
 		uint32_t w = MAX(sr.size.x, 0);
 		uint32_t h = MAX(sr.size.y, 0);
-		// Clamp scissor to the SMALLER of (render area) and (actual framebuffer size).
-		// WebGPU requires scissor to fit within attachment dimensions.
+		// Scissors use framebuffer coordinates. A tile's width/height is not
+		// an upper bound when its render area starts away from the origin.
+		// Clamp only to the actual attachment extent required by WebGPU.
 		uint32_t clamp_w = 0;
 		uint32_t clamp_h = 0;
-		if (cmd->render_state.render_area_width > 0) {
-			clamp_w = cmd->render_state.render_area_width;
-			clamp_h = cmd->render_state.render_area_height;
-		}
 		if (cmd->render_state.framebuffer) {
 			uint32_t fb_w = cmd->render_state.framebuffer->width;
 			uint32_t fb_h = cmd->render_state.framebuffer->height;
@@ -8846,8 +8864,8 @@ void RenderingDeviceDriverWebGPU::command_render_set_scissor(CommandBufferID p_c
 				fb_w = wgfb->attachments[0]->width;
 				fb_h = wgfb->attachments[0]->height;
 			}
-			clamp_w = clamp_w > 0 ? MIN(clamp_w, fb_w) : fb_w;
-			clamp_h = clamp_h > 0 ? MIN(clamp_h, fb_h) : fb_h;
+			clamp_w = fb_w;
+			clamp_h = fb_h;
 		}
 		if (clamp_w > 0 && clamp_h > 0) {
 			if (x >= clamp_w || y >= clamp_h) {

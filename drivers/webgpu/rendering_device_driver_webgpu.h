@@ -204,6 +204,11 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 	static constexpr WGPUTextureFormat DUMMY_ATTACHMENT_FORMAT = WGPUTextureFormat_R8Unorm;
 	WGPUTextureView _get_dummy_attachment_view(uint32_t p_width, uint32_t p_height);
 
+	// Depth-only atlas passes must clear their render area without erasing other
+	// tiles. The clear uses the existing pass, with no uniforms or extra encoder.
+	HashMap<uint64_t, WGPURenderPipeline> depth_rect_clear_pipelines;
+	WGPURenderPipeline _get_depth_rect_clear_pipeline(WGPUTextureFormat p_format, uint32_t p_samples);
+
 	// --- Dummy Samplers for BGL Rebinding ---
 	// When a bind group must be re-created with a different BGL (e.g., because
 	// the original BGL has a Comparison sampler but the target has Filtering),
