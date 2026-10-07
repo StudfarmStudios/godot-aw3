@@ -9,15 +9,20 @@ The output directory is suitable for Godot's mono_aot_dir SCons option.
 import argparse
 import concurrent.futures
 import hashlib
+import importlib.util
 import json
-from pathlib import Path
 import re
 import shutil
 import subprocess
+from pathlib import Path
 
 
 def digest(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    value = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            value.update(block)
+    return value.hexdigest()
 
 
 def upgrade_intrinsics(ir):
@@ -49,10 +54,20 @@ def main():
     parser.add_argument("--profile", type=Path)
     parser.add_argument("--emcc", default="emcc")
     parser.add_argument("--jobs", type=int, default=4)
+    parser.add_argument(
+        "--cache-dir", type=Path, help="reuse hash-checked AOT modules in an optional bounded local cache"
+    )
     args = parser.parse_args()
     source, output = args.aot_dir.resolve(), args.output.resolve()
     if source == output or source in output.parents or output in source.parents:
         parser.error("use a separate output directory outside the source export")
+    if args.cache_dir:
+        args.cache_dir = args.cache_dir.resolve()
+        if any(
+            args.cache_dir == path or path in args.cache_dir.parents or args.cache_dir in path.parents
+            for path in (source, output)
+        ):
+            parser.error("keep the cache outside the input and output directories")
     if args.jobs < 1:
         parser.error("--jobs must be positive")
     profile = args.profile.resolve() if args.profile else None
@@ -80,15 +95,62 @@ def main():
     elif args.mode == "use":
         flags += [f"-fprofile-use={profile}", "-Werror=profile-instr-out-of-date"]
 
+    profile_hash = digest(profile) if profile else None
+    compiler = subprocess.check_output([args.emcc, "--version"], text=True).strip()
+    cache = None
+    if args.cache_dir:
+        cache_helper = Path(__file__).with_name("pgo-cache.py")
+        spec = importlib.util.spec_from_file_location("pgo_cache", cache_helper)
+        cache_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cache_module)
+        toolchain = cache_module.cache_toolchain(args.emcc)
+        if toolchain:
+            cache = cache_module.ModuleCache(
+                args.cache_dir,
+                {
+                    "helperSha256": digest(__file__),
+                    "cacheHelperSha256": digest(cache_helper),
+                    "compiler": compiler,
+                    "toolchain": toolchain,
+                    "mode": args.mode,
+                    "flags": [
+                        "-fprofile-use=<profile>" if flag.startswith("-fprofile-use=") else flag for flag in flags
+                    ],
+                    "profileSha256": profile_hash,
+                },
+            )
+        else:
+            print("AOT cache bypassed: custom compiler setup has untracked dependencies", flush=True)
+
     def compile_module(path):
+        bitcode_hash = digest(path)
+        cached = cache.restore(path.name, bitcode_hash, output) if cache else None
+        if cached:
+            print(f"{args.mode}: {path.name} (cached)", flush=True)
+            return cached
         target = output / path.name.replace(".bc", ".o")
         # Disassemble without optimization to check the older runtime's IR.
         # Most modules are compiled from the byte-identical original bitcode.
         ir_path = output / (path.name + ".ll")
-        disassemble = subprocess.run([
-            args.emcc, "-S", "-emit-llvm", "-O0", "-Xclang", "-disable-llvm-passes",
-            "-fwasm-exceptions", "-pthread", "-msimd128", str(output / path.name), "-o", str(ir_path),
-        ], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        disassemble = subprocess.run(
+            [
+                args.emcc,
+                "-S",
+                "-emit-llvm",
+                "-O0",
+                "-Xclang",
+                "-disable-llvm-passes",
+                "-fwasm-exceptions",
+                "-pthread",
+                "-msimd128",
+                str(output / path.name),
+                "-o",
+                str(ir_path),
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
         if disassemble.returncode:
             (output / (path.name + ".log")).write_text(disassemble.stdout)
             raise RuntimeError(f"{path.name} IR inspection failed; see {path.name}.log")
@@ -105,18 +167,35 @@ def main():
         if result.returncode:
             raise RuntimeError(f"{path.name} failed; see {path.name}.log")
         print(f"{args.mode}: {path.name}", flush=True)
-        return {"module": path.name, "bitcodeSha256": digest(path),
-                "compileInputSha256": digest(compile_input), "intrinsicUpgrades": upgrades,
-                "objectSha256": digest(target)}
+        record = {
+            "module": path.name,
+            "bitcodeSha256": bitcode_hash,
+            "compileInputSha256": digest(compile_input),
+            "intrinsicUpgrades": upgrades,
+            "objectSha256": digest(target),
+        }
+        if cache:
+            try:
+                cache.store(record, output)
+            except OSError as error:
+                print(f"AOT cache write skipped for {path.name}: {error}", flush=True)
+        return record
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        records = list(pool.map(compile_module, modules))
+        # The game, generic instances, bindings and core library dominate work.
+        # Start larger modules first, keeping the manifest order stable.
+        records = sorted(
+            pool.map(compile_module, sorted(modules, key=lambda p: p.stat().st_size, reverse=True)),
+            key=lambda record: record["module"],
+        )
+    if cache:
+        cache.prune()
     record = {
         "mode": args.mode,
         "source": str(source),
-        "compiler": subprocess.check_output([args.emcc, "--version"], text=True).strip(),
+        "compiler": compiler,
         "flags": flags,
-        "profileSha256": digest(profile) if profile else None,
+        "profileSha256": profile_hash,
         "modules": records,
     }
     (output / "pgo-build.json").write_text(json.dumps(record, indent=2) + "\n")

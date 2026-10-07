@@ -398,4 +398,7 @@ $RECYCLE.BIN/
 *.generated.props
 .chat-history/
 *.uid
+# Keep the upstream test fixtures tracked even though generated UIDs are ignored.
+!/platform/android/java/app/src/instrumented/assets/**/*.uid
+!/tests/compatibility_test/godot/*.uid
 tmp/
