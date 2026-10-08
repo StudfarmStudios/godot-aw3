@@ -45,3 +45,8 @@ fixtures are tracked in `misc/webgpu-port/STATUS.md`.
 `benchmark_clears.gd` and `run_clear_benchmark.py` measure submission plus GPU
 completion on a local device, with alternating baseline/candidate runs. See
 `misc/webgpu-port/VALIDATION.md` for measured results and limitations.
+
+`run_headless_exports.py ENGINE --output DIRECTORY` checks import and three Web
+pack exports, including teardown errors and pack headers. `test_timestamps.gd`
+checks fresh, ordered native GPU readbacks on a Dawn adapter supporting
+TimestampQuery; browser timestamp readback is intentionally not enabled.

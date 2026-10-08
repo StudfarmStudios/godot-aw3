@@ -1,0 +1,30 @@
+{
+  "passed": true,
+  "engine_sha256": "80f1f1c07f8934691aa3159098b375dbde8b4ae7dfc0a660d496a2bb9dd11bcc",
+  "checks": [
+    {
+      "step": "import",
+      "returncode": 0,
+      "pack_ok": true,
+      "errors": []
+    },
+    {
+      "step": "export-1",
+      "returncode": 0,
+      "pack_ok": true,
+      "errors": []
+    },
+    {
+      "step": "export-2",
+      "returncode": 0,
+      "pack_ok": true,
+      "errors": []
+    },
+    {
+      "step": "export-3",
+      "returncode": 0,
+      "pack_ok": true,
+      "errors": []
+    }
+  ]
+}

@@ -4183,11 +4183,15 @@ Error RenderingDeviceDriverWebGPU::command_queue_execute_and_present(CommandQueu
 					}
 					pool->map_generation++;
 					WGPUBufferMapCallbackInfo cb_info = {};
+#ifdef __EMSCRIPTEN__
 					cb_info.mode = WGPUCallbackMode_AllowSpontaneous;
+#else
+					cb_info.mode = WGPUCallbackMode_WaitAnyOnly;
+#endif
 					cb_info.callback = _timestamp_readback_callback;
 					cb_info.userdata1 = pool;
 					cb_info.userdata2 = (void *)(uintptr_t)pool->map_generation;
-					wgpuBufferMapAsync(pool->readback_buffer, WGPUMapMode_Read, 0, sizeof(uint64_t) * pool->count, cb_info);
+					pool->map_future = wgpuBufferMapAsync(pool->readback_buffer, WGPUMapMode_Read, 0, sizeof(uint64_t) * pool->count, cb_info);
 				}
 			}
 			cmd->written_query_pools.clear();
@@ -10648,6 +10652,12 @@ void RenderingDeviceDriverWebGPU::timestamp_query_pool_free(QueryPoolID p_pool_i
 		return;
 	}
 
+#ifndef __EMSCRIPTEN__
+	if (pool->readback_pending) {
+		_wait_for_map(pool->map_future);
+	}
+#endif
+
 	// If an async readback callback is in flight, mark freed and let
 	// the callback handle cleanup (use-after-free prevention).
 	if (pool->readback_pending) {
@@ -10676,6 +10686,15 @@ void RenderingDeviceDriverWebGPU::timestamp_query_pool_get_results(QueryPoolID p
 		memset(r_results, 0, sizeof(uint64_t) * p_query_count);
 		return;
 	}
+
+#ifndef __EMSCRIPTEN__
+	// RD already waited for this frame's GPU work. Deliver its map callback
+	// before reading the CPU copy, rather than racing a spontaneous callback
+	// or returning the previous (initially zero) query results indefinitely.
+	if (pool->readback_pending) {
+		_wait_for_map(pool->map_future);
+	}
+#endif
 
 	// Copy from the CPU shadow buffer (populated by the async readback callback).
 	uint32_t copy_count = MIN(p_query_count, pool->count);
@@ -10738,8 +10757,13 @@ static void _timestamp_readback_callback(WGPUMapAsyncStatus p_status, WGPUString
 		wgpuBufferUnmap(pool->readback_buffer);
 		pool->readback_pending = false;
 	}
-	// On failure/abort: do NOT clear readback_pending.
-	// command_buffer_end() handles cleanup and re-issue.
+#ifndef __EMSCRIPTEN__
+	// A native waiter has now delivered this callback, even on failure. It
+	// must not defer pool destruction to a callback that has already run.
+	pool->readback_pending = false;
+#else
+	// On browser failure/abort, command_buffer_end() handles re-issue.
+#endif
 }
 
 void RenderingDeviceDriverWebGPU::command_timestamp_write(CommandBufferID p_cmd_buffer, QueryPoolID p_pool_id, uint32_t p_index) {
@@ -10751,10 +10775,29 @@ void RenderingDeviceDriverWebGPU::command_timestamp_write(CommandBufferID p_cmd_
 	WGCommandBuffer *cmd = (WGCommandBuffer *)(p_cmd_buffer.id);
 	ERR_FAIL_NULL(cmd);
 
-	// wgpuCommandEncoderWriteTimestamp requires no active render/compute pass.
+	// Standalone WriteTimestamp is a Dawn unsafe extension, even when the
+	// standard TimestampQuery feature is enabled. Pass-boundary timestamp
+	// writes are supported without unsafe toggles.
 	cmd->end_active_encoder();
 
-	wgpuCommandEncoderWriteTimestamp(cmd->encoder, pool->handle, p_index);
+	WGPUPassTimestampWrites timestamp_writes = {};
+	timestamp_writes.querySet = pool->handle;
+	timestamp_writes.beginningOfPassWriteIndex = p_index;
+	timestamp_writes.endOfPassWriteIndex = WGPU_QUERY_SET_INDEX_UNDEFINED;
+	// Metal can leave counters at zero for an empty compute pass. A 1x1
+	// attachment clear supplies real GPU work without compiling a pipeline.
+	WGPURenderPassColorAttachment attachment = {};
+	attachment.view = _get_dummy_attachment_view(1, 1);
+	attachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+	attachment.loadOp = WGPULoadOp_Clear;
+	attachment.storeOp = WGPUStoreOp_Discard;
+	WGPURenderPassDescriptor pass_desc = {};
+	pass_desc.colorAttachmentCount = 1;
+	pass_desc.colorAttachments = &attachment;
+	pass_desc.timestampWrites = &timestamp_writes;
+	WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(cmd->encoder, &pass_desc);
+	wgpuRenderPassEncoderEnd(pass);
+	wgpuRenderPassEncoderRelease(pass);
 
 	// Track this pool so we resolve it in command_buffer_end.
 	bool already_tracked = false;

@@ -31,7 +31,7 @@ Starting AW3 engine: `c0d51825faad2c1a773f4e21c34e74b60c53da21`.
 | 35–36 | Atlas upload coalescing and glyph classification, retaining immutable render-thread snapshots | Pending |
 | 37–38 | CPU gradient regeneration and compressed-texture readback | Gradients implemented/tested. Finding 38 correction: disk-backed `CompressedTexture2D::get_image()` is already identical in our base; no additional port needed |
 | 45–49 | Feature fixtures, actual-driver regressions, browser/backend metadata, CI integration | Production C++ format tests and initial RenderingDevice GPU fixture added. Full matrix/CI pending |
-| 58 | Headless export teardown fix, adapted to 4.7 if applicable | Pending |
+| 58 | Headless export teardown lifetime | Implemented on 4.7. Baseline import reproduces null-singleton error/crash; fixed import plus three Web pack exports pass with clean shutdown |
 
 ## Constraints and preserved behavior
 
@@ -90,9 +90,11 @@ available yet. The remaining rows above still represent required work.
 
 ### Additional validation findings
 
-Native GPU timestamp capture currently calls Dawn's restricted standalone
-`WriteTimestamp`, which rejects commands unless unsafe APIs are enabled. Found
-while preparing the clear benchmark; use standard pass timestamp writes and test
-this before claiming native GPU profiler support. Browser timestamp readback stays
-disabled under the existing compatibility constraint. The accepted clear timings
-use a local device with `submit()`/`sync()`, not invalid timestamp results.
+Native GPU timestamp capture now uses standard pass timestamp writes. Standalone
+Dawn `WriteTimestamp` required an unsafe toggle; empty compute passes then returned
+zero on this Metal host. A cached 1×1 attachment-clear pass produces real values.
+Native map callbacks are waited after the frame fence and before pool destruction;
+58 fresh, ordered samples pass without validation errors. Browser timestamp
+readback remains disabled under the existing compatibility constraint. Profiling
+adds one tiny clear pass per marker; accepted clear benchmarks use local-device
+`submit()`/`sync()` instead, without that instrumentation.

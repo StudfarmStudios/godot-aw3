@@ -210,6 +210,7 @@
 #include <cstdlib>
 
 EditorNode *EditorNode::singleton = nullptr;
+bool EditorNode::cmdline_mode = false;
 
 static const String EDITOR_NODE_CONFIG_SECTION = "EditorNode";
 
@@ -6615,8 +6616,9 @@ bool EditorNode::immediate_confirmation_dialog(const String &p_text, const Strin
 }
 
 bool EditorNode::is_cmdline_mode() {
-	ERR_FAIL_NULL_V(singleton, false);
-	return singleton->cmdline_mode;
+	// EditorHelp must not start interactive script-doc loading during headless
+	// teardown after the editor/file-system singletons have been destroyed.
+	return cmdline_mode;
 }
 
 void EditorNode::cleanup() {
@@ -8357,9 +8359,7 @@ EditorNode::EditorNode() {
 	singleton = this;
 
 	// Detecting headless mode, that means the editor is running in command line.
-	if (!DisplayServer::get_singleton()->window_can_draw()) {
-		cmdline_mode = true;
-	}
+	cmdline_mode = !DisplayServer::get_singleton()->window_can_draw();
 
 	Resource::_get_local_scene_func = _resource_get_edited_scene;
 

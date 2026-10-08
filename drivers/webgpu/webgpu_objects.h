@@ -522,6 +522,7 @@ struct WGSemaphore {};
 // =============================================================================
 
 struct WGQueryPool {
+	WGPUFuture map_future = {}; // Native readback is delivered after the frame fence.
 	WGPUQuerySet handle = nullptr;
 	WGPUBuffer resolve_buffer = nullptr; // GPU buffer for query set resolve (CopySrc | QueryResolve).
 	WGPUBuffer readback_buffer = nullptr; // CPU-readable staging buffer (CopyDst | MapRead).

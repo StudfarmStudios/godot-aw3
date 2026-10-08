@@ -1,0 +1,8 @@
+{
+  "order_failed": false,
+  "passed": true,
+  "valid_samples": 58,
+  "returncode": 0,
+  "errors": [],
+  "engine_sha256": "80f1f1c07f8934691aa3159098b375dbde8b4ae7dfc0a660d496a2bb9dd11bcc"
+}

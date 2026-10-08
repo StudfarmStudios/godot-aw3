@@ -177,3 +177,41 @@ python3 webgpu_tests/driver_integration/run_clear_benchmark.py \
   /absolute/path/to/baseline /absolute/path/to/candidate \
   --output /tmp/clear-benchmark/results.json
 ```
+
+## Headless export lifetime and native GPU profiling
+
+The baseline 4.7 editor reproduced `Parameter "singleton" is null` in
+`EditorNode::is_cmdline_mode()` after headless import and then printed a signal-11
+teardown crash. Keeping command-line mode alive after EditorNode destruction fixes
+this on 4.7; the existing `window_can_draw()` mode-detection rule is preserved.
+One fresh import and three Web `--export-pack` runs now exit cleanly, without errors,
+and produce valid `GDPC` packs. [Raw results](results/headless-exports-macos-arm64.json).
+This does not validate a complete browser template or a C# application export.
+
+Native GPU profiling had two independent gaps: standalone Dawn `WriteTimestamp`
+required an unsafe toggle, and an empty compute pass produced zero counters on the
+Apple M1 Ultra. Standard timestamp writes on a cached 1×1 attachment-clear pass
+produce nonzero values. Native readback maps use waitable callbacks delivered after
+the frame fence and before destroying a query pool. The fixture observes **58 fresh,
+ordered samples** across 60 frames, with no validation errors and clean exit.
+[Raw result](results/timestamps-macos-arm64.json). Browser timestamp readback stays
+disabled; this does not claim browser profiler support. Each native marker adds a
+tiny clear pass, so profiling itself has overhead; clear performance measurements
+above were collected without this timestamp instrumentation.
+
+Native linking and threaded web driver/context objects pass. The final native
+build also repeats all **54 GPU checks in each capability mode**, with no errors
+and clean exit: [normal](results/final-native-macos-arm64.json),
+[fallback](results/final-fallback-macos-arm64.json). These final tests share binary
+SHA-256 `80f1f1c07f8934691aa3159098b375dbde8b4ae7dfc0a660d496a2bb9dd11bcc`.
+The full shader/export/font/GI/browser matrix in STATUS.md remains unfinished.
+
+```sh
+python3 webgpu_tests/driver_integration/run_headless_exports.py \
+  /absolute/path/to/godot --output /tmp/headless-export-results
+/absolute/path/to/godot --path webgpu_tests/driver_integration \
+  --script test_timestamps.gd --rendering-driver webgpu --rendering-method forward_plus
+```
+
+The timestamp fixture requires native TimestampQuery support. Reject engine errors
+in the log as well as a nonzero exit code or a failed `TIMESTAMP_TEST` record.
