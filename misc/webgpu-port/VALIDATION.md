@@ -708,3 +708,20 @@ error; corrected threaded and nonthreaded links both pass. Full-file ESLint and
 JavaScript parsing pass. This is a focused wrapper/link regression, not audio
 playback coverage or a complete local 4.0.11 build; corrected CI must complete
 that SDK's final template link. The change leaves shader-cache identity intact.
+
+### Existing SceneTree process-group leak exposed by sanitizer CI
+
+Revision `e8ad329993` Linux Clang ASan job `113555475089` passes all **1,386 tests** and
+**420,619 assertions**, then LeakSanitizer reports **552 bytes in three
+allocations**. The direct allocation is `SceneTree::_add_process_group`, reached
+by the existing sorted-process-prefix dedicated-group test. Removed groups were
+overwritten and discarded during deferred cleanup without deletion. The purge
+now deletes each removed group before replacing its pointer; worker group tasks
+are joined before that cleanup boundary.
+
+This is an unchanged baseline defect: `scene_tree.cpp`, `scene_tree.h`, and
+`test_node.cpp` have identical Git blobs at PR base `c0d51825faad` and
+`e8ad329993`. Earlier `74d783e44d` ASan job `113542642593` reports the same leak
+after its metadata-test failure. The existing test remains intact; no sanitizer
+check was disabled. Source formatting passes. A subsequent sanitizer CI run must
+verify the one-line repair; no post-fix runtime result is claimed here.

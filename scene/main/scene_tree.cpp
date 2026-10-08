@@ -1302,6 +1302,7 @@ void SceneTree::_process(bool p_physics) {
 
 			for (uint32_t i = 0; i < pg_count; i++) {
 				if (pg_ptr[i]->removed) {
+					memdelete(pg_ptr[i]);
 					// Replace removed with last.
 					pg_ptr[i] = pg_ptr[pg_count - 1];
 					// Retry
