@@ -1,11 +1,11 @@
 {
   "passed": true,
   "reference_report": "/private/tmp/aw3-sdfgi-original-scene-4-metal/results.json",
-  "candidate_report": "/private/tmp/aw3-sdfgi-e6-subviewport-4-metal/results.json",
+  "candidate_report": "/private/tmp/aw3-sdfgi-final-4-metal/results.json",
   "reference_engine_sha256": "46dc9ae5ce79ead485786b146e960ed19ea5e6c240475836f3a8be773aa90b62",
-  "candidate_engine_sha256": "e6d26dd46c9871a75b75e62b5cac42dd2bbc7b0fe727a67414cf7a56bc4fdfa9",
+  "candidate_engine_sha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
   "relative_bounce_energy_error": 0.0,
-  "max_enabled_mae_rgb255": 1.0,
+  "max_scene_mae_rgb255": 1.0,
   "max_relative_bounce_energy_error": 0.05,
   "images": {
     "disabled": {
@@ -30,5 +30,5 @@
       "candidate_png_sha256": "e509e7834297a05fb40a017858a4d2a4dde03ec512a2181316981c0b576b37fb"
     }
   },
-  "note": "Scrolled image difference is reported but not gated; asynchronous pipeline completion can shift the probe sampling sequence after movement."
+  "note": "Both settled initial and incrementally scrolled images must meet the fidelity threshold; nonzero indirect light alone is insufficient."
 }

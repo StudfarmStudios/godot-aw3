@@ -5,6 +5,7 @@ var requested_cascades := 4
 var debug_capture := false
 var use_occlusion := true
 var benchmark_frames := 0
+var benchmark_disabled_only := false
 var scroll_frames := 20
 var rebuild_scrolled := false
 var metrics := {}
@@ -17,6 +18,7 @@ func _initialize() -> void:
 	for argument in OS.get_cmdline_user_args():
 		if argument == "--debug-capture": debug_capture = true
 		if argument == "--rebuild-scrolled": rebuild_scrolled = true
+		if argument == "--benchmark-disabled-only": benchmark_disabled_only = true
 		if argument == "--no-occlusion": use_occlusion = false
 		if argument.begins_with("--benchmark-frames="): benchmark_frames = int(argument.trim_prefix("--benchmark-frames="))
 		if argument.begins_with("--scroll-frames="): scroll_frames = int(argument.trim_prefix("--scroll-frames="))
@@ -164,6 +166,13 @@ func _run() -> void:
 	metrics["disabled_memory"] = memory_metrics()
 	await benchmark("disabled_timing")
 	var baseline := capture("disabled")
+	if benchmark_disabled_only:
+		var file:=FileAccess.open(directory.path_join("scene-metrics.json"),FileAccess.WRITE)
+		file.store_string(JSON.stringify(metrics,"  "))
+		file.close()
+		print("SDFGI_DISABLED_BENCHMARK PASS")
+		quit(0)
+		return
 	environment.sdfgi_enabled = true
 	await frames(45)
 	await settle_pipelines("enabled")

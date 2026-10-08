@@ -72,6 +72,9 @@ void exit_callback() {
 	if (!shutdown_complete) {
 		return; // Still waiting.
 	}
+#if defined(WEBGPU_ENABLED) && !defined(THREADS_ENABLED)
+	const bool drain_webgpu_callbacks = os->get_current_rendering_driver_name() == "webgpu";
+#endif
 	if (main_started) {
 		Main::cleanup();
 		main_started = false;
@@ -89,7 +92,15 @@ void exit_callback() {
 #endif
 	godot_cleanup_profiler();
 	emscripten_cancel_main_loop(); // We are exiting in this iteration.
-	emscripten_force_exit(exit_code); // Exit runtime.
+#if defined(WEBGPU_ENABLED) && !defined(THREADS_ENABLED)
+	if (drain_webgpu_callbacks) {
+		// The cancelled loop and outstanding WebGPU callbacks still own runtime
+		// keepalives. Let them drain instead of resetting their counter to zero.
+		godot_js_os_exit(exit_code);
+		return;
+	}
+#endif
+	emscripten_force_exit(exit_code); // Terminate Workers with intentional keepalives.
 }
 
 void cleanup_after_sync() {

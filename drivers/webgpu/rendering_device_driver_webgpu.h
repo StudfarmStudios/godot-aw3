@@ -349,6 +349,9 @@ public:
 	void _stage_pending_upload(WGBuffer *p_buf, uint64_t p_offset, uint64_t p_size);
 	void _flush_pending_staging_uploads();
 
+	// Immutable zero source for bounded, ordered storage-texture clears.
+	WGPUBuffer texture_clear_zero_buffer = nullptr;
+
 	// Scratch upload ring: command_copy_buffer copies each staged region's
 	// bytes into upload_ring_cpu at a bump-allocated offset and records the
 	// encoder copy as ring→dest, so the flush is ONE writeBuffer of exactly

@@ -21,6 +21,7 @@ p.add_argument("--debug-capture", action="store_true")
 p.add_argument("--no-occlusion", action="store_true")
 p.add_argument("--scroll-frames", type=int, default=20)
 p.add_argument("--rebuild-scrolled", action="store_true")
+p.add_argument("--benchmark-disabled-only", action="store_true")
 p.add_argument(
     "--benchmark-frames",
     type=int,
@@ -58,6 +59,10 @@ if a.no_occlusion:
     command.append("--no-occlusion")
 if a.rebuild_scrolled:
     command.append("--rebuild-scrolled")
+if a.benchmark_disabled_only:
+    if not a.benchmark_frames:
+        p.error("--benchmark-disabled-only requires --benchmark-frames")
+    command.append("--benchmark-disabled-only")
 if a.benchmark_frames:
     command.append("--benchmark-frames=" + str(a.benchmark_frames))
 start = time.monotonic()
@@ -87,7 +92,9 @@ metrics = re.search(
     r"SDFGI_SCENE (?:PASS|FAIL) cascades=(\d+) affected=(\d+) red_increase=([\d.]+) scrolled_affected=(\d+)", log
 )
 report = {
-    "passed": not errors and returncode == 0 and "SDFGI_SCENE PASS" in log,
+    "passed": not errors
+    and returncode == 0
+    and ("SDFGI_DISABLED_BENCHMARK PASS" if a.benchmark_disabled_only else "SDFGI_SCENE PASS") in log,
     "errors": errors[:30],
     "error_count": len(errors),
     "returncode": returncode,
@@ -100,6 +107,7 @@ report = {
     "no_float32_filterable": a.no_float32_filterable,
     "cascades": a.cascades,
     "scroll_frames": a.scroll_frames,
+    "benchmark_disabled_only": a.benchmark_disabled_only,
     "affected_pixels": int(metrics[2]) if metrics else None,
     "red_increase_sum": float(metrics[3]) if metrics else None,
     "scroll_affected_pixels": int(metrics[4]) if metrics else None,

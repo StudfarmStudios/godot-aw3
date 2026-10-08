@@ -15,12 +15,28 @@ func _ready() -> void:
 	if RenderingServer.get_current_rendering_driver_name() != "webgpu" or RenderingServer.get_current_rendering_method() != "forward_plus":
 		push_error("BROWSER_WRONG_RENDERER")
 		return
+	var rebind := preload("res://rebind_lifecycle.gd").new()
+	add_child(rebind)
+	var native_rebind_only := "--rebind-native-only" in OS.get_cmdline_user_args()
+	if not await rebind.run(native_rebind_only):
+		return
+	rebind.queue_free()
+	if native_rebind_only:
+		get_tree().quit()
+		return
 	content = Node.new()
 	add_child(content)
 	for index in 4:
 		var font := FontFile.new()
-		font.data = FileAccess.get_file_as_bytes("res://authored-svg.ttf" if index == 3 else "res://inter.woff2")
+		var imported_font: FontFile = load("res://authored-svg.ttf" if index == 3 else "res://inter.woff2")
+		if imported_font == null or imported_font.data.is_empty():
+			push_error("BROWSER_FONT_SOURCE_MISSING ", index)
+			return
+		font.data = imported_font.data
 		font.allow_system_fallback = false
+		if not font.has_char(65) or not font.has_char(66):
+			push_error("BROWSER_FONT_GLYPH_MISSING ", index)
+			return
 		if index == 1: font.antialiasing = TextServer.FONT_ANTIALIASING_LCD
 		if index == 2: font.multichannel_signed_distance_field = true
 		fonts.append(font)

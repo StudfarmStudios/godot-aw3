@@ -5,14 +5,14 @@
   "negative_control": false,
   "errors": [],
   "returncode": 0,
-  "seconds": 1.2763698340859264,
+  "seconds": 2.2814579580444843,
   "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
-  "engine_sha256": "e6d26dd46c9871a75b75e62b5cac42dd2bbc7b0fe727a67414cf7a56bc4fdfa9",
+  "engine_sha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
   "production_atomic_block_sha256": "efd56c20914fbeac721a6a7d28b1c6d227e4cc76b6d3f4895a6b821b65102cd5",
   "fixture_atomic_block_sha256": "efd56c20914fbeac721a6a7d28b1c6d227e4cc76b6d3f4895a6b821b65102cd5",
   "fallback": false,
   "command": [
-    "/private/tmp/aw3-webgpu-retarget-normal",
+    "/private/tmp/aw3-webgpu-ordered-clear",
     "--path",
     "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration",
     "--rendering-method",
@@ -22,6 +22,6 @@
     "--script",
     "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration/facing.gd",
     "--",
-    "--fixture-dir=/private/tmp/aw3-sdfgi-e6-facing-normal"
+    "--fixture-dir=/private/tmp/aw3-sdfgi-final-facing-normal"
   ]
 }

@@ -1662,12 +1662,12 @@ RenderingDevice::TextureSamples RenderingDevice::get_effective_texture_samples(T
 	// Round up across gaps (2x -> 4x on WebGPU), then clamp to the largest
 	// supported count if the request exceeds the API's maximum (8x -> 4x).
 	for (int sample = p_requested; sample < TEXTURE_SAMPLES_MAX; sample++) {
-		if (counts & (1u << sample)) {
+		if (counts & (uint64_t(1) << sample)) {
 			return TextureSamples(sample);
 		}
 	}
 	for (int sample = p_requested - 1; sample >= 0; sample--) {
-		if (counts & (1u << sample)) {
+		if (counts & (uint64_t(1) << sample)) {
 			return TextureSamples(sample);
 		}
 	}

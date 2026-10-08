@@ -37,9 +37,10 @@
 #include "servers/rendering/renderer_canvas_cull.h"
 #include "servers/rendering/renderer_compositor.h"
 
-#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED)
+#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED) && defined(THREADS_ENABLED)
 #include <emscripten/atomic.h>
 #include <pthread.h>
+
 #include <atomic>
 #endif
 #include "servers/rendering/renderer_viewport.h"
@@ -94,7 +95,7 @@ class RenderingServerDefault : public RenderingServer {
 	void _thread_exit();
 	void _thread_loop();
 
-#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED)
+#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED) && defined(THREADS_ENABLED)
 	// On the web the render thread is a dedicated pthread rather than a
 	// WorkerThreadPool task: it has to be created with the canvas transferred to
 	// it and it requests the WebGPU device in its own Worker realm. It runs from

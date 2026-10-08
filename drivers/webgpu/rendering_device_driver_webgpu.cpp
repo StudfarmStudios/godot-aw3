@@ -210,9 +210,7 @@ static void _compute_pipeline_async_callback(WGPUCreatePipelineAsyncStatus p_sta
 }
 
 // Fence work-done callback: fires when wgpuQueueSubmit work completes on GPU.
-// The message parameter arrived in Emscripten 4.0.13's webgpu.h; earlier
-// headers declared this callback without it.
-static void _fence_work_done_callback(WGPUQueueWorkDoneStatus p_status, WGPUStringView p_message, void *p_userdata1, void *p_userdata2) {
+static void _fence_work_done_callback(WGPUQueueWorkDoneStatus p_status, void *p_userdata1, void *p_userdata2) {
 	WGFence *fence = (WGFence *)p_userdata1;
 	if (!fence) {
 		return;
@@ -227,6 +225,12 @@ static void _fence_work_done_callback(WGPUQueueWorkDoneStatus p_status, WGPUStri
 	}
 
 	fence->signaled = true;
+}
+
+// Older emdawnwebgpu headers omit the message parameter. Overload resolution
+// follows the installed callback type, including when the port is overridden.
+[[maybe_unused]] static void _fence_work_done_callback(WGPUQueueWorkDoneStatus p_status, WGPUStringView p_message, void *p_userdata1, void *p_userdata2) {
+	_fence_work_done_callback(p_status, p_userdata1, p_userdata2);
 }
 
 // Parse "@group(G[u]) @binding(B[u])" from a WGSL string.
@@ -1445,6 +1449,11 @@ RenderingDeviceDriverWebGPU::~RenderingDeviceDriverWebGPU() {
 		wgpuBindGroupLayoutRelease(push_constant_bind_group_layout);
 		push_constant_bind_group_layout = nullptr;
 	}
+	if (texture_clear_zero_buffer) {
+		wgpuBufferDestroy(texture_clear_zero_buffer);
+		wgpuBufferRelease(texture_clear_zero_buffer);
+		texture_clear_zero_buffer = nullptr;
+	}
 	if (upload_ring) {
 		wgpuBufferDestroy(upload_ring);
 		wgpuBufferRelease(upload_ring);
@@ -1986,13 +1995,25 @@ void RenderingDeviceDriverWebGPU::_check_capabilities() {
 
 	// Test-only opt-in, usable on capable hardware to exercise fallback paths.
 	const bool force_fallbacks = (OS::get_singleton()->get_cmdline_user_args().find("--webgpu-force-fallbacks") != nullptr);
-	// texture-formats-tier1 adds storage binding support for r8unorm, rg8unorm, etc.
+	// Emscripten 4.0.11's emdawnwebgpu header predates the tier feature enums.
+	// Query the imported device's enabled features, not adapter support, so
+	// newer browsers can expose the tiers with that supported older SDK.
+#ifdef __EMSCRIPTEN__
+	const uint32_t texture_format_tiers = EM_ASM_INT({
+		var js_device = WebGPU.getJsObject($0);
+		return (js_device.features.has("texture-formats-tier1") ? 1 : 0) |
+				(js_device.features.has("texture-formats-tier2") ? 2 : 0); }, device);
+	has_texture_formats_tier1 = !force_fallbacks && (texture_format_tiers & 1);
+	has_texture_formats_tier2 = !force_fallbacks && (texture_format_tiers & 2);
+#else
 	has_texture_formats_tier1 = !force_fallbacks && wgpuDeviceHasFeature(device, WGPUFeatureName_TextureFormatsTier1);
+	has_texture_formats_tier2 = !force_fallbacks && wgpuDeviceHasFeature(device, WGPUFeatureName_TextureFormatsTier2);
+#endif
+	// texture-formats-tier1 adds storage binding support for r8unorm, rg8unorm, etc.
 	if (has_texture_formats_tier1) {
 		print_verbose("WebGPU: texture-formats-tier1 feature is available — r8/rg8 storage formats supported natively.");
 	}
 
-	has_texture_formats_tier2 = !force_fallbacks && wgpuDeviceHasFeature(device, WGPUFeatureName_TextureFormatsTier2);
 	if (has_texture_formats_tier2) {
 		print_verbose("WebGPU: texture-formats-tier2 feature is available.");
 	}
@@ -7993,6 +8014,7 @@ static uint32_t _wgpu_format_byte_size(WGPUTextureFormat p_format) {
 		case WGPUTextureFormat_BGRA8Unorm:
 		case WGPUTextureFormat_BGRA8UnormSrgb:
 		case WGPUTextureFormat_RGB10A2Unorm:
+		case WGPUTextureFormat_RGB10A2Uint:
 		case WGPUTextureFormat_RG11B10Ufloat:
 			return 4;
 		case WGPUTextureFormat_RG32Float:
@@ -8011,109 +8033,40 @@ static uint32_t _wgpu_format_byte_size(WGPUTextureFormat p_format) {
 	}
 }
 
-// Encode a clear Color into the raw texel bytes for a given WGPUTextureFormat.
-// r_texel must point to at least 16 bytes and be pre-zeroed.
-static void _encode_clear_texel(WGPUTextureFormat p_format, const Color &p_color, uint8_t *r_texel) {
+// Reuse the upload/readback conversion contract for every physical texel format.
+static bool _encode_clear_texel(WGPUTextureFormat p_format, const Color &p_color, uint8_t *r_texel) {
+	using E = WebGPUTextureConversion::Encoding;
+	WebGPUTextureConversion::Format format = _conversion_format(p_format);
+	Color color = p_color;
 	switch (p_format) {
-		// Float32 formats.
-		case WGPUTextureFormat_R32Float: {
-			float v = p_color.r;
-			memcpy(r_texel, &v, 4);
-		} break;
-		case WGPUTextureFormat_RG32Float: {
-			float v[2] = { p_color.r, p_color.g };
-			memcpy(r_texel, v, 8);
-		} break;
-		case WGPUTextureFormat_RGBA32Float: {
-			float v[4] = { p_color.r, p_color.g, p_color.b, p_color.a };
-			memcpy(r_texel, v, 16);
-		} break;
-
-		// Uint32 formats.
-		case WGPUTextureFormat_R32Uint: {
-			uint32_t v = (uint32_t)p_color.r;
-			memcpy(r_texel, &v, 4);
-		} break;
-		case WGPUTextureFormat_RG32Uint: {
-			uint32_t v[2] = { (uint32_t)p_color.r, (uint32_t)p_color.g };
-			memcpy(r_texel, v, 8);
-		} break;
-		case WGPUTextureFormat_RGBA32Uint: {
-			uint32_t v[4] = { (uint32_t)p_color.r, (uint32_t)p_color.g, (uint32_t)p_color.b, (uint32_t)p_color.a };
-			memcpy(r_texel, v, 16);
-		} break;
-
-		// Sint32 formats.
-		case WGPUTextureFormat_R32Sint: {
-			int32_t v = (int32_t)p_color.r;
-			memcpy(r_texel, &v, 4);
-		} break;
-		case WGPUTextureFormat_RG32Sint: {
-			int32_t v[2] = { (int32_t)p_color.r, (int32_t)p_color.g };
-			memcpy(r_texel, v, 8);
-		} break;
-		case WGPUTextureFormat_RGBA32Sint: {
-			int32_t v[4] = { (int32_t)p_color.r, (int32_t)p_color.g, (int32_t)p_color.b, (int32_t)p_color.a };
-			memcpy(r_texel, v, 16);
-		} break;
-
-		// Unorm8 formats.
-		case WGPUTextureFormat_R8Unorm: {
-			r_texel[0] = (uint8_t)CLAMP(p_color.r * 255.0f, 0.0f, 255.0f);
-		} break;
-		case WGPUTextureFormat_RG8Unorm: {
-			r_texel[0] = (uint8_t)CLAMP(p_color.r * 255.0f, 0.0f, 255.0f);
-			r_texel[1] = (uint8_t)CLAMP(p_color.g * 255.0f, 0.0f, 255.0f);
-		} break;
-		case WGPUTextureFormat_RGBA8Unorm:
-		case WGPUTextureFormat_RGBA8UnormSrgb: {
-			r_texel[0] = (uint8_t)CLAMP(p_color.r * 255.0f, 0.0f, 255.0f);
-			r_texel[1] = (uint8_t)CLAMP(p_color.g * 255.0f, 0.0f, 255.0f);
-			r_texel[2] = (uint8_t)CLAMP(p_color.b * 255.0f, 0.0f, 255.0f);
-			r_texel[3] = (uint8_t)CLAMP(p_color.a * 255.0f, 0.0f, 255.0f);
-		} break;
+		case WGPUTextureFormat_RGBA8UnormSrgb:
+		case WGPUTextureFormat_BGRA8UnormSrgb:
+			color = color.linear_to_srgb();
+			[[fallthrough]];
 		case WGPUTextureFormat_BGRA8Unorm:
-		case WGPUTextureFormat_BGRA8UnormSrgb: {
-			r_texel[0] = (uint8_t)CLAMP(p_color.b * 255.0f, 0.0f, 255.0f);
-			r_texel[1] = (uint8_t)CLAMP(p_color.g * 255.0f, 0.0f, 255.0f);
-			r_texel[2] = (uint8_t)CLAMP(p_color.r * 255.0f, 0.0f, 255.0f);
-			r_texel[3] = (uint8_t)CLAMP(p_color.a * 255.0f, 0.0f, 255.0f);
-		} break;
-
-		// Float16 formats.
-		case WGPUTextureFormat_R16Float: {
-			uint16_t v = Math::make_half_float(p_color.r);
-			memcpy(r_texel, &v, 2);
-		} break;
-		case WGPUTextureFormat_RG16Float: {
-			uint16_t v[2] = { Math::make_half_float(p_color.r), Math::make_half_float(p_color.g) };
-			memcpy(r_texel, v, 4);
-		} break;
-		case WGPUTextureFormat_RGBA16Float: {
-			uint16_t v[4] = { Math::make_half_float(p_color.r), Math::make_half_float(p_color.g),
-				Math::make_half_float(p_color.b), Math::make_half_float(p_color.a) };
-			memcpy(r_texel, v, 8);
-		} break;
-
-		// Uint16 formats.
-		case WGPUTextureFormat_R16Uint: {
-			uint16_t v = (uint16_t)p_color.r;
-			memcpy(r_texel, &v, 2);
-		} break;
-		case WGPUTextureFormat_RG16Uint: {
-			uint16_t v[2] = { (uint16_t)p_color.r, (uint16_t)p_color.g };
-			memcpy(r_texel, v, 4);
-		} break;
-		case WGPUTextureFormat_RGBA16Uint: {
-			uint16_t v[4] = { (uint16_t)p_color.r, (uint16_t)p_color.g,
-				(uint16_t)p_color.b, (uint16_t)p_color.a };
-			memcpy(r_texel, v, 8);
-		} break;
-
+			format = { E::UNORM8, 4 };
+			break;
+		case WGPUTextureFormat_RGB10A2Unorm:
+			format = { E::RGB10A2_UNORM, 4 };
+			break;
+		case WGPUTextureFormat_RGB10A2Uint:
+			format = { E::RGB10A2_UINT, 4 };
+			break;
+		case WGPUTextureFormat_RG11B10Ufloat:
+			format = { E::RG11B10_UFLOAT, 3 };
+			break;
 		default:
-			// Zero-fill for unhandled formats (already zeroed).
 			break;
 	}
+	if (!WebGPUTextureConversion::pixel_size(format)) {
+		return false;
+	}
+	if (p_format == WGPUTextureFormat_BGRA8Unorm || p_format == WGPUTextureFormat_BGRA8UnormSrgb) {
+		SWAP(color.r, color.b);
+	}
+	const double values[4] = { color.r, color.g, color.b, color.a };
+	WebGPUTextureConversion::pack(r_texel, format, values);
+	return true;
 }
 
 void RenderingDeviceDriverWebGPU::command_clear_color_texture(CommandBufferID p_cmd_buffer, TextureID p_texture, TextureLayout p_texture_layout, const Color &p_color, const TextureSubresourceRange &p_subresources) {
@@ -8124,7 +8077,7 @@ void RenderingDeviceDriverWebGPU::command_clear_color_texture(CommandBufferID p_
 
 	cmd->end_active_encoder();
 
-	if (tex->usage & WGPUTextureUsage_RenderAttachment) {
+	if ((tex->usage & WGPUTextureUsage_RenderAttachment) && tex->dimension != WGPUTextureDimension_3D) {
 		// Fast path: clear via a zero-draw render pass (requires RenderAttachment usage).
 		for (uint32_t mip = p_subresources.base_mipmap; mip < p_subresources.base_mipmap + p_subresources.mipmap_count; mip++) {
 			for (uint32_t layer = p_subresources.base_layer; layer < p_subresources.base_layer + p_subresources.layer_count; layer++) {
@@ -8157,58 +8110,81 @@ void RenderingDeviceDriverWebGPU::command_clear_color_texture(CommandBufferID p_
 			}
 		}
 	} else {
-		// Fallback for textures without RenderAttachment usage (e.g. storage-only
-		// compute textures). Uses wgpuQueueWriteTexture to fill with the clear color.
+		// Queue writes run before the submitted encoder, so they cannot represent a
+		// clear between dispatches. Encode copies from immutable buffer contents.
 		ERR_FAIL_COND_MSG(!(tex->usage & WGPUTextureUsage_CopyDst),
 				"Cannot clear texture: texture has neither RenderAttachment nor CopyDst usage.");
-
-		uint32_t bpp = _wgpu_format_byte_size(tex->format);
-		ERR_FAIL_COND_MSG(bpp == 0,
-				"Cannot clear texture via writeTexture: unsupported format.");
-
-		bool is_zero = (p_color.r == 0.0f && p_color.g == 0.0f && p_color.b == 0.0f && p_color.a == 0.0f);
-
-		// Encode one texel of the clear color.
+		const uint32_t bpp = _wgpu_format_byte_size(tex->format);
+		ERR_FAIL_COND_MSG(bpp == 0, "Cannot clear texture: unsupported format.");
+		const bool is_zero = p_color == Color(0, 0, 0, 0);
 		uint8_t texel[16] = {};
-		if (!is_zero) {
-			_encode_clear_texel(tex->format, p_color, texel);
+		ERR_FAIL_COND_MSG(!is_zero && !_encode_clear_texel(tex->format, p_color, texel),
+				"Cannot encode clear color for this texture format.");
+
+		// Bound temporary allocations even for large 3D volumes. Common zero
+		// clears reuse a driver-owned immutable buffer; WebGPU initializes it to
+		// zero without an 8 MiB CPU upload for each SDFGI scratch volume.
+		const uint64_t chunk_limit = MIN(uint64_t(4 * 1024 * 1024), device_limits.maxBufferSize) & ~uint64_t(3);
+		ERR_FAIL_COND(chunk_limit < 256);
+		if (is_zero && !texture_clear_zero_buffer) {
+			WGPUBufferDescriptor desc = {};
+			desc.size = chunk_limit;
+			desc.usage = WGPUBufferUsage_CopySrc;
+			texture_clear_zero_buffer = wgpuDeviceCreateBuffer(device, &desc);
+			ERR_FAIL_NULL(texture_clear_zero_buffer);
 		}
-
+		const bool is_3d = tex->dimension == WGPUTextureDimension_3D;
 		for (uint32_t mip = p_subresources.base_mipmap; mip < p_subresources.base_mipmap + p_subresources.mipmap_count; mip++) {
-			for (uint32_t layer = p_subresources.base_layer; layer < p_subresources.base_layer + p_subresources.layer_count; layer++) {
-				uint32_t w = MAX(1u, tex->width >> mip);
-				uint32_t h = MAX(1u, tex->height >> mip);
-				uint32_t row_bytes = w * bpp;
-
-				// Fill a CPU buffer with the clear texel pattern.
-				Vector<uint8_t> data;
-				data.resize(row_bytes * h);
-				uint8_t *ptr = data.ptrw();
-
-				if (is_zero) {
-					memset(ptr, 0, data.size());
-				} else {
-					for (uint32_t y = 0; y < h; y++) {
-						for (uint32_t x = 0; x < w; x++) {
-							memcpy(ptr + y * row_bytes + x * bpp, texel, bpp);
-						}
+			ERR_FAIL_COND(mip < tex->base_mipmap);
+			const uint32_t relative_mip = mip - tex->base_mipmap;
+			const uint32_t width = MAX(1u, tex->width >> relative_mip);
+			const uint32_t height = MAX(1u, tex->height >> relative_mip);
+			const uint32_t depth = is_3d ? MAX(1u, tex->depth >> relative_mip) : p_subresources.layer_count;
+			const uint32_t row_pitch = (width * bpp + 255u) & ~255u;
+			ERR_FAIL_COND(row_pitch > chunk_limit);
+			const uint32_t chunk_rows = MIN(uint64_t(height), chunk_limit / row_pitch);
+			const uint32_t chunk_depth = chunk_rows == height ? MIN(uint64_t(depth), chunk_limit / (uint64_t(row_pitch) * chunk_rows)) : 1;
+			const uint64_t buffer_size = uint64_t(row_pitch) * chunk_rows * chunk_depth;
+			WGPUBuffer clear_buffer = texture_clear_zero_buffer;
+			if (!is_zero) {
+				WGPUBufferDescriptor desc = {};
+				desc.size = buffer_size;
+				desc.usage = WGPUBufferUsage_CopySrc;
+				desc.mappedAtCreation = true;
+				clear_buffer = wgpuDeviceCreateBuffer(device, &desc);
+				ERR_FAIL_NULL(clear_buffer);
+				uint8_t *data = static_cast<uint8_t *>(wgpuBufferGetMappedRange(clear_buffer, 0, buffer_size));
+				if (!data) {
+					wgpuBufferRelease(clear_buffer);
+					ERR_FAIL_MSG("Cannot map texture clear upload buffer.");
+				}
+				// The aligned row padding is not copied into the texture.
+				for (uint64_t row = 0; row < uint64_t(chunk_rows) * chunk_depth; row++) {
+					for (uint32_t x = 0; x < width; x++) {
+						memcpy(data + row * row_pitch + x * bpp, texel, bpp);
 					}
 				}
-
-				WGPUTexelCopyTextureInfo dst = {};
-				dst.texture = tex->gpu_handle();
-				dst.mipLevel = mip;
-				dst.origin = { 0, 0, layer };
-				dst.aspect = WGPUTextureAspect_All;
-
-				WGPUTexelCopyBufferLayout layout = {};
-				layout.offset = 0;
-				layout.bytesPerRow = row_bytes;
-				layout.rowsPerImage = h;
-
-				WGPUExtent3D extent = { w, h, 1 };
-
-				wgpuQueueWriteTexture(queue, &dst, ptr, data.size(), &layout, &extent);
+				wgpuBufferUnmap(clear_buffer);
+			}
+			for (uint32_t z = 0; z < depth; z += chunk_depth) {
+				for (uint32_t y = 0; y < height; y += chunk_rows) {
+					WGPUTexelCopyBufferInfo src = {};
+					src.buffer = clear_buffer;
+					src.layout.bytesPerRow = row_pitch;
+					src.layout.rowsPerImage = chunk_rows;
+					WGPUTexelCopyTextureInfo dst = {};
+					dst.texture = tex->gpu_handle();
+					dst.mipLevel = mip;
+					dst.origin = { 0, y, is_3d ? z : p_subresources.base_layer + z };
+					dst.aspect = WGPUTextureAspect_All;
+					WGPUExtent3D extent = { width, MIN(chunk_rows, height - y), MIN(chunk_depth, depth - z) };
+					wgpuCommandEncoderCopyBufferToTexture(cmd->encoder, &src, &dst, &extent);
+				}
+			}
+			if (!is_zero) {
+				// Encoding retains the buffer. Destroying before submission would
+				// invalidate the command; release our reference instead.
+				wgpuBufferRelease(clear_buffer);
 			}
 		}
 	}

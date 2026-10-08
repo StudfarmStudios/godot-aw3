@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Precompile failures must be explicit, isolated and leave the old table intact."""
 
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -13,6 +14,26 @@ import wgsl_precompile as precompile
 
 
 class PrecompileFailuresTest(unittest.TestCase):
+    def test_define_blocks_without_trailing_newlines_remain_separate(self):
+        compiler = shutil.which("glslangValidator") or shutil.which("glslang")
+        if compiler is None:
+            self.skipTest("glslang is required for the source assembly regression")
+        source = precompile.assemble_glsl(
+            [
+                "#version 450",
+                "#VERSION_DEFINES",
+                "#if !defined(PROFILE_TEST) || !defined(VARIANT_TEST) || !defined(RENDER_DRIVER_WEBGPU)",
+                '#error "shader define blocks were joined without a separator"',
+                "#endif",
+                "layout(local_size_x = 1) in;",
+                "void main() {}",
+            ],
+            "#define PROFILE_TEST",
+            "#define VARIANT_TEST",
+        )
+        spirv, error = precompile.compile_glsl_to_spirv(source, "comp", compiler)
+        self.assertIsNotNone(spirv, error)
+
     def test_batch_rejects_malformed_protocol_exit_and_timeout(self):
         for result in (
             subprocess.CompletedProcess([], 1, "{}", "failed"),

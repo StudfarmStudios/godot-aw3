@@ -1,0 +1,25 @@
+{
+  "passed": true,
+  "checks": 153,
+  "failed": 0,
+  "errors": [],
+  "returncode": 0,
+  "engine_sha256": "631b9adbc054780c3583c84ebbdc9beee48fb11d1b122d52138d6dc99d4ba0b5",
+  "fixture_sha256": "f3762da77831240289a57ee90caa87cd8cd5673559ba4dcbdcdd98d3781cbadf",
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "fallback": false,
+  "driver": "metal",
+  "command": [
+    "/private/tmp/aw3-webgpu-gi-diagnostic",
+    "--path",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration",
+    "--rendering-method",
+    "forward_plus",
+    "--rendering-driver",
+    "metal",
+    "--script",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration/texture_clear.gd",
+    "--",
+    "--fixture-dir=/private/tmp/aw3-clear-native-reference-valid"
+  ]
+}

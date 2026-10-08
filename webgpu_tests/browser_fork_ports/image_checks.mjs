@@ -1,6 +1,11 @@
 // Pixel checks shared by browser capture and native fixture calibration.
 const countColor=(image,rect,match)=>{let count=0;for(let y=rect[1];y<rect[3];y++)for(let x=rect[0];x<rect[2];x++){const i=(y*image.width+x)*4;if(match(image.data[i],image.data[i+1],image.data[i+2]))count++;}return count;};
 const red=(r,g,b)=>r>160&&r>g*2&&r>b*2,blue=(r,g,b)=>b>160&&b>r*2&&b>g*2;
+export function verifyRebindImage(image){
+  const pixels=Array.from({length:64},(_,index)=>Array.from(image.data.slice((16*image.width+4+index*8)*4,(16*image.width+4+index*8)*4+4)));
+  return [{name:'rebind_canvas_dimensions',passed:image.width===512&&image.height===384,detail:[image.width,image.height]},
+    {name:'rebind_64_lifetimes_gpu_values',passed:pixels.every(([r,g,b,a])=>r<25&&g>230&&b<25&&a>230),detail:pixels}];
+}
 export function verifyImages(images){
   const checks=[];const check=(name,passed,detail)=>checks.push({name,passed,detail});
   const font=images.font;

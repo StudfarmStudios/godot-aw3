@@ -4,18 +4,19 @@
   "error_count": 0,
   "returncode": 0,
   "timed_out": false,
-  "seconds": 1.5857639169553295,
+  "seconds": 3.74027125001885,
   "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
-  "engine_sha256": "e6d26dd46c9871a75b75e62b5cac42dd2bbc7b0fe727a67414cf7a56bc4fdfa9",
+  "engine_sha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
   "driver": "webgpu",
   "fallback": false,
   "no_float32_filterable": false,
   "cascades": 1,
+  "scroll_frames": 20,
   "affected_pixels": 12857,
   "red_increase_sum": 4288.102065,
-  "scroll_affected_pixels": 8514,
+  "scroll_affected_pixels": 10306,
   "command": [
-    "/private/tmp/aw3-webgpu-retarget-normal",
+    "/private/tmp/aw3-webgpu-ordered-clear",
     "--path",
     "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration",
     "--rendering-method",
@@ -25,8 +26,9 @@
     "--script",
     "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration/scene.gd",
     "--",
-    "--fixture-dir=/private/tmp/aw3-sdfgi-e6-subviewport-1-normal",
-    "--cascades=1"
+    "--fixture-dir=/private/tmp/aw3-sdfgi-final-1-normal",
+    "--cascades=1",
+    "--scroll-frames=20"
   ],
   "scene_metrics": {
     "disabled_memory": {
@@ -36,7 +38,7 @@
       "video_bytes": 0
     },
     "disabled_pipeline_settle": {
-      "milliseconds": 21,
+      "milliseconds": 900,
       "pending": 0,
       "pipeline_count": 7,
       "quiet_frames": 10
@@ -47,7 +49,7 @@
       "video_bytes": 0
     },
     "enabled_pipeline_settle": {
-      "milliseconds": 7,
+      "milliseconds": 704,
       "pending": 0,
       "pipeline_count": 15,
       "quiet_frames": 10

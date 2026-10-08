@@ -2268,7 +2268,7 @@ void GI::SDFGI::render_region(Ref<RenderSceneBuffersRD> p_render_buffers, int p_
 		RD::ComputeListID compute_list = RD::get_singleton()->compute_list_begin();
 
 		bool half_size = true; //much faster, very little difference
-		const int optimized_jf_group_size = buffer_storage ? 4 : 8;
+		const uint32_t optimized_jf_group_size = buffer_storage ? 4 : 8;
 
 		if (half_size) {
 			push_constant.grid_size >>= 1;

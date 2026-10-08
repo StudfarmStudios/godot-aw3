@@ -74,14 +74,11 @@ private:
 	// Separate render thread: the WebGPU device, surface and RenderingDevice are
 	// created on that thread, in its own Worker realm, not here. See
 	// DisplayServer::has_deferred_rendering().
-	bool rect_changed_pending = false; // A size change seen before the root window registered its callback.
 	bool deferred_rendering = false;
 	Size2i deferred_resolution;
 	DisplayServerEnums::VSyncMode deferred_vsync_mode = DisplayServerEnums::VSYNC_ENABLED;
-#ifdef WEBGPU_ENABLED
 	Error _webgpu_rendering_initialize(const Size2i &p_resolution, DisplayServerEnums::VSyncMode p_vsync_mode);
 	void _render_thread_window_set_size(const Size2i &p_size);
-#endif
 #endif
 
 	HashMap<int64_t, CharString> utterance_ids;
@@ -89,6 +86,7 @@ private:
 	DisplayServerEnums::WindowMode window_mode = DisplayServerEnums::WINDOW_MODE_WINDOWED;
 	ObjectID window_attached_instance_id;
 
+	bool rect_changed_pending = false; // A size change seen before the root window registered its callback.
 	Callable rect_changed_callback;
 	Callable window_event_callback;
 	Callable input_event_callback;
@@ -190,9 +188,11 @@ public:
 	// Override return type to make writing static callbacks less tedious.
 	static DisplayServerWeb *get_singleton();
 
+#ifdef WEBGPU_ENABLED
 	virtual bool has_deferred_rendering() const override { return deferred_rendering; }
 	virtual Error deferred_rendering_initialize() override;
 	virtual void deferred_rendering_finalize() override;
+#endif
 
 	// utilities
 	bool check_size_force_redraw();

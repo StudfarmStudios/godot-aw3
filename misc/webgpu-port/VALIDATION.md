@@ -462,3 +462,98 @@ is recovered from source SPIR-V where required. Shader creation remains deferred
 Native baking requires the active WebGPU driver; regeneration from a Vulkan/Metal
 editor and equivalent coverage on browser adapters remain future work. Browser
 tests use the separate candidate harness; these results do not validate D3D12.
+
+## SDFGI atlases, atomics and retained-voxel scrolling
+
+The [production-kernel and full-scene fixtures](../../webgpu_tests/sdfgi_integration/README.txt)
+validate the Godot 4.7 port with native Dawn/Metal executable SHA-256
+`59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54`.
+All nine scenes pass: 1/4/8 cascades on normal WebGPU, combined storage fallbacks
+plus omitted float32 filtering, and native Metal. The two WebGPU feature profiles
+produce identical initial and scrolled captures. All three strict Metal-reference
+comparisons pass; at four cascades mean RGB error is 0.0902/255 initially and
+0.0627/255 after scrolling, maximum channel error 3 and p95=1. Bounce-energy error
+is 0.086%. The native Metal path retains its descriptor arrays and packed formats.
+
+The first scroll comparison failed despite nonzero bounce. Main-renderer GPU
+readback found 16,912 occupied cells versus Metal's 11,055, while the cleared
+facing buffer still contained exactly 11,055. The fallback texture clear had
+cleared only z=0 and used queue writes unordered relative to recorded dispatches.
+Encoded, padded copies now cover all depth slices and selected mip/layer ranges.
+The focused clear matrix passes **153/153** on normal WebGPU, storage fallback
+and Metal, including signed/packed formats, SRGB alpha, untouched mip/layer
+slices, >4 MiB volumes and clear/read/clear/read ordering in one submission.
+The old implementation fails **113/153**, and its scrolled scene mean RGB error
+was 9.6165/255. Temporary renderer readback instrumentation was removed.
+
+A lazy immutable 4 MiB zero buffer avoids per-clear 8 MiB CPU uploads; nonzero
+upload chunks are bounded by 4 MiB and the actual device buffer limit. Four/eight
+cascade atlas slots consume 160/320 MiB before occlusion, probes and scratch
+buffers. The fixture records logical allocation counters and rejects wrapped
+startup counters; these do not measure physical residency. Performance
+results below are bounded native evidence; Firefox/Windows/D3D12 verification remains pending.
+
+## Final web builds and browser lifetime regression
+
+The native candidate `/private/tmp/aw3-webgpu-ordered-clear` has SHA-256
+`59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54`.
+Its matching CLI and both full web templates use translator/profile identity
+`8b6f9216c8a1afd8144b4378d7efd917d0ac6dbec844391027b5e5ece3b46a10`.
+Emscripten 4.0.20 builds pass for `target=template_debug webgpu=yes opengl3=no
+module_mono_enabled=no module_text_server_fb_enabled=yes dlink_enabled=no`:
+
+| Mode | Flags | Template SHA-256 |
+| --- | --- | --- |
+| Threaded Worker | `threads=yes proxy_to_pthread=yes` | `47faa306eb541236ff508b2c147b369d4cd1ab31f397eb614fcc628073e183d7` |
+| Non-threaded | `threads=no proxy_to_pthread=no` | `6aacb51f295494c9d5f619ef4fd33283022b62da55f379b505b9c4ea7202b05b` |
+
+The non-threaded build exposed pre-existing render-Worker methods compiled without
+`THREADS_ENABLED`. All corresponding declarations, definitions and call sites now
+require it. CI's WebGL-only jobs also exposed WebGPU-specific overrides outside
+`WEBGPU_ENABLED` and a shared window-size notification field inside it. The field
+is now shared and the overrides are conditional. The affected display-server,
+Web main and OS objects compile with `webgpu=no opengl3=yes threads=no`.
+WebGPU jobs in both CI workflows install the strict baker's native dependencies.
+
+The rebind cache now owns each target layout used as a pointer key. This matters
+in Emscripten, where a bind group retains its JavaScript layout object but does not
+keep that layout's C wrapper address alive. The old threaded `413b64` template
+reproduces incompatible-layout errors in stock macOS Chrome (warm load) and
+Firefox (cold load) while repeatedly retiring target shaders with the source
+uniform set alive and float32 filtering omitted. The corrected native candidate
+passes all 64 GPU output cells. Final browser evidence belongs to the browser
+fixture's saved results; native success alone is not browser validation.
+
+The CI smoke controller also now rejects an explicit engine FAIL, WebGPU
+validation, script errors, console errors and page errors. One mocked success
+control exits zero; all five mocked failure controls exit nonzero. These are
+controller checks, not GPU coverage. Full repository static hooks pass on the
+integration commit, and CI confirms that result.
+
+### SDFGI performance controls and costs
+
+[Raw samples](../../webgpu_tests/sdfgi_integration/results/performance.json) use
+three alternating old/current pairs with 240 timed frames, after all other agent
+GPU and compiler activity stopped. Every timing region has stable pipeline counts
+and drains GPU work. The 128×128 scene includes per-frame handoff and viewport
+timestamp instrumentation; these figures are not full-game or browser FPS.
+
+| Current WebGPU configuration | GI disabled, median ms/frame | GI enabled, median ms/frame |
+| --- | ---: | ---: |
+| 1 cascade | 0.6603 | 0.7567 |
+| 4 cascades | 0.6662 | 1.0791 |
+| 8 cascades | 0.6684 | 1.7750 |
+| 4, combined missing features | 0.6528 | 1.4776 |
+
+The combined-feature four-cascade path costs about 37% more than optional-feature
+WebGPU here. The old WebGPU renderer had no working GI-on baseline. Existing
+GI-disabled controls have median paired candidate/baseline ratios **0.983** for
+WebGPU and **1.006** for Metal, consistent with unchanged cost in this small scene.
+
+Native Metal GI-on performance is **inconclusive**. After the short samples were
+bimodal, [three longer 2,400-frame pairs](../../webgpu_tests/sdfgi_integration/results/performance-metal-long.json)
+still ranged from **0.657–1.265 ms old** and **0.624–1.345 ms new**. Both binaries
+exhibit both timing modes, so these measurements establish neither performance
+parity nor a regression. Separately, the final native Metal initial and scrolled
+PNG captures are exactly identical to the pre-port binary. Target-browser and
+Windows/D3D12 timings remain unverified.

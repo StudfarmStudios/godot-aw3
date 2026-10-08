@@ -1,0 +1,34 @@
+{
+  "passed": true,
+  "reference_report": "/private/tmp/aw3-sdfgi-final-8-metal/results.json",
+  "candidate_report": "/private/tmp/aw3-sdfgi-final-8-normal/results.json",
+  "reference_engine_sha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
+  "candidate_engine_sha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
+  "relative_bounce_energy_error": 0.0008598263325866881,
+  "max_scene_mae_rgb255": 1.0,
+  "max_relative_bounce_energy_error": 0.05,
+  "images": {
+    "disabled": {
+      "mae_rgb255": 0.0,
+      "max_rgb255": 0,
+      "p95_rgb255": 0,
+      "reference_png_sha256": "b5f14b3362ea9628a4b4d5ff46d0cdfa01efb462b84c3532cc76a846b11f417f",
+      "candidate_png_sha256": "b5f14b3362ea9628a4b4d5ff46d0cdfa01efb462b84c3532cc76a846b11f417f"
+    },
+    "enabled": {
+      "mae_rgb255": 0.09016927083333333,
+      "max_rgb255": 3,
+      "p95_rgb255": 1,
+      "reference_png_sha256": "71e198ba0bd66de45895b31a8fdd56b087e4cb62f6ed75527d0c2915c4e99afc",
+      "candidate_png_sha256": "8728a5810dcd82c4e2a6fc3bc165fe07272ece370c8b521331d4695851488eb7"
+    },
+    "scrolled": {
+      "mae_rgb255": 0.06266276041666667,
+      "max_rgb255": 3,
+      "p95_rgb255": 1,
+      "reference_png_sha256": "e509e7834297a05fb40a017858a4d2a4dde03ec512a2181316981c0b576b37fb",
+      "candidate_png_sha256": "94f64e27170734bb273e1433dd0493e780d1b911d8318a21f7b51aeb933a1825"
+    }
+  },
+  "note": "Both settled initial and incrementally scrolled images must meet the fidelity threshold; nonzero indirect light alone is insufficient."
+}

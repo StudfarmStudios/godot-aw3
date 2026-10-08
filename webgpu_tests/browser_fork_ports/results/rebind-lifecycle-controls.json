@@ -1,0 +1,385 @@
+{
+  "scope": "All recorded BGL GPU checks pass on fixed native and nonthreaded browsers. Overall fixed browser runs still fail a separately investigated Emscripten shutdown assertion; these results do not waive shutdown errors. Fixed threaded browser coverage pending. All hosts macOS; no Windows/D3D12 claim.",
+  "negative_control": {
+    "source": "/private/tmp/aw3-browser-rebind-old-nofilter-2/result.json",
+    "records": [
+      {
+        "browser": "chrome",
+        "host": "darwin",
+        "threads": true,
+        "templateSha256": "b1c5969aa35661be4fcfb5d0876c84a28ee6e41e42c0a78f35afa24599968c57",
+        "engineSha256": "413b6443bc377c8bf83f06c2344b36f1c4525d3b6b16bf387c70f7ea1e54562d",
+        "noFloat32Filterable": true,
+        "version": "Chrome/154.0.8037.98",
+        "passed": false,
+        "runs": [
+          {
+            "temperature": "cold",
+            "passed": true,
+            "gpu_errors": [],
+            "rebind_result": {
+              "cells": 64,
+              "created": 64,
+              "dispatches": 64,
+              "native_readback": false,
+              "passed": true,
+              "retired": 64
+            },
+            "rebind_checks": [
+              {
+                "name": "rebind_canvas_dimensions",
+                "passed": true
+              },
+              {
+                "name": "rebind_64_lifetimes_gpu_values",
+                "passed": true
+              }
+            ]
+          },
+          {
+            "temperature": "warm",
+            "passed": false,
+            "gpu_errors": [
+              "[Godot] WebGPU uncaptured error: GPUValidationError: Bind group layout [BindGroupLayout \"bgl::set0\"] of pipeline layout [PipelineLayout \"plyt:\"] does not match layout [BindGroupLayout \"bgl::set0\"] of bind group [BindGroup (unlabeled)] set at group index 0.\n - While encoding [ComputePassEncoder (unlabeled)].DispatchWorkgroups(1, 1, 1).\n - While finishing [CommandEncoder (unlabeled)].\n",
+              "[Godot] WebGPU uncaptured error: GPUValidationError: [Invalid CommandBuffer] is invalid due to a previous error.\n - While calling [Queue].Submit([[Invalid CommandBuffer]])\n"
+            ],
+            "rebind_result": null,
+            "rebind_checks": []
+          }
+        ]
+      },
+      {
+        "browser": "firefox",
+        "host": "darwin",
+        "threads": true,
+        "templateSha256": "b1c5969aa35661be4fcfb5d0876c84a28ee6e41e42c0a78f35afa24599968c57",
+        "engineSha256": "413b6443bc377c8bf83f06c2344b36f1c4525d3b6b16bf387c70f7ea1e54562d",
+        "noFloat32Filterable": true,
+        "version": "firefox/155.0.1",
+        "passed": false,
+        "runs": [
+          {
+            "temperature": "cold",
+            "passed": false,
+            "gpu_errors": [
+              "[Godot] WebGPU uncaptured error: GPUValidationError: In a dispatch command, indirect:false, caused by: The BindGroupLayout with 'bgl::set0' label of current set BindGroup with '' label at index 0 is not compatible with the corresponding BindGroupLayout with 'bgl::set0' label of ComputePipeline with '' label, caused by: Entries with binding 0 differ in type: expected Sampler(Filtering), got Sampler(NonFiltering)"
+            ],
+            "rebind_result": null,
+            "rebind_checks": []
+          }
+        ]
+      }
+    ]
+  },
+  "native_fixed": {
+    "engine_sha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
+    "render_thread": "separate",
+    "float32_filterable_omitted": true,
+    "returncode": 0,
+    "errors": [],
+    "result": {
+      "cells": 64,
+      "created": 64,
+      "dispatches": 64,
+      "native_readback": true,
+      "passed": true,
+      "retired": 64
+    }
+  },
+  "fixed_nonthreaded": [
+    {
+      "browser": "chrome",
+      "host": "darwin",
+      "threads": false,
+      "templateSha256": "6aacb51f295494c9d5f619ef4fd33283022b62da55f379b505b9c4ea7202b05b",
+      "engineSha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
+      "noFloat32Filterable": false,
+      "version": "Chrome/154.0.8037.98",
+      "source": "/private/tmp/aw3-browser-nonthreaded-normal-59ec-results/result.json",
+      "runs": [
+        {
+          "temperature": "cold",
+          "overall_run_passed": false,
+          "rebind_result": {
+            "cells": 64,
+            "created": 64,
+            "dispatches": 64,
+            "native_readback": false,
+            "passed": true,
+            "retired": 64
+          },
+          "rebind_checks": [
+            {
+              "name": "rebind_canvas_dimensions",
+              "passed": true
+            },
+            {
+              "name": "rebind_64_lifetimes_gpu_values",
+              "passed": true
+            }
+          ],
+          "gpu_errors": [],
+          "shutdown_errors": [
+            "Aborted(Assertion failed)",
+            "RuntimeError: Aborted(Assertion failed)",
+            "Aborted(Assertion failed)",
+            "Aborted(Assertion failed)",
+            "RuntimeError: Aborted(Assertion failed)",
+            "RuntimeError: Aborted(Assertion failed)"
+          ]
+        },
+        {
+          "temperature": "warm",
+          "overall_run_passed": false,
+          "rebind_result": {
+            "cells": 64,
+            "created": 64,
+            "dispatches": 64,
+            "native_readback": false,
+            "passed": true,
+            "retired": 64
+          },
+          "rebind_checks": [
+            {
+              "name": "rebind_canvas_dimensions",
+              "passed": true
+            },
+            {
+              "name": "rebind_64_lifetimes_gpu_values",
+              "passed": true
+            }
+          ],
+          "gpu_errors": [],
+          "shutdown_errors": [
+            "Aborted(Assertion failed)",
+            "RuntimeError: Aborted(Assertion failed)",
+            "Aborted(Assertion failed)",
+            "Aborted(Assertion failed)",
+            "RuntimeError: Aborted(Assertion failed)",
+            "RuntimeError: Aborted(Assertion failed)"
+          ]
+        }
+      ]
+    },
+    {
+      "browser": "firefox",
+      "host": "darwin",
+      "threads": false,
+      "templateSha256": "6aacb51f295494c9d5f619ef4fd33283022b62da55f379b505b9c4ea7202b05b",
+      "engineSha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
+      "noFloat32Filterable": false,
+      "version": "firefox/155.0.1",
+      "source": "/private/tmp/aw3-browser-nonthreaded-normal-59ec-results/result.json",
+      "runs": [
+        {
+          "temperature": "cold",
+          "overall_run_passed": false,
+          "rebind_result": {
+            "cells": 64,
+            "created": 64,
+            "dispatches": 64,
+            "native_readback": false,
+            "passed": true,
+            "retired": 64
+          },
+          "rebind_checks": [
+            {
+              "name": "rebind_canvas_dimensions",
+              "passed": true
+            },
+            {
+              "name": "rebind_64_lifetimes_gpu_values",
+              "passed": true
+            }
+          ],
+          "gpu_errors": [],
+          "shutdown_errors": [
+            "Aborted(Assertion failed)",
+            "Error: RuntimeError: Aborted(Assertion failed)",
+            "Aborted(Assertion failed)",
+            "Aborted(Assertion failed)",
+            "Error: RuntimeError: Aborted(Assertion failed)"
+          ]
+        },
+        {
+          "temperature": "warm",
+          "overall_run_passed": false,
+          "rebind_result": {
+            "cells": 64,
+            "created": 64,
+            "dispatches": 64,
+            "native_readback": false,
+            "passed": true,
+            "retired": 64
+          },
+          "rebind_checks": [
+            {
+              "name": "rebind_canvas_dimensions",
+              "passed": true
+            },
+            {
+              "name": "rebind_64_lifetimes_gpu_values",
+              "passed": true
+            }
+          ],
+          "gpu_errors": [],
+          "shutdown_errors": [
+            "Aborted(Assertion failed)",
+            "Error: RuntimeError: Aborted(Assertion failed)",
+            "Aborted(Assertion failed)",
+            "Aborted(Assertion failed)",
+            "Error: RuntimeError: Aborted(Assertion failed)",
+            "Error: RuntimeError: Aborted(Assertion failed)"
+          ]
+        }
+      ]
+    },
+    {
+      "browser": "chrome",
+      "host": "darwin",
+      "threads": false,
+      "templateSha256": "6aacb51f295494c9d5f619ef4fd33283022b62da55f379b505b9c4ea7202b05b",
+      "engineSha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
+      "noFloat32Filterable": true,
+      "version": "Chrome/154.0.8037.98",
+      "source": "/private/tmp/aw3-browser-nonthreaded-nofilter-59ec-results/result.json",
+      "runs": [
+        {
+          "temperature": "cold",
+          "overall_run_passed": false,
+          "rebind_result": {
+            "cells": 64,
+            "created": 64,
+            "dispatches": 64,
+            "native_readback": false,
+            "passed": true,
+            "retired": 64
+          },
+          "rebind_checks": [
+            {
+              "name": "rebind_canvas_dimensions",
+              "passed": true
+            },
+            {
+              "name": "rebind_64_lifetimes_gpu_values",
+              "passed": true
+            }
+          ],
+          "gpu_errors": [],
+          "shutdown_errors": [
+            "Aborted(Assertion failed)",
+            "RuntimeError: Aborted(Assertion failed)",
+            "Aborted(Assertion failed)",
+            "Aborted(Assertion failed)",
+            "RuntimeError: Aborted(Assertion failed)",
+            "RuntimeError: Aborted(Assertion failed)"
+          ]
+        },
+        {
+          "temperature": "warm",
+          "overall_run_passed": false,
+          "rebind_result": {
+            "cells": 64,
+            "created": 64,
+            "dispatches": 64,
+            "native_readback": false,
+            "passed": true,
+            "retired": 64
+          },
+          "rebind_checks": [
+            {
+              "name": "rebind_canvas_dimensions",
+              "passed": true
+            },
+            {
+              "name": "rebind_64_lifetimes_gpu_values",
+              "passed": true
+            }
+          ],
+          "gpu_errors": [],
+          "shutdown_errors": [
+            "Aborted(Assertion failed)",
+            "RuntimeError: Aborted(Assertion failed)",
+            "Aborted(Assertion failed)",
+            "Aborted(Assertion failed)",
+            "RuntimeError: Aborted(Assertion failed)",
+            "RuntimeError: Aborted(Assertion failed)"
+          ]
+        }
+      ]
+    },
+    {
+      "browser": "firefox",
+      "host": "darwin",
+      "threads": false,
+      "templateSha256": "6aacb51f295494c9d5f619ef4fd33283022b62da55f379b505b9c4ea7202b05b",
+      "engineSha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
+      "noFloat32Filterable": true,
+      "version": "firefox/155.0.1",
+      "source": "/private/tmp/aw3-browser-nonthreaded-nofilter-59ec-results/result.json",
+      "runs": [
+        {
+          "temperature": "cold",
+          "overall_run_passed": false,
+          "rebind_result": {
+            "cells": 64,
+            "created": 64,
+            "dispatches": 64,
+            "native_readback": false,
+            "passed": true,
+            "retired": 64
+          },
+          "rebind_checks": [
+            {
+              "name": "rebind_canvas_dimensions",
+              "passed": true
+            },
+            {
+              "name": "rebind_64_lifetimes_gpu_values",
+              "passed": true
+            }
+          ],
+          "gpu_errors": [],
+          "shutdown_errors": [
+            "Aborted(Assertion failed)",
+            "Error: RuntimeError: Aborted(Assertion failed)",
+            "Aborted(Assertion failed)",
+            "Aborted(Assertion failed)",
+            "Error: RuntimeError: Aborted(Assertion failed)"
+          ]
+        },
+        {
+          "temperature": "warm",
+          "overall_run_passed": false,
+          "rebind_result": {
+            "cells": 64,
+            "created": 64,
+            "dispatches": 64,
+            "native_readback": false,
+            "passed": true,
+            "retired": 64
+          },
+          "rebind_checks": [
+            {
+              "name": "rebind_canvas_dimensions",
+              "passed": true
+            },
+            {
+              "name": "rebind_64_lifetimes_gpu_values",
+              "passed": true
+            }
+          ],
+          "gpu_errors": [],
+          "shutdown_errors": [
+            "Aborted(Assertion failed)",
+            "Error: RuntimeError: Aborted(Assertion failed)",
+            "Aborted(Assertion failed)",
+            "Aborted(Assertion failed)",
+            "Error: RuntimeError: Aborted(Assertion failed)",
+            "Error: RuntimeError: Aborted(Assertion failed)"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,11 +1,11 @@
 {
   "passed": true,
-  "reference_report": "/private/tmp/aw3-sdfgi-e6-subviewport-8-normal/results.json",
-  "candidate_report": "/private/tmp/aw3-sdfgi-e6-subviewport-8-baseline/results.json",
-  "reference_engine_sha256": "e6d26dd46c9871a75b75e62b5cac42dd2bbc7b0fe727a67414cf7a56bc4fdfa9",
-  "candidate_engine_sha256": "e6d26dd46c9871a75b75e62b5cac42dd2bbc7b0fe727a67414cf7a56bc4fdfa9",
+  "reference_report": "/private/tmp/aw3-sdfgi-final-8-normal/results.json",
+  "candidate_report": "/private/tmp/aw3-sdfgi-final-8-baseline/results.json",
+  "reference_engine_sha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
+  "candidate_engine_sha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
   "relative_bounce_energy_error": 0.0,
-  "max_enabled_mae_rgb255": 1.0,
+  "max_scene_mae_rgb255": 1.0,
   "max_relative_bounce_energy_error": 0.05,
   "images": {
     "disabled": {
@@ -19,16 +19,16 @@
       "mae_rgb255": 0.0,
       "max_rgb255": 0,
       "p95_rgb255": 0,
-      "reference_png_sha256": "a4eb4187d2461dab10e91a9ecf9cccd4796a9af40a242dff655d8cffa8873f12",
-      "candidate_png_sha256": "a4eb4187d2461dab10e91a9ecf9cccd4796a9af40a242dff655d8cffa8873f12"
+      "reference_png_sha256": "8728a5810dcd82c4e2a6fc3bc165fe07272ece370c8b521331d4695851488eb7",
+      "candidate_png_sha256": "8728a5810dcd82c4e2a6fc3bc165fe07272ece370c8b521331d4695851488eb7"
     },
     "scrolled": {
       "mae_rgb255": 0.0,
       "max_rgb255": 0,
       "p95_rgb255": 0,
-      "reference_png_sha256": "abc8e6e69dfeda0e75e1fb3cbab169a5184f5a9ccbf8110982ede70abad04fc4",
-      "candidate_png_sha256": "abc8e6e69dfeda0e75e1fb3cbab169a5184f5a9ccbf8110982ede70abad04fc4"
+      "reference_png_sha256": "94f64e27170734bb273e1433dd0493e780d1b911d8318a21f7b51aeb933a1825",
+      "candidate_png_sha256": "94f64e27170734bb273e1433dd0493e780d1b911d8318a21f7b51aeb933a1825"
     }
   },
-  "note": "Scrolled image difference is reported but not gated; asynchronous pipeline completion can shift the probe sampling sequence after movement."
+  "note": "Both settled initial and incrementally scrolled images must meet the fidelity threshold; nonzero indirect light alone is insufficient."
 }

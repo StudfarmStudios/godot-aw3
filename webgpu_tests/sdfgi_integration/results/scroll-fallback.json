@@ -52,13 +52,13 @@
   ],
   "errors": [],
   "returncode": 0,
-  "seconds": 4.810640165931545,
+  "seconds": 1.2061651250114664,
   "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
-  "engine_sha256": "e6d26dd46c9871a75b75e62b5cac42dd2bbc7b0fe727a67414cf7a56bc4fdfa9",
+  "engine_sha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
   "shader_sha256": "5a25e48327fa8696289a145837230e5e482c657864685943c61e6431af9fb45a",
   "fallback": true,
   "command": [
-    "/private/tmp/aw3-webgpu-retarget-normal",
+    "/private/tmp/aw3-webgpu-ordered-clear",
     "--path",
     "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration",
     "--rendering-method",
@@ -68,7 +68,7 @@
     "--script",
     "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration/scroll.gd",
     "--",
-    "--fixture-dir=/private/tmp/aw3-sdfgi-e6-scroll-fallback",
+    "--fixture-dir=/private/tmp/aw3-sdfgi-final-scroll-fallback",
     "--webgpu-force-fallbacks"
   ]
 }

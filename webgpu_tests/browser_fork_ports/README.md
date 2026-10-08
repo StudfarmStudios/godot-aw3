@@ -28,13 +28,19 @@ uses the supplied custom template directly and fails on import/export errors.
 It never modifies global export-template installations.
 
 The browser server uses COOP/COEP, records real console errors and observed
-Workers, then runs cold/warm loads in one isolated profile. Six phases wait for
+Workers, then runs cold/warm loads in one isolated profile. A preceding lifecycle
+gate verifies 64 green GPU oracle cells while target shaders are repeatedly
+created and freed with a persistent source uniform set; CPU creation/retirement
+counts must also match. Repeat with `--no-float32-filterable` to omit that engine
+device feature and exercise differing target bind-group layouts. This does not
+change browser preferences. Six visual phases then wait for
 engine pipeline work to settle, announce readiness, and stop until the browser
 captures a screenshot and sends Space. Checks cover mask/LCD/MSDF font rendering,
 SVG color modulation after adding a new glyph, Canvas SDF inside/outside sign,
 SSR off/on reflected pixels, and near/focus/far DOF contrast. Browser font checks
 prove visible updated glyphs; exact first-frame/upload ownership guarantees are
-covered by the separate native font fixture.
+covered by the separate native font fixture. Fonts load through exported resource
+remaps and must contain both requested glyphs before the pixel test runs.
 
 No synchronous engine readback is assumed: the browser screenshots the displayed
 canvas. The fixture's shader bake, runtime fingerprint, packaged seed load,
@@ -76,3 +82,22 @@ identifies it; otherwise label it **unknown**. `navigator.gpu`, a successful dra
 and an adapter name alone do not establish D3D12. Do not force WebGPU preferences
 or count a skipped/unsupported browser as a pass. Windows/D3D12 remains unverified
 until that hardware run and its backend evidence exist.
+
+Recorded macOS hardware evidence (Chrome 154 / Firefox 155):
+
+- [Threaded 59ec matrix](results/threaded-macos-arm64-59ec.json): all eight runs
+  pass across both browsers, normal/omitted float32 filtering and cold/warm loads.
+  This includes the 64-cell bind-group lifetime oracle, all six visual phases,
+  matching WGSC identity/seed persistence, observed Workers and controlled exit 0.
+- [Non-threaded shutdown control](results/nonthreaded-shutdown-negative-macos-arm64-59ec.json):
+  rendering and cache checks pass, but forced runtime shutdown causes keepalive
+  counter assertions after cleanup. These runs remain marked failed. The reduced
+  capability run records runtime and shutdown errors separately; GPU validation
+  errors are never ignored.
+
+Both snapshots use native editor `59ecacbe...` and translator/profile `8b6f9216...`;
+full hashes and template identities are in the result files. Later builds must
+be tested against their own matching exports; this evidence is not relabeled to
+match an untested rebuild. The earlier template also reproduces an incompatible
+bind-group layout on Firefox cold and Chrome warm runs, documented in the
+[lifetime regression](rebind_lifecycle.md).

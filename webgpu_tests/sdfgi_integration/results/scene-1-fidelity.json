@@ -1,11 +1,11 @@
 {
   "passed": true,
-  "reference_report": "/private/tmp/aw3-sdfgi-e6-subviewport-1-normal/results.json",
-  "candidate_report": "/private/tmp/aw3-sdfgi-e6-subviewport-1-baseline/results.json",
-  "reference_engine_sha256": "e6d26dd46c9871a75b75e62b5cac42dd2bbc7b0fe727a67414cf7a56bc4fdfa9",
-  "candidate_engine_sha256": "e6d26dd46c9871a75b75e62b5cac42dd2bbc7b0fe727a67414cf7a56bc4fdfa9",
+  "reference_report": "/private/tmp/aw3-sdfgi-final-1-normal/results.json",
+  "candidate_report": "/private/tmp/aw3-sdfgi-final-1-baseline/results.json",
+  "reference_engine_sha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
+  "candidate_engine_sha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
   "relative_bounce_energy_error": 0.0,
-  "max_enabled_mae_rgb255": 1.0,
+  "max_scene_mae_rgb255": 1.0,
   "max_relative_bounce_energy_error": 0.05,
   "images": {
     "disabled": {
@@ -26,9 +26,9 @@
       "mae_rgb255": 0.0,
       "max_rgb255": 0,
       "p95_rgb255": 0,
-      "reference_png_sha256": "f256177495f77a1b6021a09eb7bfd12d446853c18abde5f495001bc1f50e48fd",
-      "candidate_png_sha256": "f256177495f77a1b6021a09eb7bfd12d446853c18abde5f495001bc1f50e48fd"
+      "reference_png_sha256": "18583bf3d4bd8109a1a304570b5698dfe7e685dfa8c5782d133b98fbf982cf7e",
+      "candidate_png_sha256": "18583bf3d4bd8109a1a304570b5698dfe7e685dfa8c5782d133b98fbf982cf7e"
     }
   },
-  "note": "Scrolled image difference is reported but not gated; asynchronous pipeline completion can shift the probe sampling sequence after movement."
+  "note": "Both settled initial and incrementally scrolled images must meet the fidelity threshold; nonzero indirect light alone is insufficient."
 }

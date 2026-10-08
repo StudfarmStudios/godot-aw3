@@ -175,7 +175,8 @@ def assemble_glsl(stage_lines, general_defines, variant_defines):
         "#define RENDER_DRIVER_WEBGPU\n#define samplerExternalOES sampler2D\n#define textureExternalOES texture2D\n"
     )
 
-    defines_block = general_defines + variant_defines + driver_defines
+    # ShaderRD separates these blocks even when a variant has no trailing newline.
+    defines_block = "\n".join((general_defines, variant_defines, driver_defines))
 
     result = []
     for line in stage_lines:

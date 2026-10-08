@@ -28,9 +28,19 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
+/* global exitJS */
+
 const GodotEmscripten = {
 	$GodotEmscripten__deps: ['$GodotRuntime'],
 	$GodotEmscripten: {},
+
+	// Non-threaded WebGPU shutdown preserves references held by the cancelled main
+	// loop and asynchronous GPU callbacks. Emscripten exits once they drain.
+	godot_js_os_exit__deps: ['$exitJS'],
+	godot_js_os_exit__sig: 'vi',
+	godot_js_os_exit: function (p_exit_code) {
+		exitJS(p_exit_code, true);
+	},
 
 	godot_js_emscripten_get_version__proxy: 'sync',
 	godot_js_emscripten_get_version__sig: 'p',
