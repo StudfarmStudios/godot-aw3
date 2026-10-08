@@ -151,7 +151,9 @@ Error RenderingContextDriverWebGPU::initialize() {
 		if (!d) {
 			return 0;
 		}
-		return WebGPU["importJsDevice"](d);
+		// This helper is internal to the same Closure compilation as emdawn.
+		// Dot access lets Closure rename the call and its definition together.
+		return WebGPU.importJsDevice(d);
 	});
 	ERR_FAIL_COND_V_MSG(device == nullptr, ERR_CANT_CREATE, "WebGPU: Failed to get pre-initialized device. Ensure JS shell calls navigator.gpu.requestDevice() before WASM.");
 

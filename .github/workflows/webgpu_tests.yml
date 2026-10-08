@@ -9,6 +9,7 @@ on:
       - 'drivers/webgpu/**'
       - 'webgpu_tests/**'
       - 'servers/rendering/**'
+      - 'platform/web/js/engine/**'
       - 'platform/web/js/libs/library_godot_audio*'
   pull_request:
     paths:
@@ -16,6 +17,7 @@ on:
       - 'drivers/webgpu/**'
       - 'webgpu_tests/**'
       - 'servers/rendering/**'
+      - 'platform/web/js/engine/**'
       - 'platform/web/js/libs/library_godot_audio*'
 
 # Global Settings
@@ -24,7 +26,7 @@ env:
     dev_mode=yes
     tests=no
     debug_symbols=no
-  EM_VERSION: 4.0.11
+  EM_VERSION: 4.0.20
 
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════════
@@ -144,7 +146,7 @@ jobs:
         # The shared godot-build action deletes editor/ for template builds.
         # This job still needs that source for the headless export editor below.
         run: |
-          scons platform=web target=template_release $SCONS_FLAGS threads=no dlink_enabled=no webgpu=yes opengl3=no \
+          scons platform=web target=template_release $SCONS_FLAGS threads=no dlink_enabled=no webgpu=yes opengl3=no use_closure_compiler=yes \
             cache_path="${{ github.workspace }}/.scons_cache/" redirect_build_objects=no -j$(nproc)
 
       - name: Save Godot build cache

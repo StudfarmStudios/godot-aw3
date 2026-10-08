@@ -613,9 +613,9 @@ static char *_translate_spirv_to_wgsl(const uint8_t *p_spv_ptr, int p_spv_size) 
 				String b64 = CryptoCore::b64_encode_str(failed_bytes.ptr(), failed_bytes.size());
 				CharString b64_cs = b64.utf8();
 				EM_ASM({
-					globalThis.__webgpu_failed_spirv = globalThis.__webgpu_failed_spirv || [];
-					if (globalThis.__webgpu_failed_spirv.length < 8) {
-						globalThis.__webgpu_failed_spirv.push(UTF8ToString($0));
+					globalThis['__webgpu_failed_spirv'] = globalThis['__webgpu_failed_spirv'] || [];
+					if (globalThis['__webgpu_failed_spirv'].length < 8) {
+						globalThis['__webgpu_failed_spirv'].push(UTF8ToString($0));
 					} }, b64_cs.get_data());
 #endif
 			}
@@ -1582,7 +1582,7 @@ Error RenderingDeviceDriverWebGPU::initialize(uint32_t p_device_index, uint32_t 
 #ifdef __EMSCRIPTEN__
 	perf.enabled = EM_ASM_INT({
 		try {
-			return (globalThis.__aw3_perf ||
+			return (globalThis['__aw3_perf'] ||
 						   (globalThis.location && location.search.indexOf('aw3_perf') >= 0))
 					? 1
 					: 0;

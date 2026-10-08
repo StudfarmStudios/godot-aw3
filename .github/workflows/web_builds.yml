@@ -10,6 +10,7 @@ env:
     debug_symbols=no
     use_closure_compiler=yes
   EM_VERSION: 4.0.11
+  WEBGPU_EM_VERSION: 4.0.20
 
 jobs:
   web-template:
@@ -53,7 +54,7 @@ jobs:
       - name: Set up Emscripten latest
         uses: emscripten-core/setup-emsdk@v16
         with:
-          version: ${{ env.EM_VERSION }}
+          version: ${{ contains(matrix.scons-flags, 'webgpu=yes') && env.WEBGPU_EM_VERSION || env.EM_VERSION }}
           no-cache: true
 
       - name: Verify Emscripten setup
@@ -87,6 +88,18 @@ jobs:
           scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.scons-flags }}
           platform: web
           target: ${{ matrix.target }}
+
+      - name: Verify compiled WebGPU wrapper API
+        if: contains(matrix.scons-flags, 'webgpu=yes')
+        run: |
+          shopt -s nullglob
+          wrappers=(bin/godot.web.*.engine.js)
+          test "${#wrappers[@]}" -gt 0
+          for wrapper in "${wrappers[@]}"; do
+            GODOT_ENGINE_WRAPPER="$wrapper" node --test platform/web/js/engine/webgpu-device.test.mjs
+          done
+          GODOT_CLOSURE_COMPILER="$(dirname "$(command -v emcc)")/node_modules/.bin/google-closure-compiler" \
+            node --test platform/web/js/engine/webgpu-import.test.mjs
 
       - name: Save Godot build cache
         uses: ./.github/actions/godot-cache-save

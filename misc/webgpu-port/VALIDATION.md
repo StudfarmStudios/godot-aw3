@@ -810,3 +810,65 @@ records an actual successful two-stage macOS universal build with at most eight
 jobs, using immutable editor `74727596`'s API. Scoped hooks pass. The corrected
 Linux CI build remains to be verified; this test does not relabel any browser
 evidence or modify shared engine/Tint build outputs.
+
+### Release-wrapper WebGPU externs
+
+The successful Emscripten **4.0.11** release build from revision `e8ad329993`,
+job `113555475099`, produced artifact `11582026861`. Its template ZIP has SHA-256
+`04ffec1b6abd0ec82288f98abc7fd185ba6761cde7cd79fd9863d6b5bca4b505` and its Wasm has
+SHA-256 `13275ca11ee0ae4da5e08dda0bdc47ebf03dfc85d9e3d79dd36757409c20b2a6`.
+Both stock macOS Chrome and Firefox reject the exported release before engine
+startup, although `navigator.gpu` is present. Advanced Closure renamed public
+properties in the separately compiled engine wrapper, including `navigator.gpu`,
+`requestAdapter`, `limits`, `requiredLimits`, `requestDevice`, and `lost`.
+The module's own WebGPU calls are a separate compilation boundary.
+
+Shane's pinned `platform/web/js/engine/engine.externs.js:6–27` already protects
+these names. The adapted declarations preserve browser API, descriptor and event
+properties without changing engine-wrapper behavior. A six-case Node test runs
+the **actual compiled wrapper**, covering feature/limit negotiation, caller
+dictionaries, optional capabilities, loss/error diagnostics and rejection paths.
+The downloaded old wrapper fails five of six cases; the corrected Advanced
+Closure output passes all six. Raw-source tests alone would miss this regression.
+
+The repaired template ZIP
+`ebe7219b234ed80a4efbc657afa2497f302723756ab699cce16e63686d2e3f90` changes only
+`godot.js`; every other archive entry, including the exact CI-built Wasm above,
+is unchanged. Its embedded translator/profile identity remains `3525def0…` and
+its export uses the matching frozen `a3962882…` editor and `67c3fa3e…` Tint CLI.
+It is a distinct wrapper-repaired artifact, not a new full build or a browser run
+of the later translator/profile. Both browsers then fail in the unchanged
+Emscripten module: our quoted `WebGPU["importJsDevice"]` call no longer matches
+emdawn's unquoted method definition after Closure renames it. Both pinned forks
+share that call pattern. Production now uses dot access inside the same compiler
+pass. An actual Closure regression extracts the production import body and the
+installed emdawn helper; the corrected case passes and the old quoted call fails.
+Public shader-failure/performance diagnostic globals also use quoted access so
+page code can still observe their names after optimization.
+
+[The complete six-run controls](../../webgpu_tests/browser_fork_ports/results/emscripten-4.0.11-closure-controls-macos-arm64.json)
+retain all failures. A further diagnostic ZIP,
+`d1c07ee2ae93493909806356aedc11cd55e9278d8dfe173c5bb85aeb38fc98f9`, corrects only the
+emitted module call in addition to the rebuilt wrapper. Both browsers pass all
+**20 visual/cache checks and 64 layout-lifetime cells**, with no runtime errors,
+but time out after 30 seconds waiting for controlled shutdown. These are failed
+diagnostic runs, not source-built release acceptance. Wasm and profile remain
+unchanged. The [compiler results](../../webgpu_tests/browser_fork_ports/results/closure-regression-controls.json)
+record **6/6** compiled-wrapper cases and **2/2** actual Closure import cases.
+
+The 4.0.11 emdawn completion trampoline pops its runtime keepalive and directly
+calls Wasm. If that drains the final keepalive after main-loop cancellation,
+`maybeExit` is never called again. The accepted 4.0.20 runtime wraps completions
+in `callUserCallback`, which also checks for exit. This affects multiple async
+callback families, so a fence-only repair would be incomplete. WebGPU now
+requires **Emscripten 4.0.20**, the tested support floor; this does not assert that
+every intervening SDK is broken. WebGL keeps the existing CI SDK and build
+minimum. Godot remains 4.7.1. Both WebGPU platform jobs and the candidate runtime
+job use 4.0.20; the candidate explicitly enables Closure. Platform CI tests the
+actual compiled wrapper and source/emdawn import boundary, and wrapper edits now
+trigger the candidate workflow.
+
+The final driver edits conservatively change the translator/profile to
+`c5e2cb8f7bf6d61014361758605237c5b88fd7c16a57edc9dad7902413a02021`.
+No frozen browser artifact is relabeled. Source-built optimized release checks
+for this final batch are tracked on PR #31. Windows/D3D12 remains unverified.

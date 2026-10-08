@@ -125,3 +125,34 @@ result file. Each result remains pinned to its tested export and is not relabele
 to match later builds. An earlier template also reproduces an incompatible
 bind-group layout on Firefox cold and Chrome warm runs, documented in the
 [lifetime regression](rebind_lifecycle.md).
+
+The separate [Emscripten 4.0.11 release controls](results/emscripten-4.0.11-closure-controls-macos-arm64.json)
+use the uploaded `e8ad329993` CI artifact, whose Wasm hash is `13275ca1...` and
+profile remains `3525def0...`. Both stock browsers reject the original
+Closure-compiled wrapper because it renames browser WebGPU properties. Adding
+the reference fork's WebGPU externs fixes that boundary, then exposes a second
+failure: a quoted internal `importJsDevice` call does not match its renamed
+emdawn helper. A diagnostic copy with the rebuilt wrapper and that one emitted
+module call corrected passes all 20 visual/cache checks and 64 lifetime cells
+per browser, but times out awaiting controlled shutdown. These runs remain
+**failed**; they do not establish final-source or complete 4.0.11 acceptance.
+All six cold controls retain their original template hashes and errors. They
+cover neither threading, warm loads, omitted capabilities nor performance.
+
+The [Closure regression controls](results/closure-regression-controls.json)
+record six public-wrapper cases and two actual compiler cases. Test the actual
+separately compiled wrapper, then compile the production import body with the
+installed emdawn helper and its browser externs:
+
+```sh
+GODOT_ENGINE_WRAPPER=/path/to/godot.web.template_release.wasm32.nothreads.engine.js \
+  node --test platform/web/js/engine/webgpu-device.test.mjs
+GODOT_CLOSURE_COMPILER=/path/to/emscripten/node_modules/.bin/google-closure-compiler \
+  node --test platform/web/js/engine/webgpu-import.test.mjs
+```
+
+The import test locates the installed emdawn port under that Emscripten SDK's
+`cache/ports/emdawnwebgpu`; `GODOT_EMDAWN_LIBRARY` can override its library path.
+It proves the old quoted call fails after Closure and the corrected dot call
+uses the same renamed helper. CI runs both gates after WebGPU builds and enables
+Closure for the candidate browser smoke; a missing compiled wrapper is a failure.
