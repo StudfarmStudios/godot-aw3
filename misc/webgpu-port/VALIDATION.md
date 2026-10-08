@@ -1,4 +1,4 @@
-# Initial WebGPU compatibility batch — 8 October 2026
+# WebGPU compatibility batches — 8 October 2026
 
 The engine remains on Godot 4.7.1. This validates the initial storage-format,
 shadow-snapshot, transfer and procedural-gradient changes. It does **not** close
@@ -344,3 +344,26 @@ also differ. These results establish bounded motion/history stability and the
 specific exposure fix, **not** FSR2 quality parity. Timings from concurrent GPU
 correctness runs are not performance measurements. Firefox/Windows/D3D12, game
 scenes and the DOF/MSAA/GI feature matrix remain pending.
+
+## SPIR-V resource interfaces and vertex access
+
+The adapted Tint bundle accepts SPIR-V 1.4/1.5 interface lists, handles phony
+texture/atomic uses, and keeps the original module version. Vertex storage
+pointer access is changed structurally in the shared Tint wrapper, including
+helper signatures; validation still rejects actual vertex writes. The existing
+matrix/vector atomic traversal needs no additional port.
+
+A compiler-generated unsigned image copy exposed another real crash: Tint
+assumed every nonzero image mask had a following operand. Matching integer
+extension flags now lower safely; Lod/Sample remain, and unsupported semantics
+fail with a diagnostic. A prior engine aborts with signal 6 on the new GPU test.
+
+The production translator passes 52 checks spanning SPIR-V 1.0/1.3/1.4/1.5,
+including actual OpVariable array initializers. Two additional valid SPIR-V
+modules require clean rejection of unsupported sign-extension/volatile behavior.
+The real GPU fixture passes 32/32 in each capability mode, checking atomic/matrix
+buffers, logical copies, arrays, signed/unsigned narrow integer image reads and
+writes, and mip-1 fetches with distinct mip-0 controls. Candidate SHA-256:
+`d06206f6c8f66ecd6e8708d477c4ed07f2bb3227a835598c69122dfc7bf305ed`.
+See [fixture and results](../../webgpu_tests/tint_translation/README.md).
+This native Dawn/Metal evidence does not establish browser/D3D12 compatibility.

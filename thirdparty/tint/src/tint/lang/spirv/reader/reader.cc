@@ -47,11 +47,14 @@ Result<core::ir::Module> ReadIR(const std::vector<uint32_t>& input, const Option
 
     // Always validate the core IR, so that we fail somewhat gracefully on invalid inputs instead of
     // just ICEing later on.
+    // SPIR-V 1.4+ lists all global interface resources, including unused
+    // buffers that the reader retains with phony references.
     TINT_CHECK_RESULT(core::ir::Validate(mod,
                                          core::ir::Capabilities{
                                              core::ir::Capability::kAllowMultipleEntryPoints,
                                              core::ir::Capability::kAllowOverrides,
                                              core::ir::Capability::kAllowStructMemberSizeMismatch,
+                                             core::ir::Capability::kAllowPhonyInstructions,
                                          },
                                          "after spirv::ReadIR"));
 

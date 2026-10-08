@@ -1,0 +1,13 @@
+{
+  "mode": "native",
+  "passed": false,
+  "checks": 0,
+  "returncode": -6,
+  "failed_checks": null,
+  "timed_out": false,
+  "seconds": 2.7240115830209106,
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "engine_sha256": "9bff02c4a795126c140e2d280c9f9ca926c5b540178b6c6b1d32564dc1e1f2fb",
+  "errors": [],
+  "diagnostic": []
+}

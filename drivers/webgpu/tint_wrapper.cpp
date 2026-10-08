@@ -13,12 +13,56 @@
 #include "tint_wrapper.h"
 
 #include "src/tint/api/tint.h"
+#include "src/tint/lang/core/ir/function.h"
+#include "src/tint/lang/core/ir/module.h"
+#include "src/tint/lang/core/ir/validator.h"
+#include "src/tint/lang/core/type/pointer.h"
+#include "src/tint/lang/spirv/reader/reader.h"
+#include "src/tint/lang/wgsl/writer/writer.h"
 #include "src/tint/lang/wgsl/writer/common/options.h"
 
 #include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
+
+// Godot compiles a single stage per module. WebGPU permits only read access
+// to vertex storage buffers. Change pointer types structurally, including derived
+// values and helper signatures, then validate: actual writes remain an error.
+static tint::Result<std::string> _spirv_to_wgsl_with_vertex_access(const std::vector<uint32_t> &p_words, const tint::wgsl::writer::Options &p_options) {
+	TINT_CHECK_RESULT_UNWRAP(module, tint::spirv::reader::ReadIR(p_words));
+	uint32_t entries = 0;
+	bool vertex = false;
+	for (auto *function : module.functions) {
+		if (function->IsEntryPoint()) {
+			entries++;
+			vertex = function->IsVertex();
+		}
+	}
+	if (entries == 1 && vertex) {
+		auto read_pointer = [&](const tint::core::type::Type *p_type) -> const tint::core::type::Type * {
+			const auto *pointer = p_type ? p_type->As<tint::core::type::Pointer>() : nullptr;
+			if (pointer && pointer->AddressSpace() == tint::core::AddressSpace::kStorage && pointer->Access() != tint::core::Access::kRead) {
+				return module.Types().ptr(tint::core::AddressSpace::kStorage, pointer->StoreType(), tint::core::Access::kRead);
+			}
+			return p_type;
+		};
+		// A flat walk avoids recursive use-chain traversal and covers function
+		// parameters/block results that are not reachable via a variable's users.
+		for (auto *value : module.Values()) {
+			value->SetType(read_pointer(value->Type()));
+		}
+		for (auto *function : module.functions) {
+			function->SetReturnType(read_pointer(function->ReturnType()));
+		}
+		TINT_CHECK_RESULT(tint::core::ir::Validate(module, tint::core::ir::Capabilities{
+				tint::core::ir::Capability::kAllowOverrides,
+				tint::core::ir::Capability::kAllowStructMemberSizeMismatch,
+				tint::core::ir::Capability::kAllowPhonyInstructions }, "after WebGPU vertex storage access"));
+	}
+	TINT_CHECK_RESULT_UNWRAP(output, tint::wgsl::writer::WgslFromIR(module, p_options));
+	return output.wgsl;
+}
 
 void tint_wrapper_initialize() {
 	tint::Initialize();
@@ -40,7 +84,7 @@ char *tint_wrapper_spirv_to_wgsl(const uint32_t *p_spirv_words, size_t p_word_co
 	// its command-buffer lock if logging allocates and finalizes GPU objects.
 	wgsl_options.disable_unreachable_code_warning = true;
 
-	auto result = tint::SpirvToWgsl(words, wgsl_options);
+	auto result = _spirv_to_wgsl_with_vertex_access(words, wgsl_options);
 	if (result != tint::Success) {
 		if (r_error) {
 			const std::string &reason = result.Failure().reason;

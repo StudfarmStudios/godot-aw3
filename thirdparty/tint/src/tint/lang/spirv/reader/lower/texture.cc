@@ -35,6 +35,7 @@
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/clone_context.h"
 #include "src/tint/lang/core/ir/module.h"
+#include "src/tint/lang/core/ir/phony.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
@@ -498,6 +499,8 @@ struct State {
                 },  //
                 [&](core::ir::UserCall* uc) { user_calls_to_convert_.Add(uc); },
                 [&](core::ir::BuiltinCall*) {},  //
+                // Interface-only handle references carry no texture operation.
+                [&](core::ir::Phony* p) { p->Destroy(); },
                 TINT_ICE_ON_NO_MATCH);
         });
     }

@@ -1134,6 +1134,8 @@ Patches:
 - `0004-accept-non-constant-point-size.patch` — Accept non-constant `point_size` stores
 - `0005-size-emission-and-capability.patch` — `@size` emission guard for specialization constants
 - `0006-remove-abseil-dependency.patch` — Replace `absl::from_chars` with `std::from_chars`
+- `0007-macos-float-parsing.patch` — Use locale-explicit float parsing below macOS 26
+- `0008-spirv-1.4-resource-interfaces.patch` — Support SPIR-V 1.4/1.5 resource interfaces; adapted from Shane-Gadsby/godotwebgpu
 
 Used for SPIR-V to WGSL translation in the WebGPU rendering backend.
 Requires spirv-tools and spirv-headers.

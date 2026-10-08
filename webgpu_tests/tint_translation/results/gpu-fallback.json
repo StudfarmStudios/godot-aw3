@@ -1,0 +1,12 @@
+{
+  "mode": "fallback",
+  "passed": true,
+  "checks": 32,
+  "returncode": 0,
+  "failed_checks": 0,
+  "timed_out": false,
+  "seconds": 2.1793588750297204,
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "engine_sha256": "d06206f6c8f66ecd6e8708d477c4ed07f2bb3227a835598c69122dfc7bf305ed",
+  "errors": []
+}
