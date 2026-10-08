@@ -1,0 +1,23 @@
+{
+  "passed": false,
+  "runs": [
+    {
+      "run_id": "native-0",
+      "mode": "native",
+      "repeat": 0,
+      "passed": false,
+      "checks": 90,
+      "failed_checks": 1,
+      "captures": 19,
+      "returncode": 1,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "46dc9ae5ce79ead485786b146e960ed19ea5e6c240475836f3a8be773aa90b62",
+      "errors": [
+        "FSR2_TEMPORAL FAIL auto_exposure_dim_mean 0.06961851993886"
+      ]
+    }
+  ],
+  "comparisons": [],
+  "scope": "Bounded temporal scene checks; Metal comparisons are diagnostic, not a quality-parity claim."
+}

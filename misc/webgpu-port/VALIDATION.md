@@ -310,3 +310,37 @@ and are not performance claims. FSR2 adds a tail dispatch for correct inter-grou
 visibility, and FSR1 adds a copy only when the destination cannot receive its
 RGBA16F storage output directly. End-to-end quality/performance acceptance remains
 pending the feature and browser matrix.
+
+## Luminance bounds and FSR2 temporal follow-up
+
+The real Forward+ fixture now records 19 linear-float images and checks 90
+properties per run: foreground motion, disocclusion, abrupt color changes, an
+80× HDR luminance change, bright-to-dim exposure and an odd-size resize/reset.
+Two runs each on native Metal, Dawn/Metal WebGPU and forced WebGPU fallback pass
+all checks with zero engine errors and clean exit. Every repeated capture is
+bit-exact on this host. [Fixture, commands and detailed limits](../../webgpu_tests/fsr2_temporal/README.md).
+
+That comparison found a general luminance-reduction bug: the final 3×2 reduction
+admitted 34 invocations because either coordinate could be in range, then divided
+by six. Backend out-of-range read behavior changed the result. Requiring both
+coordinates to be in range adds no dispatch, allocation or image copy.
+
+- Bright-to-dim mean red: previous WebGPU **0.069619**, corrected **0.363246**,
+  reference Metal **0.363013**; corrected forced fallback **0.363244**.
+- Mean absolute RGB difference from Metal fell from **0.293394 to 0.000553**.
+- The old binary fails the new analytic exposure oracle (89/90), without engine
+  errors. The corrected frozen binary is SHA-256
+  `8102c335e324ebf8c62512e26eb507a63ad63884c4eff1863962aa3cfc2aa09e`.
+- The [production-shader fixture](../../webgpu_tests/luminance_reduction/README.md)
+  passes **24/24** on all three backends, covering tiny/odd inputs, multiple
+  workgroups, sampled/storage sources and adaptation. Restoring the old predicate
+  causes 20 numerical failures; the four full-8×8 controls remain correct.
+
+Saved compact [temporal results](../../webgpu_tests/fsr2_temporal/results/corrected-macos-arm64.json)
+and [luminance results](../../webgpu_tests/luminance_reduction/results/macos-arm64.json)
+include binary/source identities. Remaining HDR checker transitions have mean
+RGB error 0.041 and 99th-percentile error 0.758 on values up to 4; moving edges can
+also differ. These results establish bounded motion/history stability and the
+specific exposure fix, **not** FSR2 quality parity. Timings from concurrent GPU
+correctness runs are not performance measurements. Firefox/Windows/D3D12, game
+scenes and the DOF/MSAA/GI feature matrix remain pending.

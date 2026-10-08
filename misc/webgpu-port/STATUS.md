@@ -24,7 +24,7 @@ Starting AW3 engine: `c0d51825faad2c1a773f4e21c34e74b60c53da21`.
 | 11 | Block-aligned compressed texture copies; preserve array stride fix | Implemented; native compressed array/mip-tail GPU copy and readback checks pass; browser runtime pending |
 | 12 | Partial color/stencil clears; preserve depth-region clears and batched submissions | Implemented; mixed HDR/float/integer targets, sparse masks, depth/stencil probes, MSAA and ring exhaustion pass natively. Browser pending |
 | 14–16 | SDFGI formats, cascade bindings, typed defaults and correct atomic fallback | In progress; explicit cascade bindings and buffer-based atomic/occlusion bundle under implementation |
-| 17 | FSR2 capability variants and atomic-buffer fallbacks without last-writer-wins depth reduction | Implemented; 144 atomic-callback checks and 8 Forward+ smoke checks per native capability mode. Motion/disocclusion/reference quality testing in progress |
+| 17 | FSR2 capability variants and atomic-buffer fallbacks without last-writer-wins depth reduction | Implemented; 144 atomic-callback checks and 8 Forward+ smoke checks per native capability mode. 90 temporal/quality probes per run across Metal and both WebGPU modes, two runs each; deterministic captures. Exposure regression fixed; edge/HDR differences remain, no full quality-parity claim |
 | 18–19 | FSR1 destination fallback and Canvas SDF format fallback | Implemented; 30 FSR1 renderer checks per native mode cover SDR/HDR, resize and direct/conversion XR targets. Canvas SDF compiled; dedicated visual/browser coverage pending |
 | 20–22, 24 | Logical-copy lowering, reviewed SPIR-V normalization/Tint fixes, structural vertex-access transform | Logical-copy lowering passes 34 production-preprocessor sanitizer/validator checks. Normalization, structural transforms and Tint dependency bundle pending |
 | 27–31 | Export baking, target capabilities, coverage, subprocess conversion, combined cache metadata and cache preference | Coverage and valid packaged-cache preference in progress; target/sidecar/translator-identity work still pending |
@@ -115,3 +115,14 @@ failures. Detailed native evidence, negative controls and performance results ar
 in VALIDATION.md. Remaining items discovered by these tests include shared-slice
 mip readback and applying storage lowering to SPIR-V-specialized shader modules;
 these are not covered by the passing ordinary shader-variant checks.
+
+### Auto-exposure follow-up
+
+Reference-renderer testing exposed an unrelated luminance reduction error shared
+by FSR2 and bilinear upscaling: `any(lessThan(...))` admitted lanes outside one
+coordinate. Changing it to `all` fixes the inflated average without a new pass.
+The production shader passes 24 numeric checks per backend; restoring the old
+predicate fails 20 while full-workgroup controls pass. FSR2 temporal tests now
+check 90 properties over 19 captures, with two exact repeated runs per backend.
+This establishes bounded scene evidence, not full quality parity or browser
+verification. See VALIDATION.md for the before/after exposure comparison.
