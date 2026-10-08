@@ -1313,6 +1313,10 @@ RenderingDeviceDriverWebGPU::RenderingDeviceDriverWebGPU(RenderingContextDriverW
 }
 
 RenderingDeviceDriverWebGPU::~RenderingDeviceDriverWebGPU() {
+	for (const KeyValue<WGPUTextureFormat, ResolveComputePipeline> &entry : resolve_compute_pipelines) {
+		wgpuComputePipelineRelease(entry.value.pipeline);
+		wgpuBindGroupLayoutRelease(entry.value.bind_group_layout);
+	}
 	for (const KeyValue<uint64_t, WGPURenderPipeline> &entry : depth_rect_clear_pipelines) {
 		wgpuRenderPipelineRelease(entry.value);
 	}
@@ -7236,6 +7240,131 @@ void RenderingDeviceDriverWebGPU::command_copy_texture(CommandBufferID p_cmd_buf
 	}
 }
 
+static const char *_resolve_compute_wgsl_format_token(WGPUTextureFormat p_format) {
+	switch (p_format) {
+		case WGPUTextureFormat_R32Float:
+			return "r32float";
+		case WGPUTextureFormat_RG32Float:
+			return "rg32float";
+		case WGPUTextureFormat_RGBA16Float:
+			return "rgba16float";
+		case WGPUTextureFormat_RGBA32Float:
+			return "rgba32float";
+		default:
+			return nullptr;
+	}
+}
+
+// Resolve a promoted storage destination without an intermediate texture.
+bool RenderingDeviceDriverWebGPU::_resolve_texture_compute(WGCommandBuffer *p_cmd, WGPUTextureFormat p_dst_format, WGPUTextureView p_src_view, WGPUTextureView p_dst_view, uint32_t p_width, uint32_t p_height) {
+	const char *dst_format_token = _resolve_compute_wgsl_format_token(p_dst_format);
+	if (dst_format_token == nullptr) {
+		WARN_PRINT_ONCE(vformat("WebGPU: command_resolve_texture's compute-resolve fallback doesn't support destination format %d; leaving destination unresolved.", (int)p_dst_format));
+		return false;
+	}
+
+	ResolveComputePipeline *rcp = resolve_compute_pipelines.getptr(p_dst_format);
+	if (rcp == nullptr) {
+		String wgsl = vformat(
+				"@group(0) @binding(0) var src_tex: texture_multisampled_2d<f32>;\n"
+				"@group(0) @binding(1) var dst_tex: texture_storage_2d<%s, write>;\n"
+				"@compute @workgroup_size(8, 8, 1)\n"
+				"fn main(@builtin(global_invocation_id) gid: vec3<u32>) {\n"
+				"\tlet dims = textureDimensions(dst_tex);\n"
+				"\tif (gid.x >= dims.x || gid.y >= dims.y) {\n"
+				"\t\treturn;\n"
+				"\t}\n"
+				"\tlet pos = vec2<i32>(i32(gid.x), i32(gid.y));\n"
+				"\tvar sum = vec4<f32>(0.0, 0.0, 0.0, 0.0);\n"
+				"\tsum = sum + textureLoad(src_tex, pos, 0);\n"
+				"\tsum = sum + textureLoad(src_tex, pos, 1);\n"
+				"\tsum = sum + textureLoad(src_tex, pos, 2);\n"
+				"\tsum = sum + textureLoad(src_tex, pos, 3);\n"
+				"\ttextureStore(dst_tex, pos, sum * 0.25);\n"
+				"}\n",
+				dst_format_token);
+
+		CharString wgsl_utf8 = wgsl.utf8();
+		WGPUShaderSourceWGSL wgsl_source = {};
+		wgsl_source.chain.sType = WGPUSType_ShaderSourceWGSL;
+		wgsl_source.code = WGPUStringView{ wgsl_utf8.get_data(), WGPU_STRLEN };
+		WGPUShaderModuleDescriptor mod_desc = {};
+		mod_desc.nextInChain = (WGPUChainedStruct *)&wgsl_source;
+		WGPUShaderModule mod = wgpuDeviceCreateShaderModule(device, &mod_desc);
+		ERR_FAIL_NULL_V_MSG(mod, false, "WebGPU: failed to create compute-resolve shader module.");
+
+		WGPUBindGroupLayoutEntry bgl_entries[2] = {};
+		bgl_entries[0].binding = 0;
+		bgl_entries[0].visibility = WGPUShaderStage_Compute;
+		bgl_entries[0].texture.sampleType = WGPUTextureSampleType_UnfilterableFloat;
+		bgl_entries[0].texture.viewDimension = WGPUTextureViewDimension_2D;
+		bgl_entries[0].texture.multisampled = true;
+		bgl_entries[1].binding = 1;
+		bgl_entries[1].visibility = WGPUShaderStage_Compute;
+		bgl_entries[1].storageTexture.access = WGPUStorageTextureAccess_WriteOnly;
+		bgl_entries[1].storageTexture.format = p_dst_format;
+		bgl_entries[1].storageTexture.viewDimension = WGPUTextureViewDimension_2D;
+
+		WGPUBindGroupLayoutDescriptor bgl_desc = {};
+		bgl_desc.entryCount = 2;
+		bgl_desc.entries = bgl_entries;
+
+		ResolveComputePipeline new_rcp;
+		new_rcp.bind_group_layout = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
+		if (!new_rcp.bind_group_layout) {
+			wgpuShaderModuleRelease(mod);
+			ERR_FAIL_V_MSG(false, "WebGPU: failed to create compute-resolve bind group layout.");
+		}
+
+		WGPUPipelineLayoutDescriptor pl_desc = {};
+		pl_desc.bindGroupLayoutCount = 1;
+		pl_desc.bindGroupLayouts = &new_rcp.bind_group_layout;
+		WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(device, &pl_desc);
+		if (!pipeline_layout) {
+			wgpuBindGroupLayoutRelease(new_rcp.bind_group_layout);
+			wgpuShaderModuleRelease(mod);
+			ERR_FAIL_V_MSG(false, "WebGPU: failed to create compute-resolve pipeline layout.");
+		}
+
+		WGPUComputePipelineDescriptor cp_desc = {};
+		cp_desc.layout = pipeline_layout;
+		cp_desc.compute.module = mod;
+		cp_desc.compute.entryPoint = WGPUStringView{ "main", WGPU_STRLEN };
+		new_rcp.pipeline = wgpuDeviceCreateComputePipeline(device, &cp_desc);
+		wgpuShaderModuleRelease(mod);
+		wgpuPipelineLayoutRelease(pipeline_layout);
+		if (!new_rcp.pipeline) {
+			wgpuBindGroupLayoutRelease(new_rcp.bind_group_layout);
+			ERR_FAIL_V_MSG(false, "WebGPU: failed to create compute-resolve pipeline.");
+		}
+
+		rcp = &resolve_compute_pipelines.insert(p_dst_format, new_rcp)->value;
+	}
+
+	WGPUBindGroupEntry bg_entries[2] = {};
+	bg_entries[0].binding = 0;
+	bg_entries[0].textureView = p_src_view;
+	bg_entries[1].binding = 1;
+	bg_entries[1].textureView = p_dst_view;
+
+	WGPUBindGroupDescriptor bg_desc = {};
+	bg_desc.layout = rcp->bind_group_layout;
+	bg_desc.entryCount = 2;
+	bg_desc.entries = bg_entries;
+	WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+	ERR_FAIL_NULL_V_MSG(bind_group, false, "WebGPU: failed to create compute-resolve bind group.");
+
+	WGPUComputePassDescriptor cp_pass_desc = {};
+	WGPUComputePassEncoder pass = wgpuCommandEncoderBeginComputePass(p_cmd->encoder, &cp_pass_desc);
+	wgpuComputePassEncoderSetPipeline(pass, rcp->pipeline);
+	wgpuComputePassEncoderSetBindGroup(pass, 0, bind_group, 0, nullptr);
+	wgpuComputePassEncoderDispatchWorkgroups(pass, (p_width + 7) / 8, (p_height + 7) / 8, 1);
+	wgpuComputePassEncoderEnd(pass);
+	wgpuComputePassEncoderRelease(pass);
+	wgpuBindGroupRelease(bind_group);
+	return true;
+}
+
 void RenderingDeviceDriverWebGPU::command_resolve_texture(CommandBufferID p_cmd_buffer, TextureID p_src_texture, TextureLayout p_src_texture_layout, uint32_t p_src_layer, uint32_t p_src_mipmap, TextureID p_dst_texture, TextureLayout p_dst_texture_layout, uint32_t p_dst_layer, uint32_t p_dst_mipmap) {
 	WGCommandBuffer *cmd = (WGCommandBuffer *)(p_cmd_buffer.id);
 	WGTexture *src = (WGTexture *)(p_src_texture.id);
@@ -7244,15 +7373,14 @@ void RenderingDeviceDriverWebGPU::command_resolve_texture(CommandBufferID p_cmd_
 	ERR_FAIL_NULL(src);
 	ERR_FAIL_NULL(dst);
 
-	// WebGPU has no standalone resolve command: the only way to resolve MSAA is a
-	// render pass whose colour attachment names a resolveTarget. A pass that draws
-	// nothing still resolves when it ends, so begin one and end it immediately.
+	// Equal formats use the native resolveTarget fast path. Storage promotion
+	// can change only the destination (e.g. RG16Float velocity -> RG32Float),
+	// in which case a compute pass averages directly into the promoted format.
 	//
 	// Without this the destination is simply never written. Anything rendering
 	// through an MSAA viewport (a SubViewport with msaa_3d set — the ship preview
 	// in the upgrade station) resolved into a texture that stayed black.
-	ERR_FAIL_COND_MSG(src->format != dst->format,
-			"WebGPU: cannot resolve between different texture formats.");
+
 	// resolveTarget is colour-only; depth MSAA goes through the resolve shaders.
 	ERR_FAIL_COND_MSG(_is_depth_format(src->format),
 			"WebGPU: cannot resolve a depth texture through a resolve target.");
@@ -7260,16 +7388,25 @@ void RenderingDeviceDriverWebGPU::command_resolve_texture(CommandBufferID p_cmd_
 					!(dst->usage & WGPUTextureUsage_RenderAttachment),
 			"WebGPU: cannot resolve a texture that lacks RenderAttachment usage.");
 
+	ERR_FAIL_COND_MSG(src->sample_count != 4 || dst->sample_count != 1, "WebGPU: resolve requires 4x source and single-sample destination.");
+	const bool convert_format = src->format != dst->format;
+	ERR_FAIL_COND_MSG(convert_format && (!(src->usage & WGPUTextureUsage_TextureBinding) || !(dst->usage & WGPUTextureUsage_StorageBinding)),
+			"WebGPU: format-converting resolve requires a sampled source and storage destination.");
+	ERR_FAIL_COND(p_src_mipmap < src->base_mipmap || p_dst_mipmap < dst->base_mipmap);
+	const uint32_t dst_width = MAX(1u, dst->width >> (p_dst_mipmap - dst->base_mipmap));
+	const uint32_t dst_height = MAX(1u, dst->height >> (p_dst_mipmap - dst->base_mipmap));
+	ERR_FAIL_COND_MSG(src->width != dst_width || src->height != dst_height, "WebGPU: resolve source and destination extents differ.");
+
 	cmd->end_active_encoder();
 
-	// Slice views carry a base offset into the parent, so the requested
-	// layer/mipmap is relative to that base, not to the whole texture.
+	// RenderingDevice already supplies absolute layer/mip offsets, including
+	// the slice base. gpu_handle() returns the parent texture; do not add twice.
 	WGPUTextureViewDescriptor src_desc = {};
 	src_desc.format = src->format;
 	src_desc.dimension = WGPUTextureViewDimension_2D;
-	src_desc.baseMipLevel = src->base_mipmap + p_src_mipmap;
+	src_desc.baseMipLevel = p_src_mipmap;
 	src_desc.mipLevelCount = 1;
-	src_desc.baseArrayLayer = src->base_layer + p_src_layer;
+	src_desc.baseArrayLayer = p_src_layer;
 	src_desc.arrayLayerCount = 1;
 	src_desc.aspect = WGPUTextureAspect_All;
 	WGPUTextureView src_view = wgpuTextureCreateView(src->gpu_handle(), &src_desc);
@@ -7277,12 +7414,19 @@ void RenderingDeviceDriverWebGPU::command_resolve_texture(CommandBufferID p_cmd_
 	WGPUTextureViewDescriptor dst_desc = {};
 	dst_desc.format = dst->format;
 	dst_desc.dimension = WGPUTextureViewDimension_2D;
-	dst_desc.baseMipLevel = dst->base_mipmap + p_dst_mipmap;
+	dst_desc.baseMipLevel = p_dst_mipmap;
 	dst_desc.mipLevelCount = 1;
-	dst_desc.baseArrayLayer = dst->base_layer + p_dst_layer;
+	dst_desc.baseArrayLayer = p_dst_layer;
 	dst_desc.arrayLayerCount = 1;
 	dst_desc.aspect = WGPUTextureAspect_All;
 	WGPUTextureView dst_view = wgpuTextureCreateView(dst->gpu_handle(), &dst_desc);
+
+	if (convert_format) {
+		_resolve_texture_compute(cmd, dst->format, src_view, dst_view, dst_width, dst_height);
+		wgpuTextureViewRelease(src_view);
+		wgpuTextureViewRelease(dst_view);
+		return;
+	}
 
 	WGPURenderPassColorAttachment color_att = {};
 	color_att.view = src_view;
@@ -10731,6 +10875,8 @@ uint64_t RenderingDeviceDriverWebGPU::api_trait_get(ApiTrait p_trait) {
 		// Pass instance index via firstInstance instead of push constants.
 		// Eliminates per-draw SetBindGroup for push constant ring buffer.
 		case API_TRAIT_FIRST_INSTANCE_INDEX: return 1;
+		case API_TRAIT_SUPPORTED_TEXTURE_SAMPLE_COUNTS:
+			return (1u << TEXTURE_SAMPLES_1) | (1u << TEXTURE_SAMPLES_4);
 		default: return RenderingDeviceDriver::api_trait_get(p_trait);
 	}
 }

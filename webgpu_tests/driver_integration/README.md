@@ -29,6 +29,8 @@ Current cases:
 - 2D, array and distinct 3D depth values; a nonzero mip/layer slice; untouched layers.
 - Push constants retained through snapshot pass restarts.
 - Compressed BC3 array copies/readback through 2×2 and 1×1 mip tails.
+- Requested 2×/4×/8× MSAA counts and native/promoted RG16F resolves.
+- MSAA resolve into mip 1/layer 1, preserving other mips and layers.
 
 `test_gradients.gd` separately verifies procedural gradient readback with the
 headless renderer, including width one, HDR, LDR and immediate parameter changes.

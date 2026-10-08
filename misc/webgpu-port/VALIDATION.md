@@ -96,3 +96,31 @@ scons platform=web target=template_debug webgpu=yes opengl3=no threads=yes \
   bin/obj/drivers/webgpu/rendering_device_driver_webgpu.web.template_debug.wasm32.o \
   bin/obj/drivers/webgpu/rendering_context_driver_webgpu.web.template_debug.wasm32.o
 ```
+
+## MSAA follow-up
+
+The next batch adds 18 real GPU checks (43 total in each mode), covering requested
+2×/4×/8× counts, reported effective counts, equal-format and promoted RG16F color
+resolves, 7×3 workgroup edges, and a destination at mip 1/layer 1 with untouched
+neighbor data. Both native modes pass with no validation errors and clean exit.
+Native editor linking and the six affected WebAssembly driver/renderer objects
+pass. Tested binary SHA-256:
+`180d7f82a0f00404fb8fcabc58a9a7609cde1f52c4e9a36a6cd5486385d689d4`.
+
+Raw results: [normal](results/msaa-native-macos-arm64.json) and
+[fallback](results/msaa-fallback-macos-arm64.json). Runtime durations are startup
+measurements, not performance comparisons. Full Forward+ depth/GI/velocity and
+runtime MSAA toggling remain in the renderer/browser matrix.
+
+An API-wide supported-count mask preserves other backends' existing behavior and
+makes the allocated count visible to RenderingDevice and renderer resolve loops.
+Unlike a maximum-only clamp, it handles WebGPU's missing 2× count. Matching formats
+still use the existing native resolve; promoted float formats use a cached compute
+pipeline, one dispatch and no intermediate texture. Slice offsets are supplied
+once by RenderingDevice, fixing the old double offset. Resolve dimension validation
+now rejects a mismatch in any dimension.
+
+The source fork's extra DOF pre-pass resolve was not copied: our final MSAA stage
+already resolves depth unconditionally before post-processing. DOF's depth typing
+and rendered output still need the feature fixture; this is not a claim that all
+DOF cases are verified.

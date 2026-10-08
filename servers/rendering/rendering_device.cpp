@@ -1656,6 +1656,24 @@ RID RenderingDevice::texture_buffer_create(uint32_t p_size_elements, DataFormat 
 /**** TEXTURE ****/
 /*****************/
 
+RenderingDevice::TextureSamples RenderingDevice::get_effective_texture_samples(TextureSamples p_requested) const {
+	ERR_FAIL_INDEX_V(p_requested, TEXTURE_SAMPLES_MAX, TEXTURE_SAMPLES_1);
+	const uint64_t counts = driver->api_trait_get(RDD::API_TRAIT_SUPPORTED_TEXTURE_SAMPLE_COUNTS);
+	// Round up across gaps (2x -> 4x on WebGPU), then clamp to the largest
+	// supported count if the request exceeds the API's maximum (8x -> 4x).
+	for (int sample = p_requested; sample < TEXTURE_SAMPLES_MAX; sample++) {
+		if (counts & (1u << sample)) {
+			return TextureSamples(sample);
+		}
+	}
+	for (int sample = p_requested - 1; sample >= 0; sample--) {
+		if (counts & (1u << sample)) {
+			return TextureSamples(sample);
+		}
+	}
+	ERR_FAIL_V(TEXTURE_SAMPLES_1);
+}
+
 RID RenderingDevice::texture_create(const TextureFormat &p_format, const TextureView &p_view, const Vector<Vector<uint8_t>> &p_data) {
 	// Some adjustments will happen.
 	TextureFormat format = p_format;
@@ -1694,6 +1712,7 @@ RID RenderingDevice::texture_create(const TextureFormat &p_format, const Texture
 	}
 
 	ERR_FAIL_INDEX_V(format.samples, TEXTURE_SAMPLES_MAX, RID());
+	format.samples = get_effective_texture_samples(format.samples);
 
 	ERR_FAIL_COND_V_MSG(format.usage_bits == 0, RID(), "No usage bits specified (at least one is needed)");
 
@@ -3564,7 +3583,7 @@ Error RenderingDevice::texture_resolve_multisample(RID p_from_texture, RID p_to_
 	ERR_FAIL_COND_V_MSG(dst_tex->samples != TEXTURE_SAMPLES_1, ERR_INVALID_PARAMETER, "Destination texture must not be multisampled.");
 
 	ERR_FAIL_COND_V_MSG(src_tex->format != dst_tex->format, ERR_INVALID_PARAMETER, "Source and Destination textures must be the same format.");
-	ERR_FAIL_COND_V_MSG(src_tex->width != dst_tex->width && src_tex->height != dst_tex->height && src_tex->depth != dst_tex->depth, ERR_INVALID_PARAMETER, "Source and Destination textures must have the same dimensions.");
+	ERR_FAIL_COND_V_MSG(src_tex->width != dst_tex->width || src_tex->height != dst_tex->height || src_tex->depth != dst_tex->depth, ERR_INVALID_PARAMETER, "Source and Destination textures must have the same dimensions.");
 
 	ERR_FAIL_COND_V_MSG(src_tex->read_aspect_flags != dst_tex->read_aspect_flags, ERR_INVALID_PARAMETER,
 			"Source and destination texture must be of the same type (color or depth).");

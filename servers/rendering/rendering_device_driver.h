@@ -1070,6 +1070,10 @@ public:
 		// This eliminates the per-draw SetBindGroup call for push constant rebinding.
 		// On WebGPU, each SetBindGroup IPC crossing costs ~0.3us; this saves one per draw.
 		API_TRAIT_FIRST_INSTANCE_INDEX,
+		// Bit mask indexed by TextureSamples, for API-wide sample restrictions.
+		// Defaults to all counts; per-format/device limits still apply. WebGPU
+		// supports 1 and 4, so a maximum alone cannot describe its missing 2x.
+		API_TRAIT_SUPPORTED_TEXTURE_SAMPLE_COUNTS,
 	};
 
 	enum ShaderChangeInvalidation {

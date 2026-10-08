@@ -44,11 +44,11 @@ for mode in (["native", "fallback"] if args.mode == "both" else [args.mode]):
         r"ERROR:|SCRIPT ERROR:|GPUValidationError|\[WebGPU.*(?:[Ee]rror|[Vv]alidation)|DRIVER_TEST FAIL|DRIVER_TEST timeout", line)]
     complete = re.search(r"DRIVER_TEST COMPLETE passed=(\d+) failed=(\d+)", output)
     # Current fixture has 16 upload/shared checks, five shape checks and two
-    # slice checks and two compressed-mip checks. A partial suite, renderer fallback or missing callback fails.
+    # slice checks, two compressed-mip checks and 18 MSAA checks. A partial suite, renderer fallback or missing callback fails.
     checks = int(complete[1]) + int(complete[2]) if complete else 0
     failed_checks = int(complete[2]) if complete else None
     webgpu_forward = "WebGPU 1.0 - Forward+" in output
-    passed = webgpu_forward and process.returncode == 0 and not timed_out and not errors and checks == 25 and failed_checks == 0
+    passed = webgpu_forward and process.returncode == 0 and not timed_out and not errors and checks == 43 and failed_checks == 0
     (args.output / f"{mode}.log").write_text(output)
     result = {"mode": mode, "passed": passed, "checks": checks, "returncode": process.returncode,
               "failed_checks": failed_checks, "timed_out": timed_out, "seconds": elapsed,

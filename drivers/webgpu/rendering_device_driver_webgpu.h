@@ -209,6 +209,14 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 	HashMap<uint64_t, WGPURenderPipeline> depth_rect_clear_pipelines;
 	WGPURenderPipeline _get_depth_rect_clear_pipeline(WGPUTextureFormat p_format, uint32_t p_samples);
 
+	// Cached by storage format; equal-format resolves keep the native fast path.
+	struct ResolveComputePipeline {
+		WGPUBindGroupLayout bind_group_layout = nullptr;
+		WGPUComputePipeline pipeline = nullptr;
+	};
+	HashMap<WGPUTextureFormat, ResolveComputePipeline> resolve_compute_pipelines;
+	bool _resolve_texture_compute(WGCommandBuffer *p_cmd, WGPUTextureFormat p_dst_format, WGPUTextureView p_src_view, WGPUTextureView p_dst_view, uint32_t p_width, uint32_t p_height);
+
 	// --- Dummy Samplers for BGL Rebinding ---
 	// When a bind group must be re-created with a different BGL (e.g., because
 	// the original BGL has a Comparison sampler but the target has Filtering),

@@ -111,6 +111,39 @@ func _floats(count: int, value: float) -> PackedByteArray:
 	data.fill(value)
 	return data.to_byte_array()
 
+func _test_resolve(samples: int, storage: bool, sliced: bool = false) -> void:
+	var label := "MSAA %dx storage=%s slice=%s" % [1 << samples, storage, sliced]
+	var tf := _format(RenderingDevice.DATA_FORMAT_R16G16_SFLOAT, 7, 3)
+	tf.samples = samples
+	tf.usage_bits = (RenderingDevice.TEXTURE_USAGE_COLOR_ATTACHMENT_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT)
+	var source := _own(rd.texture_create(tf, RDTextureView.new()))
+	expected_results += 1
+	call_deferred("_result", label + " effective samples", rd.texture_get_format(source).samples == RenderingDevice.TEXTURE_SAMPLES_4)
+	var framebuffer := _own(rd.framebuffer_create([source]))
+	rd.draw_list_begin(framebuffer, RenderingDevice.DRAW_CLEAR_ALL, [Color(0.125, 0.625, 0.0, 1.0)])
+	rd.draw_list_end()
+	var df := _format(RenderingDevice.DATA_FORMAT_R16G16_SFLOAT, 14 if sliced else 7, 6 if sliced else 3,
+		RenderingDevice.TEXTURE_TYPE_2D_ARRAY if sliced else RenderingDevice.TEXTURE_TYPE_2D, 2 if sliced else 1, 2 if sliced else 1)
+	df.usage_bits |= RenderingDevice.TEXTURE_USAGE_COLOR_ATTACHMENT_BIT
+	if not storage:
+		df.usage_bits &= ~RenderingDevice.TEXTURE_USAGE_STORAGE_BIT
+	var dest := _own(rd.texture_create(df, RDTextureView.new()))
+	var target := _own(rd.texture_create_shared_from_slice(RDTextureView.new(), dest, 1, 1, 1)) if sliced else dest
+	var error := rd.texture_resolve_multisample(source, target)
+	if error != OK:
+		push_error("%s resolve failed: %d" % [label, error])
+	var expected := PackedByteArray()
+	expected.resize((84 + 21 if sliced else 21) * 4)
+	for pixel in 21:
+		# 0.125 and 0.625 in half precision, including promoted RG32F readback.
+		expected.encode_u32(((84 if sliced else 0) + pixel) * 4, 0x39003000)
+	_read(label + " resolve", dest, 1 if sliced else 0, expected)
+	if sliced:
+		var zeros := PackedByteArray()
+		zeros.resize(105 * 4)
+		_read(label + " untouched layer", dest, 0, zeros)
+
 func _run() -> void:
 	rd = RenderingServer.get_rendering_device()
 	if rd == null:
@@ -119,6 +152,11 @@ func _run() -> void:
 		return
 	print("DRIVER_TEST engine=%s adapter=%s vendor=%s args=%s" % [Engine.get_version_info().hash,
 		rd.get_device_name(), rd.get_device_vendor_name(), OS.get_cmdline_user_args()])
+	for samples in [RenderingDevice.TEXTURE_SAMPLES_2, RenderingDevice.TEXTURE_SAMPLES_4, RenderingDevice.TEXTURE_SAMPLES_8]:
+		for storage in [false, true]:
+			_test_resolve(samples, storage)
+	for storage in [false, true]:
+		_test_resolve(RenderingDevice.TEXTURE_SAMPLES_4, storage, true)
 	for entry in [
 		["rgb10a2-unorm", RenderingDevice.DATA_FORMAT_A2B10G10R10_UNORM_PACK32, 0xc00003ff, 4],
 		["rgb10a2-uint", RenderingDevice.DATA_FORMAT_A2B10G10R10_UINT_PACK32, 0xffffffff, 4],

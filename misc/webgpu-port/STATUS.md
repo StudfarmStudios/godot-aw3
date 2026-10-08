@@ -20,7 +20,7 @@ Starting AW3 engine: `c0d51825faad2c1a773f4e21c34e74b60c53da21`.
 | 1–3, 7–8 | Capability-aware packed/narrow storage formats, matching WGSL and views, complete upload/readback conversions | Implemented; ASan/UBSan production helper tests pass. 25 native GPU checks pass in each capability mode; browser runtime pending |
 | 4 | Bind uniform sets against the requested shader, preserving lazy layout initialization | Implemented; native GPU variant and push-constant checks pass; browser runtime pending |
 | 5–6 | GPU-written shadow refresh, variant adaptation, first-use ordering and mip/layer correctness | Implemented at dispatch, one restart for all active sets; no CPU shadow replay. Native 2D/array/3D/slice checks pass; browser runtime pending |
-| 9–10 | Effective MSAA count and format-converting resolve | Pending |
+| 9–10 | Effective MSAA count and format-converting resolve | Implemented; requested 2/4/8, native/promoted RG16F resolve and nonzero destination mip/layer pass in both native modes. Full renderer AA matrix/browser pending |
 | 11 | Block-aligned compressed texture copies; preserve array stride fix | Implemented; native compressed array/mip-tail GPU copy and readback checks pass; browser runtime pending |
 | 12 | Partial color/stencil clears; preserve depth-region clears and batched submissions | Pending |
 | 14–16 | SDFGI formats, cascade bindings, typed defaults and correct atomic fallback | Pending |

@@ -440,9 +440,9 @@ void RendererSceneRenderRD::_render_buffers_copy_depth_texture(const RenderDataR
 		} else {
 			RID depth_back_fb = FramebufferCacheRD::get_singleton()->get_cache(depth_back_texture);
 			if (p_use_msaa) {
-				static const int texture_multisamples[RSE::VIEWPORT_MSAA_MAX] = { 1, 2, 4, 8 };
+				const int texture_multisamples = 1 << rb->get_texture_samples();
 
-				resolve_effects->resolve_depth_raster(rb->get_depth_msaa(v), depth_back_fb, texture_multisamples[rb->get_msaa_3d()]);
+				resolve_effects->resolve_depth_raster(rb->get_depth_msaa(v), depth_back_fb, texture_multisamples);
 			} else {
 				copy_effects->copy_to_fb_rect(depth_texture, depth_back_fb, Rect2i(0, 0, size.x, size.y));
 			}
