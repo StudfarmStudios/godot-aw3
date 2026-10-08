@@ -75,6 +75,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential clang pkg-config glslang-tools spirv-tools
 
+      - name: Prebuild native Tint CLI
+        if: contains(matrix.scons-flags, 'webgpu=yes')
+        # Give the host compiler its own CPU budget before compiling Wasm.
+        timeout-minutes: 30
+        run: bash drivers/webgpu/tint_cli/build.sh
+
       - name: Compilation
         uses: ./.github/actions/godot-build
         with:

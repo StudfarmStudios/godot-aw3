@@ -28,6 +28,8 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
+/* global _emscripten_is_main_runtime_thread, _godot_audio_sample_start_main, _godot_audio_sample_stop_main, _godot_audio_sample_update_pitch_scale_main, _godot_audio_sample_set_volumes_linear_main */
+
 /**
  * @typedef { "disabled" | "forward" | "backward" | "pingpong" } LoopMode
  */
@@ -1943,10 +1945,10 @@ const _GodotAudio = {
 	// other and with the remaining synchronous ones, so start/stop/is_active
 	// keep their sequence. Off a pthread the body is called directly with the
 	// original pointers, exactly as before.
-	godot_audio_sample_start__deps: ['godot_audio_sample_start_main', '$GodotRuntime'],
+	godot_audio_sample_start__deps: ['godot_audio_sample_start_main', '$GodotRuntime', 'emscripten_is_main_runtime_thread'],
 	godot_audio_sample_start__sig: 'viiiifi',
 	godot_audio_sample_start: function (playbackObjectIdStrPtr, streamObjectIdStrPtr, busIndex, offset, pitchScale, volumePtr) {
-		if (!ENVIRONMENT_IS_PTHREAD) {
+		if (_emscripten_is_main_runtime_thread()) {
 			_godot_audio_sample_start_main(playbackObjectIdStrPtr, streamObjectIdStrPtr, busIndex, offset, pitchScale, volumePtr, 0);
 			return;
 		}
@@ -1988,10 +1990,10 @@ const _GodotAudio = {
 		);
 	},
 
-	godot_audio_sample_stop__deps: ['godot_audio_sample_stop_main', '$GodotRuntime'],
+	godot_audio_sample_stop__deps: ['godot_audio_sample_stop_main', '$GodotRuntime', 'emscripten_is_main_runtime_thread'],
 	godot_audio_sample_stop__sig: 'vi',
 	godot_audio_sample_stop: function (playbackObjectIdStrPtr) {
-		if (!ENVIRONMENT_IS_PTHREAD) {
+		if (_emscripten_is_main_runtime_thread()) {
 			_godot_audio_sample_stop_main(playbackObjectIdStrPtr, 0);
 			return;
 		}
@@ -2047,10 +2049,10 @@ const _GodotAudio = {
 		return sampleNode.getPlaybackPosition();
 	},
 
-	godot_audio_sample_update_pitch_scale__deps: ['godot_audio_sample_update_pitch_scale_main', '$GodotRuntime'],
+	godot_audio_sample_update_pitch_scale__deps: ['godot_audio_sample_update_pitch_scale_main', '$GodotRuntime', 'emscripten_is_main_runtime_thread'],
 	godot_audio_sample_update_pitch_scale__sig: 'vif',
 	godot_audio_sample_update_pitch_scale: function (playbackObjectIdStrPtr, pitchScale) {
-		if (!ENVIRONMENT_IS_PTHREAD) {
+		if (_emscripten_is_main_runtime_thread()) {
 			_godot_audio_sample_update_pitch_scale_main(playbackObjectIdStrPtr, pitchScale, 0);
 			return;
 		}
@@ -2066,10 +2068,10 @@ const _GodotAudio = {
 		GodotAudio.update_sample_pitch_scale(playbackObjectId, pitchScale);
 	},
 
-	godot_audio_sample_set_volumes_linear__deps: ['godot_audio_sample_set_volumes_linear_main', '$GodotRuntime'],
+	godot_audio_sample_set_volumes_linear__deps: ['godot_audio_sample_set_volumes_linear_main', '$GodotRuntime', 'emscripten_is_main_runtime_thread'],
 	godot_audio_sample_set_volumes_linear__sig: 'viiiii',
 	godot_audio_sample_set_volumes_linear: function (playbackObjectIdStrPtr, busesPtr, busesSize, volumesPtr, volumesSize) {
-		if (!ENVIRONMENT_IS_PTHREAD) {
+		if (_emscripten_is_main_runtime_thread()) {
 			_godot_audio_sample_set_volumes_linear_main(playbackObjectIdStrPtr, busesPtr, busesSize, volumesPtr, volumesSize, 0);
 			return;
 		}

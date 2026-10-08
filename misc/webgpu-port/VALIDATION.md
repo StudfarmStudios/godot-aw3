@@ -1,12 +1,47 @@
 # WebGPU compatibility batches — 8 October 2026
 
-The engine remains on Godot 4.7.1. This records the initial storage-format,
-shadow-snapshot, transfer and procedural-gradient changes and subsequent native
-feature validation. The first results table is historical; later sections record
-the expanded coverage and corrected defects. It does **not** close
-the full port checklist in [STATUS.md](STATUS.md).
+The engine remains on Godot 4.7.1. [STATUS.md](STATUS.md) maps the implementation
+to the source audit. The sections below preserve exact tested snapshots, including
+failed controls; an older failure is not the status of a later corrected build.
 
-## Results
+## Current browser and shutdown validation
+
+The counter-corrected snapshot uses translator/profile identity
+`3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce`.
+All 278 build-time modules compile and translate. The native editor SHA-256 is
+`a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1`.
+Emscripten 4.0.20 produces these exact full templates:
+
+| Template | SHA-256 |
+| --- | --- |
+| Nonthreaded | `ee65410042ef7242388b759161af645ea46a93f8bac666a2657da11517d4f528` |
+| Threaded / application Worker | `4000e6734ac3b87848cd2ba5d06772ba07e8b9e39e70d57758b4df3e8cd0b07a` |
+
+The [nonthreaded matrix](../../webgpu_tests/browser_fork_ports/results/nonthreaded-macos-arm64-3525.json)
+and [threaded matrix](../../webgpu_tests/browser_fork_ports/results/threaded-macos-arm64-3525.json)
+pass **16/16**: installed Chrome and Firefox, normal and omitted float32 filtering,
+cold and warm starts. Each verifies 64 bind-group lifetime GPU cells, fonts,
+Canvas SDF, SSR, depth of field, the 777-record packaged WGSL cache and persistence,
+then exit zero with no errors during a one-second post-exit observation window.
+The separate [nonzero-exit probe](../../webgpu_tests/browser_fork_ports/results/nonthreaded-exit7-macos-arm64-3525.json)
+preserves exit code **7** in both browsers without late errors. Every threaded
+run also observes the expected application/render Worker configuration.
+
+The graceful exit bridge applies only to nonthreaded WebGPU. It preserves
+Emscripten's keepalive count until the cancelled loop and GPU callbacks drain.
+This exposed a second, independently reproduced defect: several queued callbacks
+could share a fence tracked by one pending boolean. The final counter releases
+that userdata only after the last callback, with no per-submit allocation.
+Historical negatives and the production-code sanitizer regression remain below.
+
+The later editor `71c87dd637e47135b57d4333874595cb41502600e9b4dfe6bb36676d9153590c`
+also includes the CI-exposed particle initialization and method-binding repairs.
+These do not change the translator/profile identity; their metadata regression
+is recorded separately. The browser hashes above have not been relabeled to that
+later binary. [Current-commit CI](https://github.com/StudfarmStudios/godot-aw3/pull/31/checks) remains the gate for the final integrated source.
+macOS results do not establish Windows/D3D12 correctness or full-game performance.
+
+## Initial batch results (historical)
 
 | Check | Result |
 | --- | --- |
@@ -557,3 +592,118 @@ exhibit both timing modes, so these measurements establish neither performance
 parity nor a regression. Separately, the final native Metal initial and scrolled
 PNG captures are exactly identical to the pre-port binary. Target-browser and
 Windows/D3D12 timings remain unverified.
+
+### Emscripten 4.0.11 API compatibility and CI triage
+
+Completed PR31 CI job logs for `d773ff85e8` were inspected directly through the
+jobs/logs API. Android, iOS, macOS, Linux sanitizer/minimal, and clang-cl failures
+reported the same GI signedness comparison; MSVC reported a 32-bit sample-mask
+shift converted to 64 bits. WebGL-only templates reported WebGPU-only fields and
+overrides lacking guards. These have local source corrections; completed old-head
+logs are not evidence that the corrected CI revision has passed.
+
+The candidate shader bake additionally rejected TAA's concatenated
+`#define MODE_TAA_RESOLVE#define RENDER_DRIVER_WEBGPU`. The precompiler now separates
+define blocks with newlines, with its own real GLSL regression.
+
+The exact emdawnwebgpu package fetched by Emscripten 4.0.11
+(`v20250531.224602`) exposed two API compatibility defects hidden behind that bake:
+its header lacks the texture-format tier enums, and queue completion uses a
+three-argument callback rather than the newer four-argument form. Web builds now
+query tier flags from the actual imported `GPUDevice.features`; native queries
+and explicit fallback overrides remain intact. Typed callback overloads support
+both signatures without guessing an SDK version or port revision.
+
+[Focused compatibility evidence](../../webgpu_tests/browser_fork_ports/results/emscripten-header-compatibility.json)
+records **8/8 full translation-unit syntax checks**: device/context driver,
+threaded/nonthreaded, old/current WebGPU headers, with `-Wall -Wextra -Werror` and
+CI's unused-parameter suppression. The unfixed pushed driver fails against the
+old header with exactly the two missing enum errors and callback mismatch. The
+embedded feature query passes all four feature-set combinations; all **21**
+embedded JavaScript blocks parse cleanly. These checks use the installed
+Emscripten 4.0.20 compiler with the exact old API header. A complete 4.0.11 build
+and browser execution still depend on the subsequent CI run; no Windows/D3D12
+runtime result is implied.
+
+### Multiple outstanding browser fence callbacks
+
+Graceful nonthreaded browser shutdown exposed a real fence userdata use-after-free:
+the captured Wasm stack maps `free` through `_fence_work_done_callback` to
+`emwgpuOnWorkDoneCompleted`. A fence can be reused while browser completion is
+pending, but the previous boolean tracked only one callback. The replacement
+counter retains retired userdata until every registered completion drains and
+signals only at the final completion. Native waiting behavior is unchanged.
+
+[Extracted production-code ASan/UBSan evidence](../../webgpu_tests/fence_lifetime/results/native-asan.json)
+passes **6/6** corrected cases. The `74d783e44d` negative control gives **three
+heap-use-after-free failures**, a premature-signal failure, and two passing simple
+controls. Cases explicitly include retirement before/after the first completion
+and resubmission while older callbacks remain. A destructor observation confirms
+exactly one deletion in each corrected case; macOS leak detection is disabled.
+The test extracts actual production ownership code instead of maintaining a
+separate model. The final profile-3525 browser matrix subsequently passes **16/16**
+Chrome/Firefox runs across threaded/nonthreaded, normal/omitted float32 filtering,
+and cold/warm launches: **1,024 BGL lifetime GPU cells**, exact resource counts,
+clean exits, and no runtime/shutdown errors through one second after `onExit`.
+[Lifecycle evidence](../../webgpu_tests/browser_fork_ports/results/rebind-lifecycle-controls.json)
+preserves the earlier failing browser controls and each immutable identity.
+[Eight strict old/current-header syntax checks after the counter change](../../webgpu_tests/fence_lifetime/results/header-compatibility.json) also
+pass; the earlier API-compatibility artifact records its original pre-counter
+snapshot and has not been relabeled.
+
+
+### Follow-up strict-build and reflected draw-method metadata repairs
+
+CI on `74d783e44d` progressed past the previous cross-platform errors: Android
+arm32/arm64 templates, Android editor, iOS template, and MSVC Windows release
+template passed. The Linux minimal job then exposed copying an uninitialized
+`PendingParticles::push_constant` record; its member is now value-initialized
+before records enter the pending vector. This does not change values later
+written by particle preparation.
+
+Linux Clang sanitizer and Windows clang-cl builds completed, then each failed
+exactly one ClassDB test: `RenderingDevice.draw_list_draw` had an unnamed fifth
+argument. The binding now names `first_instance` and supplies zero defaults for
+both it and `procedural_vertex_count`, matching the C++ declaration and preserving
+the documented shorter call. XML includes the fifth argument and its semantics.
+
+[Actual headless metadata evidence](../../webgpu_tests/browser_fork_ports/results/draw-list-method-metadata.json)
+shows old editor `a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1`
+exposing `_unnamed_arg4` and only one default (negative exit 1); rebuilt editor
+`71c87dd637e47135b57d4333874595cb41502600e9b4dfe6bb36676d9153590c` exposes all five
+correct names and two zero defaults (exit 0, no errors). The full native editor
+build and scoped C++/XML hooks passed. The [integrated CI checks](https://github.com/StudfarmStudios/godot-aw3/pull/31/checks)
+cover the GCC minimal build and existing full ClassDB tests. These initialization/metadata
+repairs do not alter the translator identity or the separately frozen browser
+fence-test templates; their immutable hashes remain distinct.
+
+Adding the second default changes the method hash. A direct compatibility binding
+retains the prior fork's five-argument/one-default hash **2557042334** alongside
+the corrected public hash **1293414739**. Accepted editor
+`d32389ec7575ff0b0cef96589f087352366da194a851fc4428744fe1076be2af` dumps that exact
+`hash_compatibility` entry and validates the full old `a396` API dump without
+compatibility errors. The intermediate `71c87` editor is a discriminating negative
+control: it reports the changed hash without a compatibility function. Validator
+diagnostics were checked explicitly because both invocations return zero. The
+pre-existing warning about the upstream four-argument legacy mapping remains
+unchanged; this repair preserves only the prior fork ABI.
+
+### Audio thread-query Closure compatibility
+
+The exact Emscripten 4.0.11 WebGPU debug CI job `113542642583` compiled all C++
+and then failed Closure optimization: four existing audio wrappers referenced
+`ENVIRONMENT_IS_PTHREAD`, which is absent without pthreads. They now depend on
+and call the public `emscripten_is_main_runtime_thread` helper. Both SDK 4.0.11
+and installed 4.0.20 implement it as the equivalent runtime-thread check; the
+nonthreaded stub returns true. Audio routing and copied-pointer ownership remain
+unchanged, with no raw preprocessing tokens or disabled lint checks.
+
+[Focused evidence](../../webgpu_tests/browser_fork_ports/results/audio-thread-compatibility.json)
+records **8/8** actual-library Node controls: four calls in both routing modes,
+including copied strings/arrays remaining valid after source mutation. The old
+source fails all eight with the missing-global exception. A tiny current-SDK
+Closure link using the exact four wrapper bodies reproduces the old nonthreaded
+error; corrected threaded and nonthreaded links both pass. Full-file ESLint and
+JavaScript parsing pass. This is a focused wrapper/link regression, not audio
+playback coverage or a complete local 4.0.11 build; corrected CI must complete
+that SDK's final template link. The change leaves shader-cache identity intact.

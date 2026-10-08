@@ -216,9 +216,13 @@ static void _fence_work_done_callback(WGPUQueueWorkDoneStatus p_status, void *p_
 		return;
 	}
 
-	fence->work_done_pending = false;
+	DEV_ASSERT(fence->pending_work_done_callbacks > 0);
+	fence->pending_work_done_callbacks--;
+	if (fence->pending_work_done_callbacks > 0) {
+		return;
+	}
 
-	// Fence was freed while this callback was in flight — clean up.
+	// All registered completions have drained; no callback retains this fence.
 	if (fence->freed) {
 		delete fence;
 		return;
@@ -4331,7 +4335,7 @@ Error RenderingDeviceDriverWebGPU::fence_wait(FenceID p_fence) {
 	// Native Dawn provides an actual waitable future. Waiting here is required:
 	// force-signaling (the browser fallback below) can let Godot recycle GPU
 	// resources before Metal has completed the preceding frame.
-	if (fence->work_done_pending) {
+	if (fence->pending_work_done_callbacks > 0) {
 		WGPUInstance inst = context_driver ? context_driver->get_instance() : nullptr;
 		ERR_FAIL_NULL_V(inst, ERR_CANT_ACQUIRE_RESOURCE);
 		WGPUFutureWaitInfo wait_info = WGPU_FUTURE_WAIT_INFO_INIT;
@@ -4375,15 +4379,15 @@ void RenderingDeviceDriverWebGPU::fence_free(FenceID p_fence) {
 #ifndef __EMSCRIPTEN__
 	// WaitAnyOnly callbacks are delivered by fence_wait, so drain an outstanding
 	// future before releasing its userdata.
-	if (fence->work_done_pending && fence_wait(p_fence) != OK) {
+	if (fence->pending_work_done_callbacks > 0 && fence_wait(p_fence) != OK) {
 		ERR_PRINT("WebGPU: Could not drain Dawn queue completion before freeing a fence.");
 		return;
 	}
 	delete fence;
 #else
-	// If an async work-done callback is in flight, mark freed and let
-	// the callback handle deletion (use-after-free prevention).
-	if (fence->work_done_pending) {
+	// The nonblocking browser wait permits reuse with several callbacks in
+	// flight. Keep their shared userdata until the last completion drains.
+	if (fence->pending_work_done_callbacks > 0) {
 		fence->freed = true;
 		return;
 	}
@@ -4470,7 +4474,7 @@ Error RenderingDeviceDriverWebGPU::command_queue_execute_and_present(CommandQueu
 		WGFence *fence = (WGFence *)(p_cmd_fence.id);
 		if (fence) {
 			fence->signaled = false;
-			fence->work_done_pending = true;
+			fence->pending_work_done_callbacks++;
 			WGPUQueueWorkDoneCallbackInfo cb = {};
 #ifdef __EMSCRIPTEN__
 			cb.mode = WGPUCallbackMode_AllowSpontaneous;

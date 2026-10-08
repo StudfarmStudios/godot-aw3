@@ -9,12 +9,14 @@ on:
       - 'drivers/webgpu/**'
       - 'webgpu_tests/**'
       - 'servers/rendering/**'
+      - 'platform/web/js/libs/library_godot_audio*'
   pull_request:
     paths:
       - '.github/workflows/webgpu_tests.yml'
       - 'drivers/webgpu/**'
       - 'webgpu_tests/**'
       - 'servers/rendering/**'
+      - 'platform/web/js/libs/library_godot_audio*'
 
 # Global Settings
 env:
@@ -93,6 +95,9 @@ jobs:
         working-directory: webgpu_tests/driver_unit_tests
         run: node run_tests.mjs
 
+      - name: Verify audio bridge routing without pthread-only globals
+        run: node --test platform/web/js/libs/library_godot_audio.test.mjs
+
   # ═══════════════════════════════════════════════════════════════════════════════
   # Engine Build: Compile WebGPU export template + strict shader precompile
   # ═══════════════════════════════════════════════════════════════════════════════
@@ -128,6 +133,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential clang pkg-config glslang-tools spirv-tools
+
+      - name: Prebuild native Tint CLI
+        # A cold host build must not compete with SCons' Wasm compiler jobs.
+        # The bounded SCons invocation then only checks inputs and relinks.
+        timeout-minutes: 30
+        run: bash drivers/webgpu/tint_cli/build.sh
 
       - name: Build WebGPU export template
         # The shared godot-build action deletes editor/ for template builds.

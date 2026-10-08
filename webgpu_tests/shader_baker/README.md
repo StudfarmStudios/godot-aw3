@@ -37,6 +37,14 @@ cancellation produce an explicitly reported partial seed; missing entries still
 use deferred runtime translation. The host CLI currently builds on POSIX hosts.
 Its output is optional; the engine's compact shader container remains portable.
 
+Before a cold build on a slow host, run `bash drivers/webgpu/tint_cli/build.sh`
+from the repository root, then run the normal SCons build. This avoids starting
+the native compiler's full worker pool alongside SCons' Wasm compiler jobs.
+CI performs that prebuild as a separate step with a 30-minute deadline and fails
+on compiler errors or timeout. SCons still checks the CLI's current source inputs
+under its 600-second deadline; unchanged vendor objects are reused. This changes
+build scheduling only, not the translator/profile identity or shader output.
+
 The cache fixture creates an isolated project and uniquely named user directory.
 It renders a red mesh and verifies pixels on every launch. It checks packaged
 cache preference, fallback after invalid outer framing, missing variants,

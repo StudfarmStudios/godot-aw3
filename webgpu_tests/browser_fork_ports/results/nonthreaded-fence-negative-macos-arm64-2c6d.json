@@ -1,0 +1,744 @@
+{
+  "passed": false,
+  "purpose": "Non-threaded natural shutdown negative control: all cold rendering/cache checks pass, then multiple callbacks sharing a freed fence abort in free before onExit. Warm and reduced-feature acceptance were stopped.",
+  "source_commit": "74d783e44d",
+  "source_result": "/private/tmp/aw3-browser-final-nonthreaded-normal-results/result.json",
+  "host": {
+    "os": "macOS",
+    "version": "26.5.2",
+    "build": "25F84",
+    "arch": "arm64"
+  },
+  "windows_d3d12_verified": false,
+  "firefox_backend": "unknown; not captured from about:support",
+  "exported": {
+    "passed": true,
+    "engine": "/private/tmp/aw3-webgpu-final-editor",
+    "template": "/private/tmp/aw3-webgpu-final-nonthreaded.zip",
+    "threads": false,
+    "bake": true,
+    "source": "/private/tmp/aw3-browser-fixture-final-2c6d",
+    "runs": [
+      {
+        "stage": "import",
+        "command": [
+          "/private/tmp/aw3-webgpu-final-editor",
+          "--path",
+          "/private/tmp/aw3-browser-final-nonthreaded/project",
+          "--verbose",
+          "--rendering-driver",
+          "webgpu",
+          "--rendering-method",
+          "forward_plus",
+          "--render-thread",
+          "separate",
+          "--editor",
+          "--import",
+          "--quit"
+        ],
+        "returncode": 0,
+        "errors": [],
+        "seconds": 11.115860917023383
+      },
+      {
+        "stage": "export",
+        "command": [
+          "/private/tmp/aw3-webgpu-final-editor",
+          "--path",
+          "/private/tmp/aw3-browser-final-nonthreaded/project",
+          "--verbose",
+          "--rendering-driver",
+          "webgpu",
+          "--rendering-method",
+          "forward_plus",
+          "--render-thread",
+          "separate",
+          "--export-release",
+          "Candidate WebGPU",
+          "/private/tmp/aw3-browser-final-nonthreaded/export/index.html"
+        ],
+        "returncode": 0,
+        "errors": [],
+        "seconds": 37.99678058293648
+      }
+    ],
+    "engine_sha256": "0ed5f70e77c8124477c15acc89c69e56533deb299c6b2a7ec45e4a2b33ad6a7d",
+    "template_sha256": "a55018035c04a1fc86ba287f0f4e44d9cdba84ff271075ceea4f35bfaed26085",
+    "wgsl": {
+      "entries": 777,
+      "failed": 0,
+      "source_modules": 777,
+      "fingerprint": "2c6d8bd8a2628d3dd9f064bdfe7044f559ff8604f78a19a2064cabb2df29fdcc"
+    },
+    "files": {
+      "index.html": {
+        "bytes": 5791,
+        "sha256": "885ba06bed163d3ca7aa3af334ed7e80094c05bc3e866475fbb3fb982a211503"
+      },
+      "index.js": {
+        "bytes": 337310,
+        "sha256": "10778005a1c963be6e946799bf6e34568226fbec24f944f02abf5d29c184e7f1"
+      },
+      "index.wasm": {
+        "bytes": 47078306,
+        "sha256": "ad04a7580544ea5d1cb68f5e3763788ea9b02dc9eeff82933200d15acdf380c0"
+      },
+      "index.pck": {
+        "bytes": 27267672,
+        "sha256": "04fd1825fb4fcb29e322c14ec199efcdf326751c1eae4f76f456d7a4a2219a07"
+      }
+    }
+  },
+  "records": [
+    {
+      "browser": "chrome",
+      "host": "darwin",
+      "threads": false,
+      "templateSha256": "a55018035c04a1fc86ba287f0f4e44d9cdba84ff271075ceea4f35bfaed26085",
+      "engineSha256": "0ed5f70e77c8124477c15acc89c69e56533deb299c6b2a7ec45e4a2b33ad6a7d",
+      "forcedWebGPU": false,
+      "noFloat32Filterable": false,
+      "runs": [
+        {
+          "temperature": "cold",
+          "errors": [
+            "Aborted(native code called abort())",
+            "RuntimeError: Aborted(native code called abort())\n    at abort (http://127.0.0.1:53216/index.js:1:8349)\n    at __abort_js (http://127.0.0.1:53216/index.js:1:78275)\n    at $func82942 (http://127.0.0.1:53216/index.wasm:1:35830060)\n    at $free (http://127.0.0.1:53216/index.wasm:1:35903645)\n    at $func18826 (http://127.0.0.1:53216/index.wasm:1:12487502)\n    at $func82934 (http://127.0.0.1:53216/index.wasm:1:35828924)\n    at $emwgpuOnWorkDoneCompleted (http://127.0.0.1:53216/index.wasm:1:35803025)\n    at <anonymous> (http://127.0.0.1:53216/index.js:1:8906)\n    at <anonymous> (http://127.0.0.1:53216/index.js:1:117462)\n    at callUserCallback (http://127.0.0.1:53216/index.js:1:88196)"
+          ],
+          "warnings": [
+            "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+            "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)",
+            "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+            "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)"
+          ],
+          "phases": [
+            "font",
+            "canvas_sdf",
+            "ssr_off",
+            "ssr_on",
+            "dof_off",
+            "dof_on"
+          ],
+          "capabilities": {
+            "crossOriginIsolated": true,
+            "sharedArrayBuffer": true,
+            "offscreenCanvas": true,
+            "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+            "webgpu": true
+          },
+          "rebindChecks": [
+            {
+              "name": "rebind_canvas_dimensions",
+              "passed": true,
+              "detail": [
+                512,
+                384
+              ]
+            },
+            {
+              "name": "rebind_64_lifetimes_gpu_values",
+              "passed": true,
+              "detail": {
+                "count": 64,
+                "first": [
+                  0,
+                  255,
+                  0,
+                  255
+                ],
+                "last": [
+                  0,
+                  255,
+                  0,
+                  255
+                ]
+              }
+            }
+          ],
+          "checks": [
+            {
+              "name": "rebind_canvas_dimensions",
+              "passed": true,
+              "detail": [
+                512,
+                384
+              ]
+            },
+            {
+              "name": "rebind_64_lifetimes_gpu_values",
+              "passed": true,
+              "detail": {
+                "count": 64,
+                "first": [
+                  0,
+                  255,
+                  0,
+                  255
+                ],
+                "last": [
+                  0,
+                  255,
+                  0,
+                  255
+                ]
+              }
+            },
+            {
+              "name": "canvas_dimensions",
+              "passed": true,
+              "detail": {
+                "font": [
+                  512,
+                  384
+                ],
+                "canvas_sdf": [
+                  512,
+                  384
+                ],
+                "ssr_off": [
+                  512,
+                  384
+                ],
+                "ssr_on": [
+                  512,
+                  384
+                ],
+                "dof_off": [
+                  512,
+                  384
+                ],
+                "dof_on": [
+                  512,
+                  384
+                ]
+              }
+            },
+            {
+              "name": "font_mask",
+              "passed": true,
+              "detail": 1924
+            },
+            {
+              "name": "font_lcd",
+              "passed": true,
+              "detail": 1796
+            },
+            {
+              "name": "font_msdf",
+              "passed": true,
+              "detail": 2188
+            },
+            {
+              "name": "font_svg_retains_blue_under_red_modulation",
+              "passed": true,
+              "detail": 5168
+            },
+            {
+              "name": "canvas_sdf_inside",
+              "passed": true
+            },
+            {
+              "name": "canvas_sdf_outside",
+              "passed": true
+            },
+            {
+              "name": "ssr_visible_source",
+              "passed": true
+            },
+            {
+              "name": "ssr_red_reflection",
+              "passed": true,
+              "detail": {
+                "pixels": 7020,
+                "sum": 2146.5411764704463
+              }
+            },
+            {
+              "name": "dof_sharp_panels",
+              "passed": true,
+              "detail": [
+                0.5,
+                0.5,
+                0.5
+              ]
+            },
+            {
+              "name": "dof_near_blurred",
+              "passed": true,
+              "detail": {
+                "sharp": [
+                  0.5,
+                  0.5,
+                  0.5
+                ],
+                "blur": [
+                  0.0017454349427978954,
+                  0.5,
+                  0.0017454349427978954
+                ]
+              }
+            },
+            {
+              "name": "dof_focus_preserved",
+              "passed": true,
+              "detail": {
+                "sharp": [
+                  0.5,
+                  0.5,
+                  0.5
+                ],
+                "blur": [
+                  0.0017454349427978954,
+                  0.5,
+                  0.0017454349427978954
+                ]
+              }
+            },
+            {
+              "name": "dof_far_blurred",
+              "passed": true,
+              "detail": {
+                "sharp": [
+                  0.5,
+                  0.5,
+                  0.5
+                ],
+                "blur": [
+                  0.0017454349427978954,
+                  0.5,
+                  0.0017454349427978954
+                ]
+              }
+            },
+            {
+              "name": "rebind_lifetime_resource_cleanup",
+              "passed": true
+            },
+            {
+              "name": "explicit_forward_plus_webgpu",
+              "passed": true
+            },
+            {
+              "name": "wgsl_runtime_identity",
+              "passed": true
+            },
+            {
+              "name": "packaged_wgsl_seed_loaded",
+              "passed": true
+            },
+            {
+              "name": "wgsc_v4_persisted_identity",
+              "passed": true
+            }
+          ],
+          "rebindResult": {
+            "cells": 64,
+            "created": 64,
+            "dispatches": 64,
+            "native_readback": false,
+            "passed": true,
+            "retired": 64
+          },
+          "identity": "2c6d8bd8a2628d3dd9f064bdfe7044f559ff8604f78a19a2064cabb2df29fdcc",
+          "cacheMessages": [
+            "[WGSLCACHE] translator/profile 2c6d8bd8a2628d3dd9f064bdfe7044f559ff8604f78a19a2064cabb2df29fdcc",
+            "[WGSLCACHE] seeded 777 entries from bundled cache (777 with SPIR-V binding metadata)",
+            "[WGSLCACHE] flushed 2 new entries (session: cache=196 precompiled=0 tint=2)",
+            "[WGSLCACHE] flushed 2 new entries (session: cache=256 precompiled=1 tint=3)",
+            "[WGSLCACHE] flushed 12 new entries (session: cache=264 precompiled=1 tint=15)",
+            "[WGSLCACHE] flushed 18 new entries (session: cache=286 precompiled=1 tint=33)"
+          ],
+          "persisted": [
+            {
+              "key": "/userfs/godot/app_userdata/WebGPU candidate browser regressions/wgsl_cache/74d783e44d36-2c6d8bd8a2628d3dd9f0-v4.bin",
+              "bytes": 289885,
+              "header": [
+                87,
+                71,
+                83,
+                67,
+                4,
+                0,
+                0,
+                0,
+                44,
+                109,
+                139,
+                216,
+                162,
+                98,
+                141,
+                61,
+                217,
+                240,
+                100,
+                189,
+                254,
+                112,
+                68,
+                245,
+                89,
+                255,
+                134,
+                4,
+                247,
+                138,
+                25,
+                162,
+                6,
+                76,
+                171,
+                178,
+                223,
+                41,
+                253,
+                204
+              ]
+            }
+          ],
+          "runtimeErrors": [],
+          "runtimePassed": true,
+          "worker_count": 0,
+          "passed": false,
+          "shutdownErrors": [
+            "Aborted(native code called abort())",
+            "RuntimeError: Aborted(native code called abort())\n    at abort (http://127.0.0.1:53216/index.js:1:8349)\n    at __abort_js (http://127.0.0.1:53216/index.js:1:78275)\n    at $func82942 (http://127.0.0.1:53216/index.wasm:1:35830060)\n    at $free (http://127.0.0.1:53216/index.wasm:1:35903645)\n    at $func18826 (http://127.0.0.1:53216/index.wasm:1:12487502)\n    at $func82934 (http://127.0.0.1:53216/index.wasm:1:35828924)\n    at $emwgpuOnWorkDoneCompleted (http://127.0.0.1:53216/index.wasm:1:35803025)\n    at <anonymous> (http://127.0.0.1:53216/index.js:1:8906)\n    at <anonymous> (http://127.0.0.1:53216/index.js:1:117462)\n    at callUserCallback (http://127.0.0.1:53216/index.js:1:88196)"
+          ]
+        }
+      ],
+      "version": "Chrome/154.0.8037.98",
+      "passed": false,
+      "error": "TimeoutError: Waiting failed: 30000ms exceeded\n    at new WaitTask (file:///Users/jaakkolukkari/Development/aw3/website/node_modules/puppeteer-core/lib/puppeteer/common/WaitTask.js:46:34)\n    at IsolatedWorld.waitForFunction (file:///Users/jaakkolukkari/Development/aw3/website/node_modules/puppeteer-core/lib/puppeteer/api/Realm.js:49:26)\n    at CdpFrame.waitForFunction (file:///Users/jaakkolukkari/Development/aw3/website/node_modules/puppeteer-core/lib/puppeteer/api/Frame.js:580:43)\n    at CdpFrame.<anonymous> (file:///Users/jaakkolukkari/Development/aw3/website/node_modules/puppeteer-core/lib/puppeteer/util/decorators.js:101:27)\n    at CdpPage.waitForFunction (file:///Users/jaakkolukkari/Development/aw3/website/node_modules/puppeteer-core/lib/puppeteer/api/Page.js:1447:37)\n    at file:///private/tmp/aw3-webgpu-fork-ports/webgpu_tests/browser_fork_ports/run_browser.mjs:93:20"
+    },
+    {
+      "browser": "firefox",
+      "host": "darwin",
+      "threads": false,
+      "templateSha256": "a55018035c04a1fc86ba287f0f4e44d9cdba84ff271075ceea4f35bfaed26085",
+      "engineSha256": "0ed5f70e77c8124477c15acc89c69e56533deb299c6b2a7ec45e4a2b33ad6a7d",
+      "forcedWebGPU": false,
+      "noFloat32Filterable": false,
+      "runs": [
+        {
+          "temperature": "cold",
+          "errors": [
+            "Aborted(native code called abort())",
+            "Error: RuntimeError: Aborted(native code called abort())\n    at quit_ (http://127.0.0.1:53216/index.js:1:2477)\n    at handleException (http://127.0.0.1:53216/index.js:1:85921)\n    at callUserCallback (http://127.0.0.1:53216/index.js:1:88239)\n    at Godot/_emwgpuQueueOnSubmittedWorkDone/< (http://127.0.0.1:53216/index.js:1:117456)\n    at _emwgpuQueueOnSubmittedWorkDone (http://127.0.0.1:53216/index.js:1:117408)\n    at <anonymous> (http://127.0.0.1:53216/index.wasm:12487008:1)\n    at <anonymous> (http://127.0.0.1:53216/index.wasm:26533446:1)\n    at <anonymous> (http://127.0.0.1:53216/index.wasm:26526809:1)\n    at <anonymous> (http://127.0.0.1:53216/index.wasm:26718629:1)\n    at <anonymous> (http://127.0.0.1:53216/index.wasm:395073:1)"
+          ],
+          "warnings": [
+            "WARNING: WebGPU: float32-blendable feature NOT available \u2014 blend on float32 targets will be disabled.",
+            "   at: _check_capabilities (drivers/webgpu/rendering_device_driver_webgpu.cpp:1993)",
+            "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+            "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)",
+            "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+            "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)"
+          ],
+          "phases": [
+            "font",
+            "canvas_sdf",
+            "ssr_off",
+            "ssr_on",
+            "dof_off",
+            "dof_on"
+          ],
+          "capabilities": {
+            "crossOriginIsolated": true,
+            "sharedArrayBuffer": true,
+            "offscreenCanvas": true,
+            "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:155.0) Gecko/20100101 Firefox/155.0",
+            "webgpu": true
+          },
+          "rebindChecks": [
+            {
+              "name": "rebind_canvas_dimensions",
+              "passed": true,
+              "detail": [
+                512,
+                384
+              ]
+            },
+            {
+              "name": "rebind_64_lifetimes_gpu_values",
+              "passed": true,
+              "detail": {
+                "count": 64,
+                "first": [
+                  0,
+                  255,
+                  0,
+                  255
+                ],
+                "last": [
+                  0,
+                  255,
+                  0,
+                  255
+                ]
+              }
+            }
+          ],
+          "checks": [
+            {
+              "name": "rebind_canvas_dimensions",
+              "passed": true,
+              "detail": [
+                512,
+                384
+              ]
+            },
+            {
+              "name": "rebind_64_lifetimes_gpu_values",
+              "passed": true,
+              "detail": {
+                "count": 64,
+                "first": [
+                  0,
+                  255,
+                  0,
+                  255
+                ],
+                "last": [
+                  0,
+                  255,
+                  0,
+                  255
+                ]
+              }
+            },
+            {
+              "name": "canvas_dimensions",
+              "passed": true,
+              "detail": {
+                "font": [
+                  512,
+                  384
+                ],
+                "canvas_sdf": [
+                  512,
+                  384
+                ],
+                "ssr_off": [
+                  512,
+                  384
+                ],
+                "ssr_on": [
+                  512,
+                  384
+                ],
+                "dof_off": [
+                  512,
+                  384
+                ],
+                "dof_on": [
+                  512,
+                  384
+                ]
+              }
+            },
+            {
+              "name": "font_mask",
+              "passed": true,
+              "detail": 1924
+            },
+            {
+              "name": "font_lcd",
+              "passed": true,
+              "detail": 1796
+            },
+            {
+              "name": "font_msdf",
+              "passed": true,
+              "detail": 2188
+            },
+            {
+              "name": "font_svg_retains_blue_under_red_modulation",
+              "passed": true,
+              "detail": 5168
+            },
+            {
+              "name": "canvas_sdf_inside",
+              "passed": true
+            },
+            {
+              "name": "canvas_sdf_outside",
+              "passed": true
+            },
+            {
+              "name": "ssr_visible_source",
+              "passed": true
+            },
+            {
+              "name": "ssr_red_reflection",
+              "passed": true,
+              "detail": {
+                "pixels": 7043,
+                "sum": 2149.3882352939722
+              }
+            },
+            {
+              "name": "dof_sharp_panels",
+              "passed": true,
+              "detail": [
+                0.5,
+                0.5,
+                0.5
+              ]
+            },
+            {
+              "name": "dof_near_blurred",
+              "passed": true,
+              "detail": {
+                "sharp": [
+                  0.5,
+                  0.5,
+                  0.5
+                ],
+                "blur": [
+                  0.0017454349427978954,
+                  0.5,
+                  0.0017454349427978954
+                ]
+              }
+            },
+            {
+              "name": "dof_focus_preserved",
+              "passed": true,
+              "detail": {
+                "sharp": [
+                  0.5,
+                  0.5,
+                  0.5
+                ],
+                "blur": [
+                  0.0017454349427978954,
+                  0.5,
+                  0.0017454349427978954
+                ]
+              }
+            },
+            {
+              "name": "dof_far_blurred",
+              "passed": true,
+              "detail": {
+                "sharp": [
+                  0.5,
+                  0.5,
+                  0.5
+                ],
+                "blur": [
+                  0.0017454349427978954,
+                  0.5,
+                  0.0017454349427978954
+                ]
+              }
+            },
+            {
+              "name": "rebind_lifetime_resource_cleanup",
+              "passed": true
+            },
+            {
+              "name": "explicit_forward_plus_webgpu",
+              "passed": true
+            },
+            {
+              "name": "wgsl_runtime_identity",
+              "passed": true
+            },
+            {
+              "name": "packaged_wgsl_seed_loaded",
+              "passed": true
+            },
+            {
+              "name": "wgsc_v4_persisted_identity",
+              "passed": true
+            }
+          ],
+          "rebindResult": {
+            "cells": 64,
+            "created": 64,
+            "dispatches": 64,
+            "native_readback": false,
+            "passed": true,
+            "retired": 64
+          },
+          "identity": "2c6d8bd8a2628d3dd9f064bdfe7044f559ff8604f78a19a2064cabb2df29fdcc",
+          "cacheMessages": [
+            "[WGSLCACHE] translator/profile 2c6d8bd8a2628d3dd9f064bdfe7044f559ff8604f78a19a2064cabb2df29fdcc",
+            "[WGSLCACHE] seeded 777 entries from bundled cache (777 with SPIR-V binding metadata)",
+            "[WGSLCACHE] flushed 2 new entries (session: cache=199 precompiled=0 tint=2)",
+            "[WGSLCACHE] flushed 2 new entries (session: cache=256 precompiled=1 tint=3)",
+            "[WGSLCACHE] flushed 10 new entries (session: cache=264 precompiled=1 tint=13)",
+            "[WGSLCACHE] flushed 16 new entries (session: cache=278 precompiled=1 tint=29)"
+          ],
+          "persisted": [
+            {
+              "key": "/userfs/godot/app_userdata/WebGPU candidate browser regressions/wgsl_cache/74d783e44d36-2c6d8bd8a2628d3dd9f0-v4.bin",
+              "bytes": 268209,
+              "header": [
+                87,
+                71,
+                83,
+                67,
+                4,
+                0,
+                0,
+                0,
+                44,
+                109,
+                139,
+                216,
+                162,
+                98,
+                141,
+                61,
+                217,
+                240,
+                100,
+                189,
+                254,
+                112,
+                68,
+                245,
+                89,
+                255,
+                134,
+                4,
+                247,
+                138,
+                25,
+                162,
+                6,
+                76,
+                171,
+                178,
+                223,
+                41,
+                253,
+                204
+              ]
+            }
+          ],
+          "runtimeErrors": [],
+          "runtimePassed": true,
+          "worker_count": 0,
+          "passed": false,
+          "shutdownErrors": [
+            "Aborted(native code called abort())",
+            "Error: RuntimeError: Aborted(native code called abort())\n    at quit_ (http://127.0.0.1:53216/index.js:1:2477)\n    at handleException (http://127.0.0.1:53216/index.js:1:85921)\n    at callUserCallback (http://127.0.0.1:53216/index.js:1:88239)\n    at Godot/_emwgpuQueueOnSubmittedWorkDone/< (http://127.0.0.1:53216/index.js:1:117456)\n    at _emwgpuQueueOnSubmittedWorkDone (http://127.0.0.1:53216/index.js:1:117408)\n    at <anonymous> (http://127.0.0.1:53216/index.wasm:12487008:1)\n    at <anonymous> (http://127.0.0.1:53216/index.wasm:26533446:1)\n    at <anonymous> (http://127.0.0.1:53216/index.wasm:26526809:1)\n    at <anonymous> (http://127.0.0.1:53216/index.wasm:26718629:1)\n    at <anonymous> (http://127.0.0.1:53216/index.wasm:395073:1)"
+          ]
+        }
+      ],
+      "version": "firefox/155.0.1",
+      "passed": false,
+      "error": "TimeoutError: Waiting failed: 30000ms exceeded\n    at new WaitTask (file:///Users/jaakkolukkari/Development/aw3/website/node_modules/puppeteer-core/lib/puppeteer/common/WaitTask.js:46:34)\n    at BidiFrameRealm.waitForFunction (file:///Users/jaakkolukkari/Development/aw3/website/node_modules/puppeteer-core/lib/puppeteer/api/Realm.js:49:26)\n    at BidiFrame.waitForFunction (file:///Users/jaakkolukkari/Development/aw3/website/node_modules/puppeteer-core/lib/puppeteer/api/Frame.js:580:43)\n    at BidiFrame.<anonymous> (file:///Users/jaakkolukkari/Development/aw3/website/node_modules/puppeteer-core/lib/puppeteer/util/decorators.js:101:27)\n    at BidiPage.waitForFunction (file:///Users/jaakkolukkari/Development/aw3/website/node_modules/puppeteer-core/lib/puppeteer/api/Page.js:1447:37)\n    at file:///private/tmp/aw3-webgpu-fork-ports/webgpu_tests/browser_fork_ports/run_browser.mjs:93:20"
+    }
+  ],
+  "callback_mapping": {
+    "evidence": "llvm-objdump of exact template wasm; stripped function body matched callback field offsets and free call",
+    "func18826": "_fence_work_done_callback; clears byte24 work_done_pending, tests byte25 freed, then free or writes byte0 signaled",
+    "faulting_free_pc": 12487502,
+    "func82934": "WorkDoneEvent::Complete; invokes callback with message and userdata1/2",
+    "emdawn_contract": "SetFutureReady erases each spontaneous event before Complete; separate queue-work events can retain the same fence userdata."
+  },
+  "observation": "Failure occurred before onExit. This run predates the added 1000ms post-onExit window and cannot validate clean shutdown."
+}

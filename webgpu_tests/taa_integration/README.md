@@ -57,3 +57,10 @@ mismatch. Saved baseline errors are deduplicated; no large logs are committed.
 correctness checks; they do not establish Firefox/Windows/D3D12 coverage, general
 TAA image-quality parity or a measured performance improvement. The shader-baker
 cold/placeholder fixture separately exercises late TAA activation and cache paths.
+
+The final integration editor (`0ed5f70e77c8124477c15acc89c69e56533deb299c6b2a7ec45e4a2b33ad6a7d`)
+repeats all **16/16 checks on Metal, normal WebGPU and forced fallbacks**, with
+zero errors. This follows the build-time define separator correction; the local
+compiler produces identical TAA SPIR-V before/after that correction. The separate
+real-GLSL regression rejects joined definition blocks even on permissive compilers.
+See `results/final-macos-arm64.json`.

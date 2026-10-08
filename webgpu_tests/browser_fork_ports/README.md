@@ -48,6 +48,8 @@ persisted WGSC v4 header/fingerprint and warm disk-cache load are checked. Resul
 include logs, screenshots and hashes of the supplied editor/template/export.
 Observed Worker creation plus a known `proxy_to_pthread=yes` template establishes
 the intended Worker test configuration; it is not timing evidence or a benchmark.
+After controlled engine quit, the runner requires exit code 0 and keeps the page
+and error listeners alive for one additional second to catch late GPU callbacks.
 
 Browser executable paths can be supplied with `--firefox-bin=/absolute/path/to/firefox`
 and `--chrome-bin=/absolute/path/to/chrome`; macOS installations are the defaults. For the
@@ -85,6 +87,21 @@ until that hardware run and its backend evidence exist.
 
 Recorded macOS hardware evidence (Chrome 154 / Firefox 155):
 
+- [Corrected threaded matrix](results/threaded-macos-arm64-3525.json): all eight
+  runs pass across both browsers, normal/omitted float32 filtering and cold/warm
+  loads. Each observes eight Workers and passes the same rendering, cache and
+  delayed-shutdown checks as the non-threaded matrix below.
+- [Corrected non-threaded matrix](results/nonthreaded-macos-arm64-3525.json): all
+  eight runs pass across both browsers, normal/omitted float32 filtering and
+  cold/warm loads. Every run passes the 64-cell lifetime oracle, six visual phases,
+  matching packaged/persisted WGSC checks and exit 0 with a full second of late
+  callback observation. Firefox also lacks float32 blending on this machine;
+  its capability warning and the expected font-atlas format-conversion warnings
+  are retained in the results.
+- [Nonzero exit probe](results/nonthreaded-exit7-macos-arm64-3525.json): a private
+  fixture requests `SceneTree.quit(7)` after 60 frames. Chrome and Firefox both
+  report `onExit(7)` with no errors during the following second. The result
+  includes the small private fixture's source and exact exported artifacts.
 - [Threaded 59ec matrix](results/threaded-macos-arm64-59ec.json): all eight runs
   pass across both browsers, normal/omitted float32 filtering and cold/warm loads.
   This includes the 64-cell bind-group lifetime oracle, all six visual phases,
@@ -94,10 +111,17 @@ Recorded macOS hardware evidence (Chrome 154 / Firefox 155):
   counter assertions after cleanup. These runs remain marked failed. The reduced
   capability run records runtime and shutdown errors separately; GPU validation
   errors are never ignored.
+- [Natural-shutdown fence control](results/nonthreaded-fence-negative-macos-arm64-2c6d.json):
+  the subsequent non-threaded build passes all cold rendering/cache checks in
+  both browsers, then aborts in the fence callback's `free` before `onExit`.
+  Multiple queue-work callbacks can retain one reused fence; this result remains
+  failed and later matrix runs were stopped pending an ownership fix.
 
-Both snapshots use native editor `59ecacbe...` and translator/profile `8b6f9216...`;
-full hashes and template identities are in the result files. Later builds must
-be tested against their own matching exports; this evidence is not relabeled to
-match an untested rebuild. The earlier template also reproduces an incompatible
+The corrected matrices use native editor `a3962882...`, translator/profile
+`3525def0...`, threaded template `4000e673...` and non-threaded template
+`ee654100...`. The historical 59ec snapshots
+use editor `59ecacbe...` and profile `8b6f9216...`; full artifact hashes are in each
+result file. Each result remains pinned to its tested export and is not relabeled
+to match later builds. An earlier template also reproduces an incompatible
 bind-group layout on Firefox cold and Chrome warm runs, documented in the
 [lifetime regression](rebind_lifecycle.md).

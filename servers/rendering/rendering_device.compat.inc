@@ -197,6 +197,8 @@ void RenderingDevice::_bind_compatibility_methods() {
 	ClassDB::bind_compatibility_method(D_METHOD("index_buffer_create", "size_indices", "format", "data", "use_restart_indices"), &RenderingDevice::_index_buffer_create_bind_compat_101561, DEFVAL(Vector<uint8_t>()), DEFVAL(false));
 
 	ClassDB::bind_compatibility_method(D_METHOD("texture_create_from_extension", "type", "format", "samples", "usage_flags", "image", "width", "height", "depth", "layers"), &RenderingDevice::_texture_create_from_extension_compat_105570);
+
+	ClassDB::bind_compatibility_method(D_METHOD("draw_list_draw", "draw_list", "use_indices", "instances", "procedural_vertex_count", "first_instance"), &RenderingDevice::draw_list_draw, DEFVAL(0));
 }
 
 #endif // DISABLE_DEPRECATED

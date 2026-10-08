@@ -93,6 +93,9 @@ try{
         await page.waitForFunction(()=>Number.isInteger(globalThis.__godotExit),{timeout:30000});
         run.exitCode=await page.evaluate(()=>globalThis.__godotExit);
         run.checks.push({name:'clean_engine_exit',passed:run.exitCode===0,detail:run.exitCode});
+        // Keep listeners alive after onExit so delayed queue callbacks cannot hide shutdown errors.
+        run.postExitObservationMs=1000;
+        await sleep(run.postExitObservationMs);
         await page.close();
         page.removeAllListeners();
         run.shutdownErrors=run.errors.slice(run.runtimeErrors.length);
@@ -100,7 +103,14 @@ try{
         await writeFile(join(output,`${name}-${temperature}.log`),run.console.join('\n')+'\n');
       }
       record.passed=record.runs.every(run=>run.passed);
-    }catch(error){record.passed=false;record.error=String(error.stack||error);}
+    }catch(error){
+      record.passed=false;record.error=String(error.stack||error);
+      for(const run of record.runs){
+        run.passed??=false;
+        if(run.runtimeErrors)run.shutdownErrors=run.errors.slice(run.runtimeErrors.length);
+        await writeFile(join(output,`${name}-${run.temperature}.log`),run.console.join('\n')+'\n');
+      }
+    }
     finally{if(browser)await closeOwned(browser);await rm(profile,{recursive:true,force:true});}
     records.push(record);await writeFile(join(output,'result.json'),JSON.stringify({passed:records.every(r=>r.passed),exported,records},null,2)+'\n');console.log(JSON.stringify({browser:name,passed:record.passed,error:record.error,runs:record.runs.map(run=>({temperature:run.temperature,passed:run.passed,failed:run.checks?.filter(c=>!c.passed),errors:run.errors.slice(0,10)}))}));
   }

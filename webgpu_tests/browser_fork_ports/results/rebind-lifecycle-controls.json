@@ -1,5 +1,5 @@
 {
-  "scope": "All recorded BGL GPU checks pass on fixed native and nonthreaded browsers. Overall fixed browser runs still fail a separately investigated Emscripten shutdown assertion; these results do not waive shutdown errors. Fixed threaded browser coverage pending. All hosts macOS; no Windows/D3D12 claim.",
+  "scope": "Earlier browser negative and partial-positive controls are preserved with their original identities. Final profile 3525 browser matrix passes all 16 runs, 1024 BGL GPU cells, resource cleanup, and delayed shutdown checks. All hosts macOS; no Windows/D3D12 claim.",
   "negative_control": {
     "source": "/private/tmp/aw3-browser-rebind-old-nofilter-2/result.json",
     "records": [
@@ -381,5 +381,364 @@
         }
       ]
     }
-  ]
+  ],
+  "final_browser_matrix": {
+    "passed": true,
+    "run_count": 16,
+    "gpu_cells": 1024,
+    "records": [
+      {
+        "source": "threaded-macos-arm64-3525.json",
+        "browser": "chrome",
+        "threads": true,
+        "float32_filterable_omitted": false,
+        "temperature": "cold",
+        "template_sha256": "4000e6734ac3b87848cd2ba5d06772ba07e8b9e39e70d57758b4df3e8cd0b07a",
+        "engine_sha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+        "profile": "3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce",
+        "passed": true,
+        "rebind_result": {
+          "cells": 64,
+          "created": 64,
+          "dispatches": 64,
+          "native_readback": false,
+          "passed": true,
+          "retired": 64
+        },
+        "exit_code": 0,
+        "post_exit_observation_ms": 1000,
+        "errors": []
+      },
+      {
+        "source": "threaded-macos-arm64-3525.json",
+        "browser": "chrome",
+        "threads": true,
+        "float32_filterable_omitted": false,
+        "temperature": "warm",
+        "template_sha256": "4000e6734ac3b87848cd2ba5d06772ba07e8b9e39e70d57758b4df3e8cd0b07a",
+        "engine_sha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+        "profile": "3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce",
+        "passed": true,
+        "rebind_result": {
+          "cells": 64,
+          "created": 64,
+          "dispatches": 64,
+          "native_readback": false,
+          "passed": true,
+          "retired": 64
+        },
+        "exit_code": 0,
+        "post_exit_observation_ms": 1000,
+        "errors": []
+      },
+      {
+        "source": "threaded-macos-arm64-3525.json",
+        "browser": "firefox",
+        "threads": true,
+        "float32_filterable_omitted": false,
+        "temperature": "cold",
+        "template_sha256": "4000e6734ac3b87848cd2ba5d06772ba07e8b9e39e70d57758b4df3e8cd0b07a",
+        "engine_sha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+        "profile": "3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce",
+        "passed": true,
+        "rebind_result": {
+          "cells": 64,
+          "created": 64,
+          "dispatches": 64,
+          "native_readback": false,
+          "passed": true,
+          "retired": 64
+        },
+        "exit_code": 0,
+        "post_exit_observation_ms": 1000,
+        "errors": []
+      },
+      {
+        "source": "threaded-macos-arm64-3525.json",
+        "browser": "firefox",
+        "threads": true,
+        "float32_filterable_omitted": false,
+        "temperature": "warm",
+        "template_sha256": "4000e6734ac3b87848cd2ba5d06772ba07e8b9e39e70d57758b4df3e8cd0b07a",
+        "engine_sha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+        "profile": "3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce",
+        "passed": true,
+        "rebind_result": {
+          "cells": 64,
+          "created": 64,
+          "dispatches": 64,
+          "native_readback": false,
+          "passed": true,
+          "retired": 64
+        },
+        "exit_code": 0,
+        "post_exit_observation_ms": 1000,
+        "errors": []
+      },
+      {
+        "source": "threaded-macos-arm64-3525.json",
+        "browser": "chrome",
+        "threads": true,
+        "float32_filterable_omitted": true,
+        "temperature": "cold",
+        "template_sha256": "4000e6734ac3b87848cd2ba5d06772ba07e8b9e39e70d57758b4df3e8cd0b07a",
+        "engine_sha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+        "profile": "3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce",
+        "passed": true,
+        "rebind_result": {
+          "cells": 64,
+          "created": 64,
+          "dispatches": 64,
+          "native_readback": false,
+          "passed": true,
+          "retired": 64
+        },
+        "exit_code": 0,
+        "post_exit_observation_ms": 1000,
+        "errors": []
+      },
+      {
+        "source": "threaded-macos-arm64-3525.json",
+        "browser": "chrome",
+        "threads": true,
+        "float32_filterable_omitted": true,
+        "temperature": "warm",
+        "template_sha256": "4000e6734ac3b87848cd2ba5d06772ba07e8b9e39e70d57758b4df3e8cd0b07a",
+        "engine_sha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+        "profile": "3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce",
+        "passed": true,
+        "rebind_result": {
+          "cells": 64,
+          "created": 64,
+          "dispatches": 64,
+          "native_readback": false,
+          "passed": true,
+          "retired": 64
+        },
+        "exit_code": 0,
+        "post_exit_observation_ms": 1000,
+        "errors": []
+      },
+      {
+        "source": "threaded-macos-arm64-3525.json",
+        "browser": "firefox",
+        "threads": true,
+        "float32_filterable_omitted": true,
+        "temperature": "cold",
+        "template_sha256": "4000e6734ac3b87848cd2ba5d06772ba07e8b9e39e70d57758b4df3e8cd0b07a",
+        "engine_sha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+        "profile": "3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce",
+        "passed": true,
+        "rebind_result": {
+          "cells": 64,
+          "created": 64,
+          "dispatches": 64,
+          "native_readback": false,
+          "passed": true,
+          "retired": 64
+        },
+        "exit_code": 0,
+        "post_exit_observation_ms": 1000,
+        "errors": []
+      },
+      {
+        "source": "threaded-macos-arm64-3525.json",
+        "browser": "firefox",
+        "threads": true,
+        "float32_filterable_omitted": true,
+        "temperature": "warm",
+        "template_sha256": "4000e6734ac3b87848cd2ba5d06772ba07e8b9e39e70d57758b4df3e8cd0b07a",
+        "engine_sha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+        "profile": "3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce",
+        "passed": true,
+        "rebind_result": {
+          "cells": 64,
+          "created": 64,
+          "dispatches": 64,
+          "native_readback": false,
+          "passed": true,
+          "retired": 64
+        },
+        "exit_code": 0,
+        "post_exit_observation_ms": 1000,
+        "errors": []
+      },
+      {
+        "source": "nonthreaded-macos-arm64-3525.json",
+        "browser": "chrome",
+        "threads": false,
+        "float32_filterable_omitted": false,
+        "temperature": "cold",
+        "template_sha256": "ee65410042ef7242388b759161af645ea46a93f8bac666a2657da11517d4f528",
+        "engine_sha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+        "profile": "3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce",
+        "passed": true,
+        "rebind_result": {
+          "cells": 64,
+          "created": 64,
+          "dispatches": 64,
+          "native_readback": false,
+          "passed": true,
+          "retired": 64
+        },
+        "exit_code": 0,
+        "post_exit_observation_ms": 1000,
+        "errors": []
+      },
+      {
+        "source": "nonthreaded-macos-arm64-3525.json",
+        "browser": "chrome",
+        "threads": false,
+        "float32_filterable_omitted": false,
+        "temperature": "warm",
+        "template_sha256": "ee65410042ef7242388b759161af645ea46a93f8bac666a2657da11517d4f528",
+        "engine_sha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+        "profile": "3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce",
+        "passed": true,
+        "rebind_result": {
+          "cells": 64,
+          "created": 64,
+          "dispatches": 64,
+          "native_readback": false,
+          "passed": true,
+          "retired": 64
+        },
+        "exit_code": 0,
+        "post_exit_observation_ms": 1000,
+        "errors": []
+      },
+      {
+        "source": "nonthreaded-macos-arm64-3525.json",
+        "browser": "firefox",
+        "threads": false,
+        "float32_filterable_omitted": false,
+        "temperature": "cold",
+        "template_sha256": "ee65410042ef7242388b759161af645ea46a93f8bac666a2657da11517d4f528",
+        "engine_sha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+        "profile": "3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce",
+        "passed": true,
+        "rebind_result": {
+          "cells": 64,
+          "created": 64,
+          "dispatches": 64,
+          "native_readback": false,
+          "passed": true,
+          "retired": 64
+        },
+        "exit_code": 0,
+        "post_exit_observation_ms": 1000,
+        "errors": []
+      },
+      {
+        "source": "nonthreaded-macos-arm64-3525.json",
+        "browser": "firefox",
+        "threads": false,
+        "float32_filterable_omitted": false,
+        "temperature": "warm",
+        "template_sha256": "ee65410042ef7242388b759161af645ea46a93f8bac666a2657da11517d4f528",
+        "engine_sha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+        "profile": "3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce",
+        "passed": true,
+        "rebind_result": {
+          "cells": 64,
+          "created": 64,
+          "dispatches": 64,
+          "native_readback": false,
+          "passed": true,
+          "retired": 64
+        },
+        "exit_code": 0,
+        "post_exit_observation_ms": 1000,
+        "errors": []
+      },
+      {
+        "source": "nonthreaded-macos-arm64-3525.json",
+        "browser": "chrome",
+        "threads": false,
+        "float32_filterable_omitted": true,
+        "temperature": "cold",
+        "template_sha256": "ee65410042ef7242388b759161af645ea46a93f8bac666a2657da11517d4f528",
+        "engine_sha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+        "profile": "3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce",
+        "passed": true,
+        "rebind_result": {
+          "cells": 64,
+          "created": 64,
+          "dispatches": 64,
+          "native_readback": false,
+          "passed": true,
+          "retired": 64
+        },
+        "exit_code": 0,
+        "post_exit_observation_ms": 1000,
+        "errors": []
+      },
+      {
+        "source": "nonthreaded-macos-arm64-3525.json",
+        "browser": "chrome",
+        "threads": false,
+        "float32_filterable_omitted": true,
+        "temperature": "warm",
+        "template_sha256": "ee65410042ef7242388b759161af645ea46a93f8bac666a2657da11517d4f528",
+        "engine_sha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+        "profile": "3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce",
+        "passed": true,
+        "rebind_result": {
+          "cells": 64,
+          "created": 64,
+          "dispatches": 64,
+          "native_readback": false,
+          "passed": true,
+          "retired": 64
+        },
+        "exit_code": 0,
+        "post_exit_observation_ms": 1000,
+        "errors": []
+      },
+      {
+        "source": "nonthreaded-macos-arm64-3525.json",
+        "browser": "firefox",
+        "threads": false,
+        "float32_filterable_omitted": true,
+        "temperature": "cold",
+        "template_sha256": "ee65410042ef7242388b759161af645ea46a93f8bac666a2657da11517d4f528",
+        "engine_sha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+        "profile": "3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce",
+        "passed": true,
+        "rebind_result": {
+          "cells": 64,
+          "created": 64,
+          "dispatches": 64,
+          "native_readback": false,
+          "passed": true,
+          "retired": 64
+        },
+        "exit_code": 0,
+        "post_exit_observation_ms": 1000,
+        "errors": []
+      },
+      {
+        "source": "nonthreaded-macos-arm64-3525.json",
+        "browser": "firefox",
+        "threads": false,
+        "float32_filterable_omitted": true,
+        "temperature": "warm",
+        "template_sha256": "ee65410042ef7242388b759161af645ea46a93f8bac666a2657da11517d4f528",
+        "engine_sha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+        "profile": "3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce",
+        "passed": true,
+        "rebind_result": {
+          "cells": 64,
+          "created": 64,
+          "dispatches": 64,
+          "native_readback": false,
+          "passed": true,
+          "retired": 64
+        },
+        "exit_code": 0,
+        "post_exit_observation_ms": 1000,
+        "errors": []
+      }
+    ]
+  }
 }

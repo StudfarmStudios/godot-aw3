@@ -2336,5 +2336,13 @@
         }
       ]
     }
-  ]
+  ],
+  "host": {
+    "os": "macOS",
+    "version": "26.5.2",
+    "build": "25F84",
+    "architecture": "arm64"
+  },
+  "browser_capabilities": "browser-capabilities-macos-arm64.json",
+  "firefox_backend": "unknown; browser adapter identity is redacted and no about:support backend capture was made"
 }

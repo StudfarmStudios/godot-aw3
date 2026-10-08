@@ -520,8 +520,8 @@ struct WGFence {
 	bool signaled = false;
 	uint64_t submission_id = 0;
 	WGPUFuture completion_future = WGPU_FUTURE_INIT;
-	bool work_done_pending = false; // True while wgpuQueueOnSubmittedWorkDone callback is in flight.
-	bool freed = false; // Freed while callback pending; callback will delete.
+	uint32_t pending_work_done_callbacks = 0; // A browser fence can be reused before earlier callbacks run.
+	bool freed = false; // Freed while callbacks are pending; the last callback will delete.
 };
 
 // =============================================================================

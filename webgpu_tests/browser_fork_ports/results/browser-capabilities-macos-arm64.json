@@ -1,5 +1,5 @@
 {
-  "scope": "Browser API probes only; candidate engine templates not run yet",
+  "scope": "Standalone browser API probes captured before candidate engine runs; engine evidence is in the separate matrix files",
   "firefox_copy_note": "Installed Firefox copied temporarily with only app updates disabled; no WebGPU preferences forced",
   "browsers": [
     {

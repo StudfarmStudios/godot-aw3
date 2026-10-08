@@ -1,0 +1,42 @@
+[
+  {
+    "case": "old-rendering_device_driver_webgpu-nothreads",
+    "returncode": 0,
+    "output": ""
+  },
+  {
+    "case": "old-rendering_context_driver_webgpu-nothreads",
+    "returncode": 0,
+    "output": ""
+  },
+  {
+    "case": "old-rendering_device_driver_webgpu-threaded",
+    "returncode": 0,
+    "output": ""
+  },
+  {
+    "case": "old-rendering_context_driver_webgpu-threaded",
+    "returncode": 0,
+    "output": ""
+  },
+  {
+    "case": "current-rendering_device_driver_webgpu-nothreads",
+    "returncode": 0,
+    "output": ""
+  },
+  {
+    "case": "current-rendering_context_driver_webgpu-nothreads",
+    "returncode": 0,
+    "output": ""
+  },
+  {
+    "case": "current-rendering_device_driver_webgpu-threaded",
+    "returncode": 0,
+    "output": ""
+  },
+  {
+    "case": "current-rendering_context_driver_webgpu-threaded",
+    "returncode": 0,
+    "output": ""
+  }
+]

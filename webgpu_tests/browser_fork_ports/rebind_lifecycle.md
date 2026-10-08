@@ -35,12 +35,21 @@ would miss the C-wrapper lifetime defect. The fixed native engine
 resource counts, and cleanup with `--render-thread separate` and float32 filtering
 omitted. The fixed nonthreaded template also passed all 64 cells and lifetime
 counts on Chrome 154.0.8037.98 and Firefox 155.0.1, on cold and warm launches in
-both normal and omitted-filtering modes (eight runs, 512 cells). These complete
-browser runs still fail a separate Emscripten `runtimeKeepalivePop` shutdown
-assertion; the evidence preserves that failure instead of claiming an overall
-pass. Fixed threaded coverage remains pending. No Firefox/Windows/D3D12 result is
-implied. Compact identities and results are in
-`results/rebind-lifecycle-controls.json`.
+both normal and omitted-filtering modes (eight runs, 512 cells). Those initial complete
+browser runs failed a separate Emscripten `runtimeKeepalivePop` shutdown
+assertion; their historical evidence preserves that failure.
+
+The final profile `3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce`
+includes graceful nonthreaded shutdown and counted fence-callback ownership.
+Chrome and Firefox now pass all **16** runs: threaded/nonthreaded, normal/omitted
+float32 filtering, and cold/warm. All **1,024 GPU cells**, resource counts,
+render/cache checks, and clean exits pass with no runtime or shutdown errors
+through one second after `onExit`. The export editor is
+`a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1`; the
+threaded/nonthreaded template identities and per-run results are preserved in
+`results/rebind-lifecycle-controls.json` and the linked profile-3525 browser
+reports. These are macOS browser results; no Firefox/Windows/D3D12 result is
+implied.
 
 Native smoke command:
 
