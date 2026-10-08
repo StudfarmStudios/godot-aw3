@@ -208,7 +208,7 @@ struct WGShader {
 	// Read-write storage texture splits: maps (set << 16 | write_binding) → read_shadow_binding.
 	// When readonly-and-readwrite-storage-textures is unavailable, read_write storage
 	// textures are split into separate write (original) + read (shadow) bindings.
-	// The shadow binding receives a GPU copy of the texture at bind group creation time.
+	// The shadow binding receives a snapshot immediately before each compute dispatch.
 	HashMap<uint32_t, uint32_t> rw_storage_splits;
 
 	// Read-only storage texture → sampled texture conversions.
@@ -315,18 +315,20 @@ struct WGUniformSet {
 	WGPUBindGroup handle = nullptr;
 	uint32_t set_index = 0;
 	LocalVector<WGPUTextureView> temp_views; // Re-dimensioned views for Cube↔2D fixups.
-	// Shadow textures/views for read_write storage texture splits.
-	// Owned by the uniform set; released when the set is destroyed.
-	LocalVector<WGPUTexture> rw_shadow_textures;
-	LocalVector<WGPUTextureView> rw_shadow_views;
-
-	// Tracks which source→shadow registrations this uniform set created in
-	// rw_shadow_copy_map, so they can be deregistered when the set is freed.
-	struct RWShadowRegistration {
-		WGPUTexture source;
-		WGPUTexture shadow;
+	// One owned snapshot per write binding, shared by adapted shader variants.
+	// Storage reads see the contents from before the dispatch; writes go to the
+	// original texture. All subresource offsets are relative to the owning GPU
+	// resource, including when the bound texture is a shared slice.
+	struct RWShadow {
+		uint32_t write_binding = 0;
+		WGPUTexture source = nullptr;
+		WGPUTexture texture = nullptr;
+		WGPUTextureView view = nullptr;
+		uint32_t width = 0, height = 0, depth_or_layers = 0;
+		uint32_t base_mip = 0, base_layer = 0, mip_count = 0;
+		bool is_3d = false;
 	};
-	LocalVector<RWShadowRegistration> rw_shadow_registrations;
+	LocalVector<RWShadow> rw_shadows;
 
 	// Rebind cache: when a bind group is created with shader A's BGL but
 	// needs to be used with shader B's pipeline (different BGL), we
@@ -466,6 +468,7 @@ struct WGCommandBuffer {
 		uint32_t dynamic_offset_count = 0;
 	};
 	BoundGroupState last_bound_state[MAX_BIND_GROUPS] = {};
+	WGUniformSet *compute_uniform_sets[MAX_BIND_GROUPS] = {};
 
 	void invalidate_bind_groups() {
 		for (uint32_t i = 0; i < MAX_BIND_GROUPS; i++) {

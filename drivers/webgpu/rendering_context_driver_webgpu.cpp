@@ -31,6 +31,8 @@
 #ifdef WEBGPU_ENABLED
 
 #include "rendering_context_driver_webgpu.h"
+
+#include "core/os/os.h"
 #include "rendering_device_driver_webgpu.h"
 
 #ifdef __EMSCRIPTEN__
@@ -207,7 +209,11 @@ Error RenderingContextDriverWebGPU::initialize() {
 	WGPUSupportedFeatures supported_features = WGPU_SUPPORTED_FEATURES_INIT;
 	wgpuAdapterGetFeatures(adapter, &supported_features);
 	Vector<WGPUFeatureName> required_features;
+	const bool force_fallbacks = (OS::get_singleton()->get_cmdline_user_args().find("--webgpu-force-fallbacks") != nullptr);
 	for (WGPUFeatureName feature : optional_features) {
+		if (force_fallbacks && (feature == WGPUFeatureName_TextureFormatsTier1 || feature == WGPUFeatureName_TextureFormatsTier2)) {
+			continue;
+		}
 		if (_adapter_has_feature(supported_features, feature)) {
 			required_features.push_back(feature);
 		}

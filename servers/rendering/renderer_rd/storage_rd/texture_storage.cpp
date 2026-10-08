@@ -5004,6 +5004,11 @@ void TextureStorage::_render_target_allocate_sdf(RenderTarget *rt) {
 
 	tformat.format = RD::DATA_FORMAT_R16_SNORM;
 	tformat.usage_bits = RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT;
+	if (!RD::get_singleton()->texture_is_format_supported_for_usage(tformat.format, tformat.usage_bits)) {
+		// WebGPU has no normalized 16-bit texture format in our pinned API.
+		// Store signed distances as actual float values instead of integer bits.
+		tformat.format = RD::DATA_FORMAT_R16_SFLOAT;
+	}
 
 	rt->sdf_buffer_read = RD::get_singleton()->texture_create(tformat, RD::TextureView());
 

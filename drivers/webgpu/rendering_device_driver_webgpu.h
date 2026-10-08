@@ -67,6 +67,8 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 		uint32_t first_instance_draws = 0;
 		uint32_t ring_overflows = 0;
 		uint32_t compute_dispatches_skipped = 0;
+		uint32_t shadow_copies = 0;
+		uint32_t shadow_pass_restarts = 0;
 		double last_log_time = 0;
 		double last_frame_time = 0;
 		uint32_t frames_since_log = 0;
@@ -87,6 +89,8 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 			first_instance_draws = 0;
 			ring_overflows = 0;
 			compute_dispatches_skipped = 0;
+			shadow_copies = 0;
+			shadow_pass_restarts = 0;
 			// Kept in step, or the next per-frame delta underflows.
 			draw_calls_at_last_frame = 0;
 			set_bind_group_calls_at_last_frame = 0;
@@ -100,13 +104,9 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 	WGPULimits device_limits = WGPU_LIMITS_INIT;
 	bool timestamp_supported = false;
 	bool has_texture_formats_tier1 = false;
+	bool has_texture_formats_tier2 = false;
 	bool has_rw_storage_textures = false; // readonly-and-readwrite-storage-textures
 
-	// Source WGPUTexture → shadow WGPUTexture handles for read_write storage splits.
-	// When a source texture is updated (command_copy_buffer_to_texture), the new
-	// data is also copied to every registered shadow so compute shaders see
-	// the latest contents through the read-only shadow binding.
-	HashMap<WGPUTexture, LocalVector<WGPUTexture>> rw_shadow_copy_map;
 	bool float32_filterable_supported = false;
 	bool float32_blendable_supported = false;
 	bool depth_clip_control_supported = false;
@@ -223,6 +223,8 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 	WGPUSampler _compatible_sampler(WGPUSampler p_sampler, const WGShader *p_shader, uint32_t p_set_index, uint32_t p_binding);
 
 	// --- BGL Rebinding Helper ---
+	WGPUTextureView _get_rw_shadow_view(WGUniformSet *p_us, uint32_t p_write_binding);
+	void _refresh_compute_shadows(WGCommandBuffer *p_cmd);
 	WGPUBindGroup _get_compatible_bind_group(WGUniformSet *p_us, WGShader *p_target_shader, uint32_t p_set_idx);
 
 	// --- Pixel Format Mapping ---
@@ -238,6 +240,7 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 	// storage texel formats). With texture-formats-tier1, these formats are valid
 	// storage formats natively and promotion is skipped.
 	WGPUTextureFormat _promote_storage_format(WGPUTextureFormat p_format) const;
+	void _remap_unsupported_wgsl_storage_formats(char *&r_wgsl) const;
 	WGPUBufferUsage _buffer_usage_to_wgpu(BitField<BufferUsageBits> p_usage) const;
 	WGPUTextureUsage _texture_usage_to_wgpu(BitField<TextureUsageBits> p_usage) const;
 	WGPUTextureDimension _texture_type_to_dimension(TextureType p_type) const;

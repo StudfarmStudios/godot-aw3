@@ -1,0 +1,21 @@
+{
+  "mode": "native",
+  "passed": true,
+  "checks": 25,
+  "returncode": 0,
+  "failed_checks": 0,
+  "timed_out": false,
+  "seconds": 2.6909968750551343,
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "engine_sha256": "edb67dfe2c9414a6832cc5e52ff6f41fc7d8aad7cb9953e70eec0aa8a1ba40c4",
+  "command": [
+    "/private/tmp/aw3-webgpu-fork-ports/bin/godot.macos.editor.arm64",
+    "--path",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/driver_integration",
+    "--rendering-method",
+    "forward_plus",
+    "--rendering-driver",
+    "webgpu"
+  ],
+  "errors": []
+}
