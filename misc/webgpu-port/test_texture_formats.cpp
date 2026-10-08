@@ -1,3 +1,33 @@
+/**************************************************************************/
+/*  test_texture_formats.cpp                                              */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
+
 // Copyright (c) 2014-present Godot Engine contributors.
 // SPDX-License-Identifier: MIT
 
@@ -98,7 +128,7 @@ static void test_narrow_formats_and_pitches() {
 	// Unaligned data and different row pitches catch the old byte-count-as-
 	// component-count bug for R16/RG16, as well as signed-value conversion bugs.
 	for (const auto encoding : { Encoding::UNORM8, Encoding::SNORM8, Encoding::UINT8, Encoding::SINT8,
-			 Encoding::UINT16, Encoding::SINT16, Encoding::FLOAT16 }) {
+				 Encoding::UINT16, Encoding::SINT16, Encoding::FLOAT16 }) {
 		for (uint32_t channels : { 1u, 2u }) {
 			const bool floating = encoding == Encoding::UNORM8 || encoding == Encoding::SNORM8 || encoding == Encoding::FLOAT16;
 			const bool signed_integer = encoding == Encoding::SINT8 || encoding == Encoding::SINT16;
@@ -145,11 +175,11 @@ static void test_narrow_formats_and_pitches() {
 static void test_shader_format_contract() {
 	using WebGPUStorageFormats::remap_wgsl;
 	const std::string source = "var r8uint_name: texture_storage_2d<r8uint, write>;\n"
-			"var hdr: texture_storage_3d<rg11b10ufloat, write>;\n"
-			"var normal: texture_storage_2d_array<rgb10a2unorm, write>;\n"
-			"var index: texture_storage_1d<rgb10a2uint, write>;\n"
-			"var half: texture_storage_2d<rg16float, write>;\n"
-			"const rgb10a2unorm_user_identifier = 1;\n";
+							   "var hdr: texture_storage_3d<rg11b10ufloat, write>;\n"
+							   "var normal: texture_storage_2d_array<rgb10a2unorm, write>;\n"
+							   "var index: texture_storage_1d<rgb10a2uint, write>;\n"
+							   "var half: texture_storage_2d<rg16float, write>;\n"
+							   "const rgb10a2unorm_user_identifier = 1;\n";
 	for (bool tier1 : { false, true }) {
 		for (bool tier2 : { false, true }) {
 			const std::string result = remap_wgsl(source, tier1, tier2);

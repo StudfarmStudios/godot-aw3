@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "name": "webgpu-conservative-v1",
+  "container_version": 1,
+  "spirv_storage": "lossless-smolv-or-raw",
+  "source_driver": "webgpu",
+  "supports_fragment_shader_with_only_side_effects": true,
+  "push_constant_group": 3,
+  "push_constant_binding": 120,
+  "tint_allowed_features": "Everything",
+  "tint_non_uniform_derivatives": true,
+  "wgsl_analysis_version": 1,
+  "source_capability_defines": "included-in-spirv-and-shaderrd-cache-key",
+  "shader_feature_flags": {
+    "half_float": false,
+    "image_atomic_32_bit": false,
+    "multiview": false,
+    "attachment_vrs": false,
+    "buffer_device_address": false,
+    "vulkan_memory_model": false,
+    "framebuffer_depth_resolve": false,
+    "point_size": false,
+    "subgroups": false
+  },
+  "adapter_texture_features": "requested when available; source-dependent choices remain in SPIR-V and ShaderRD keys"
+}

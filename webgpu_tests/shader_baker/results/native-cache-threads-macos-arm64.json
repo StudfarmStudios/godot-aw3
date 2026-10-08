@@ -1,0 +1,25 @@
+{
+  "passed": true,
+  "engine_sha256": "413b6443bc377c8bf83f06c2344b36f1c4525d3b6b16bf387c70f7ea1e54562d",
+  "command": [
+    "/private/tmp/aw3-webgpu-ssr-sampler",
+    "--path",
+    "/private/tmp/aw3-cache-threads-ssr-sampler/project",
+    "--rendering-driver",
+    "webgpu",
+    "--rendering-method",
+    "forward_plus",
+    "--render-thread",
+    "separate",
+    "--verbose",
+    "--script",
+    "res://cache_threads.gd"
+  ],
+  "returncode": 0,
+  "errors": [],
+  "seconds": 7.266357833985239,
+  "local_rendering_devices": 4,
+  "verified_compute_dispatches": 160,
+  "main_frames": 421,
+  "limitation": "Concurrency stress with GPU value checks; not a ThreadSanitizer proof"
+}

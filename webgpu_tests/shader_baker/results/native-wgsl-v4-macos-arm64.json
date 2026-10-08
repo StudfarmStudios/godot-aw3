@@ -1,0 +1,162 @@
+{
+  "passed": true,
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "command": [
+    "/private/tmp/aw3-webgpu-ssr-sampler",
+    "--path",
+    "/private/tmp/aw3-wgsl-cache-ssr-sampler/project",
+    "--rendering-driver",
+    "webgpu",
+    "--rendering-method",
+    "forward_plus",
+    "--render-thread",
+    "separate",
+    "--verbose"
+  ],
+  "runs": [
+    {
+      "name": "01-cold",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 3.9110431669978425,
+      "errors": [],
+      "cache_log": [
+        "[WGSLCACHE] translator/profile d375989c9e230ac4456d94d3da5b10bb7471c941585ac53e69f20695e1cd7aa0",
+        "[WGSLCACHE] flushed 139 new entries (session: cache=0 precompiled=75 tint=64)"
+      ]
+    },
+    {
+      "name": "02-both-valid-bundled-first",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.6726986669236794,
+      "errors": [],
+      "cache_log": [
+        "[WGSLCACHE] translator/profile d375989c9e230ac4456d94d3da5b10bb7471c941585ac53e69f20695e1cd7aa0",
+        "[WGSLCACHE] seeded 139 entries from bundled cache (139 with SPIR-V binding metadata)"
+      ]
+    },
+    {
+      "name": "03-bundled-wins-over-conflicting-disk",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.7186364999506623,
+      "errors": [],
+      "cache_log": [
+        "[WGSLCACHE] translator/profile d375989c9e230ac4456d94d3da5b10bb7471c941585ac53e69f20695e1cd7aa0",
+        "[WGSLCACHE] seeded 139 entries from bundled cache (139 with SPIR-V binding metadata)"
+      ]
+    },
+    {
+      "name": "04-legacy-v2-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.7043217499740422,
+      "errors": [],
+      "cache_log": [
+        "[WGSLCACHE] translator/profile d375989c9e230ac4456d94d3da5b10bb7471c941585ac53e69f20695e1cd7aa0",
+        "[WGSLCACHE] ignored incompatible bundled cache res://.godot/shader_cache/wgsl_seed.bin; regenerate with the matching translator/profile",
+        "[WGSLCACHE] loaded 139 entries (139 with SPIR-V binding metadata)"
+      ]
+    },
+    {
+      "name": "04-legacy-v3-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.7601566659286618,
+      "errors": [],
+      "cache_log": [
+        "[WGSLCACHE] translator/profile d375989c9e230ac4456d94d3da5b10bb7471c941585ac53e69f20695e1cd7aa0",
+        "[WGSLCACHE] ignored incompatible bundled cache res://.godot/shader_cache/wgsl_seed.bin; regenerate with the matching translator/profile",
+        "[WGSLCACHE] loaded 139 entries (139 with SPIR-V binding metadata)"
+      ]
+    },
+    {
+      "name": "05-stale-profile-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.8495319170178846,
+      "errors": [],
+      "cache_log": [
+        "[WGSLCACHE] translator/profile d375989c9e230ac4456d94d3da5b10bb7471c941585ac53e69f20695e1cd7aa0",
+        "[WGSLCACHE] ignored incompatible bundled cache res://.godot/shader_cache/wgsl_seed.bin; regenerate with the matching translator/profile",
+        "[WGSLCACHE] loaded 139 entries (139 with SPIR-V binding metadata)"
+      ]
+    },
+    {
+      "name": "06-short-identity-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.7452061659423634,
+      "errors": [],
+      "cache_log": [
+        "[WGSLCACHE] translator/profile d375989c9e230ac4456d94d3da5b10bb7471c941585ac53e69f20695e1cd7aa0",
+        "[WGSLCACHE] ignored incompatible bundled cache res://.godot/shader_cache/wgsl_seed.bin; regenerate with the matching translator/profile",
+        "[WGSLCACHE] loaded 139 entries (139 with SPIR-V binding metadata)"
+      ]
+    },
+    {
+      "name": "07-late-record-truncation-is-atomic",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.6620681670028716,
+      "errors": [],
+      "cache_log": [
+        "[WGSLCACHE] translator/profile d375989c9e230ac4456d94d3da5b10bb7471c941585ac53e69f20695e1cd7aa0",
+        "[WGSLCACHE] ignored corrupt bundled cache res://.godot/shader_cache/wgsl_seed.bin; regenerate with the matching translator/profile",
+        "[WGSLCACHE] loaded 139 entries (139 with SPIR-V binding metadata)"
+      ]
+    },
+    {
+      "name": "08-late-checksum-failure-is-atomic",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.661644082982093,
+      "errors": [],
+      "cache_log": [
+        "[WGSLCACHE] translator/profile d375989c9e230ac4456d94d3da5b10bb7471c941585ac53e69f20695e1cd7aa0",
+        "[WGSLCACHE] ignored corrupt bundled cache res://.godot/shader_cache/wgsl_seed.bin; regenerate with the matching translator/profile",
+        "[WGSLCACHE] loaded 139 entries (139 with SPIR-V binding metadata)"
+      ]
+    },
+    {
+      "name": "09-legacy-disk-is-regenerated",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 2.78753199998755,
+      "errors": [],
+      "cache_log": [
+        "[WGSLCACHE] translator/profile d375989c9e230ac4456d94d3da5b10bb7471c941585ac53e69f20695e1cd7aa0",
+        "[WGSLCACHE] incompatible translator/profile cache discarded",
+        "[WGSLCACHE] flushed 139 new entries (session: cache=0 precompiled=75 tint=64)"
+      ]
+    },
+    {
+      "name": "10-stale-disk-is-regenerated",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 2.8112618330633268,
+      "errors": [],
+      "cache_log": [
+        "[WGSLCACHE] translator/profile d375989c9e230ac4456d94d3da5b10bb7471c941585ac53e69f20695e1cd7aa0",
+        "[WGSLCACHE] incompatible translator/profile cache discarded",
+        "[WGSLCACHE] flushed 139 new entries (session: cache=0 precompiled=75 tint=64)"
+      ]
+    }
+  ],
+  "engine_sha256": "413b6443bc377c8bf83f06c2344b36f1c4525d3b6b16bf387c70f7ea1e54562d",
+  "user_data": "/Users/jaakkolukkari/Library/Application Support/Godot/app_userdata/WebGPU-wgsl-test-d3a1d6b720974c038d277b534a84e84b",
+  "fingerprint": "d375989c9e230ac4456d94d3da5b10bb7471c941585ac53e69f20695e1cd7aa0",
+  "entry_count": 139
+}

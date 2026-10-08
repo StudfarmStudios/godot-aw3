@@ -27,6 +27,8 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
+/* global WorkerGlobalScope */
+/* eslint no-console: ["error", { allow: ["error"] }] -- Report WebGPU startup and device failures even when engine startup fails. */
 const GodotWebGPUWorker = {
 	$GodotWebGPUWorker__deps: ['$GodotRuntime'],
 	$GodotWebGPUWorker: {
@@ -66,6 +68,7 @@ const GodotWebGPUWorker = {
 				'maxUniformBufferBindingSize',
 				'maxUniformBuffersPerShaderStage',
 				'maxSampledTexturesPerShaderStage',
+				'maxTextureDimension3D',
 				'maxSamplersPerShaderStage',
 				'maxStorageTexturesPerShaderStage',
 				'maxColorAttachments',
@@ -105,6 +108,7 @@ const GodotWebGPUWorker = {
 	godot_js_webgpu_worker_preinitialize: function (p_callback) {
 		const callback = GodotRuntime.get_func(p_callback);
 		let finished = false;
+		let timeout = null;
 		const finish = function (error) {
 			if (finished) {
 				return false;
@@ -114,7 +118,7 @@ const GodotWebGPUWorker = {
 			callback(error);
 			return true;
 		};
-		const timeout = setTimeout(function () {
+		timeout = setTimeout(function () {
 			console.error('[Godot] Timed out creating WebGPU device in the application Worker.');
 			finish(1);
 		}, 15000);

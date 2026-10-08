@@ -33,19 +33,18 @@
 #include "spirv-tools/libspirv.h"
 #include "spirv-tools/optimizer.hpp"
 
-#include <string>
-#include <unordered_map>
-#include <vector>
-
 #include "core/templates/hash_map.h"
 #include "core/templates/hash_set.h"
 #include "core/templates/vector.h"
 
 #include <cfloat>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <cmath>
 #include <cstring>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace spirv_preprocess {
 
@@ -100,21 +99,7 @@ static constexpr uint16_t OP_ATOMIC_STORE = 228;
 static constexpr uint16_t OP_IN_BOUNDS_PTR_ACCESS_CHAIN = 216;
 static constexpr uint16_t OP_DECORATION_GROUP = 73;
 
-// OpAtomicLoad .. OpAtomicXor, all of which carry <result-type> <result-id>
-// <pointer>. OpAtomicStore sits inside the range but has no result and is handled
-// with the other pointer-first instructions.
-static constexpr uint16_t OP_ATOMIC_LOAD = 227;
-static constexpr uint16_t OP_ATOMIC_XOR = 242;
-static constexpr uint16_t OP_ATOMIC_FLAG_TEST_AND_SET = 247;
 static constexpr uint16_t OP_ATOMIC_FLAG_CLEAR = 248;
-
-// WGSL has no read-only atomic: `var<storage, read>` cannot hold an `atomic<T>`.
-// So a buffer the shader only ever atomically *reads* still has to be declared
-// read_write, which makes every atomic instruction a write for our purposes.
-static bool _is_atomic_with_result(uint16_t p_op) {
-	return (p_op >= OP_ATOMIC_LOAD && p_op <= OP_ATOMIC_XOR && p_op != OP_ATOMIC_STORE) ||
-			p_op == OP_ATOMIC_FLAG_TEST_AND_SET;
-}
 
 // SPIR-V storage class values.
 static constexpr uint32_t SC_UNIFORM_CONSTANT = 0;
@@ -131,7 +116,6 @@ static constexpr uint32_t DECO_DESCRIPTOR_SET = 34;
 
 // SPIR-V BuiltIn values.
 static constexpr uint32_t BUILTIN_POSITION = 0;
-static constexpr uint32_t BUILTIN_POINT_SIZE = 1;
 static constexpr uint32_t BUILTIN_HELPER_INVOCATION = 23;
 
 static constexpr uint16_t OP_CAPABILITY = 17;
@@ -189,50 +173,80 @@ static uint64_t eval_spec_op(uint32_t p_opcode, const Vector<uint64_t> &p_operan
 
 	switch (p_opcode) {
 		// Integer arithmetic.
-		case 126: return (uint64_t)(-(int32_t)a()); // SNegate
-		case 128: return a() + b(); // IAdd (wrapping)
-		case 130: return a() - b(); // ISub (wrapping)
-		case 132: return a() * b(); // IMul (wrapping)
-		case 134: return b() != 0 ? a() / b() : 0; // UDiv
+		case 126:
+			return (uint64_t)(-(int32_t)a()); // SNegate
+		case 128:
+			return a() + b(); // IAdd (wrapping)
+		case 130:
+			return a() - b(); // ISub (wrapping)
+		case 132:
+			return a() * b(); // IMul (wrapping)
+		case 134:
+			return b() != 0 ? a() / b() : 0; // UDiv
 		case 135: { // SDiv
 			int32_t d = (int32_t)b();
 			return d != 0 ? (uint64_t)((int32_t)a() / d) : 0;
 		}
-		case 137: return b() != 0 ? a() % b() : 0; // UMod
+		case 137:
+			return b() != 0 ? a() % b() : 0; // UMod
 
 		// Logical.
-		case 164: return (uint64_t)(a() == b()); // LogicalEqual
-		case 165: return (uint64_t)(a() != b()); // LogicalNotEqual
-		case 166: return (uint64_t)((a() != 0) || (b() != 0)); // LogicalOr
-		case 167: return (uint64_t)((a() != 0) && (b() != 0)); // LogicalAnd
-		case 168: return (uint64_t)(a() == 0); // LogicalNot
+		case 164:
+			return (uint64_t)(a() == b()); // LogicalEqual
+		case 165:
+			return (uint64_t)(a() != b()); // LogicalNotEqual
+		case 166:
+			return (uint64_t)((a() != 0) || (b() != 0)); // LogicalOr
+		case 167:
+			return (uint64_t)((a() != 0) && (b() != 0)); // LogicalAnd
+		case 168:
+			return (uint64_t)(a() == 0); // LogicalNot
 
 		// Select: condition, true_val, false_val.
-		case 169: return a() != 0 ? b() : c(); // Select
+		case 169:
+			return a() != 0 ? b() : c(); // Select
 
 		// Integer comparison.
-		case 170: return (uint64_t)(a() == b()); // IEqual
-		case 171: return (uint64_t)(a() != b()); // INotEqual
-		case 172: return (uint64_t)((uint32_t)a() > (uint32_t)b()); // UGreaterThan
-		case 173: return (uint64_t)((int32_t)a() > (int32_t)b()); // SGreaterThan
-		case 174: return (uint64_t)((uint32_t)a() >= (uint32_t)b()); // UGreaterThanEqual
-		case 175: return (uint64_t)((int32_t)a() >= (int32_t)b()); // SGreaterThanEqual
-		case 176: return (uint64_t)((uint32_t)a() < (uint32_t)b()); // ULessThan
-		case 177: return (uint64_t)((int32_t)a() < (int32_t)b()); // SLessThan
-		case 178: return (uint64_t)((uint32_t)a() <= (uint32_t)b()); // ULessThanEqual
-		case 179: return (uint64_t)((int32_t)a() <= (int32_t)b()); // SLessThanEqual
+		case 170:
+			return (uint64_t)(a() == b()); // IEqual
+		case 171:
+			return (uint64_t)(a() != b()); // INotEqual
+		case 172:
+			return (uint64_t)((uint32_t)a() > (uint32_t)b()); // UGreaterThan
+		case 173:
+			return (uint64_t)((int32_t)a() > (int32_t)b()); // SGreaterThan
+		case 174:
+			return (uint64_t)((uint32_t)a() >= (uint32_t)b()); // UGreaterThanEqual
+		case 175:
+			return (uint64_t)((int32_t)a() >= (int32_t)b()); // SGreaterThanEqual
+		case 176:
+			return (uint64_t)((uint32_t)a() < (uint32_t)b()); // ULessThan
+		case 177:
+			return (uint64_t)((int32_t)a() < (int32_t)b()); // SLessThan
+		case 178:
+			return (uint64_t)((uint32_t)a() <= (uint32_t)b()); // ULessThanEqual
+		case 179:
+			return (uint64_t)((int32_t)a() <= (int32_t)b()); // SLessThanEqual
 
 		// Bitwise.
-		case 194: return (uint64_t)((uint32_t)a() >> ((uint32_t)b() & 31)); // ShiftRightLogical
-		case 195: return (uint64_t)((int32_t)a() >> ((uint32_t)b() & 31)); // ShiftRightArithmetic
-		case 196: return (uint64_t)((uint32_t)a() << ((uint32_t)b() & 31)); // ShiftLeftLogical
-		case 197: return a() | b(); // BitwiseOr
-		case 198: return a() ^ b(); // BitwiseXor
-		case 199: return a() & b(); // BitwiseAnd
-		case 200: return (uint64_t)(~(uint32_t)a()); // Not
+		case 194:
+			return (uint64_t)((uint32_t)a() >> ((uint32_t)b() & 31)); // ShiftRightLogical
+		case 195:
+			return (uint64_t)((int32_t)a() >> ((uint32_t)b() & 31)); // ShiftRightArithmetic
+		case 196:
+			return (uint64_t)((uint32_t)a() << ((uint32_t)b() & 31)); // ShiftLeftLogical
+		case 197:
+			return a() | b(); // BitwiseOr
+		case 198:
+			return a() ^ b(); // BitwiseXor
+		case 199:
+			return a() & b(); // BitwiseAnd
+		case 200:
+			return (uint64_t)(~(uint32_t)a()); // Not
 
 		// Composite.
-		case 81: return a(); // CompositeExtract (return first operand)
+		case 81:
+			return a(); // CompositeExtract (return first operand)
 
 		// Conversion (values unchanged for const-eval of integers).
 		case 109:
@@ -240,10 +254,12 @@ static uint64_t eval_spec_op(uint32_t p_opcode, const Vector<uint64_t> &p_operan
 		case 111:
 		case 112:
 		case 113:
-		case 114: return a(); // ConvertF/S/U, UConvert, SConvert
+		case 114:
+			return a(); // ConvertF/S/U, UConvert, SConvert
 
 		// Default: return 0 for unhandled operations.
-		default: return 0;
+		default:
+			return 0;
 	}
 }
 
@@ -2517,6 +2533,7 @@ void binding_image_info(const Vector<uint8_t> &p_bytes, HashMap<uint32_t, ImageB
 	const uint32_t nwords = (uint32_t)(len / 4);
 
 	HashMap<uint32_t, ImageBindingInfo> image_types; // OpTypeImage id -> info
+	HashMap<uint32_t, uint32_t> scalar_types;
 	HashMap<uint32_t, uint32_t> sampled_image_to_image;
 	HashMap<uint32_t, uint32_t> array_to_element;
 	HashMap<uint32_t, uint32_t> pointer_to_pointee;
@@ -2533,6 +2550,16 @@ void binding_image_info(const Vector<uint8_t> &p_bytes, HashMap<uint32_t, ImageB
 			break;
 		}
 		switch (op) {
+			case OP_TYPE_INT: {
+				if (wc >= 4) {
+					scalar_types.insert(read_word(data, len, pos + 1), read_word(data, len, pos + 3) ? 1u : 2u);
+				}
+			} break;
+			case OP_TYPE_FLOAT: {
+				if (wc >= 3) {
+					scalar_types.insert(read_word(data, len, pos + 1), 0u);
+				}
+			} break;
 			case OP_TYPE_IMAGE: {
 				if (wc >= 9) {
 					ImageBindingInfo info;
@@ -2541,6 +2568,9 @@ void binding_image_info(const Vector<uint8_t> &p_bytes, HashMap<uint32_t, ImageB
 					info.arrayed = read_word(data, len, pos + 5);
 					info.multisampled = read_word(data, len, pos + 6);
 					info.format = read_word(data, len, pos + 8);
+					if (const uint32_t *scalar = scalar_types.getptr(read_word(data, len, pos + 2))) {
+						info.sampled_type = *scalar;
+					}
 					image_types.insert(read_word(data, len, pos + 1), info);
 				}
 			} break;
@@ -2733,7 +2763,9 @@ Vector<uint8_t> run_all(const Vector<uint8_t> &p_bytes, Vector<DepthImageFixResu
 
 	// Opaque inlining goes first: every pass below rewrites variables, and none
 	// of them follow a texture or sampler across a function boundary.
-	if (want()) { spv = inline_opaque_functions(spv); }
+	if (want()) {
+		spv = inline_opaque_functions(spv);
+	}
 	// Freezing specialization constants costs a full re-translation per pipeline
 	// specialization (~200 ms for the scene shader) because it strips the SpecId
 	// decorations Tint turns into WGSL overrides. Only do it when the module
@@ -2741,11 +2773,21 @@ Vector<uint8_t> run_all(const Vector<uint8_t> &p_bytes, Vector<DepthImageFixResu
 	if (want() && getenv("AW3_SKIP_FREEZE") == nullptr && _spec_constants_used_in_types(spv)) {
 		spv = freeze_spec_constant_ops(spv);
 	}
-	if (want()) { spv = rewrite_copy_logical(spv); }
-	if (want()) { spv = rewrite_terminate_invocation(spv); }
-	if (want()) { spv = convert_push_constants_to_uniforms(spv); }
-	if (want()) { spv = preserve_depth_sources(spv); }
-	if (want()) { spv = split_combined_samplers(spv); }
+	if (want()) {
+		spv = rewrite_copy_logical(spv);
+	}
+	if (want()) {
+		spv = rewrite_terminate_invocation(spv);
+	}
+	if (want()) {
+		spv = convert_push_constants_to_uniforms(spv);
+	}
+	if (want()) {
+		spv = preserve_depth_sources(spv);
+	}
+	if (want()) {
+		spv = split_combined_samplers(spv);
+	}
 
 	if (want()) {
 		DepthImageFixResult depth_result = fix_depth2_images(spv);
@@ -2755,13 +2797,27 @@ Vector<uint8_t> run_all(const Vector<uint8_t> &p_bytes, Vector<DepthImageFixResu
 		}
 	}
 
-	if (want()) { spv = negate_position_y(spv); }
-	if (want()) { spv = strip_restrict_decoration(spv); }
-	if (want()) { spv = strip_memory_barrier(spv); }
-	if (want()) { spv = fix_nonfinite_literals(spv); }
-	if (want()) { spv = flatten_binding_arrays(spv); }
-	if (want()) { spv = infer_readonly_storage(spv); }
-	if (want()) { spv = strip_nonreadable_storage_buffers(spv); }
+	if (want()) {
+		spv = negate_position_y(spv);
+	}
+	if (want()) {
+		spv = strip_restrict_decoration(spv);
+	}
+	if (want()) {
+		spv = strip_memory_barrier(spv);
+	}
+	if (want()) {
+		spv = fix_nonfinite_literals(spv);
+	}
+	if (want()) {
+		spv = flatten_binding_arrays(spv);
+	}
+	if (want()) {
+		spv = infer_readonly_storage(spv);
+	}
+	if (want()) {
+		spv = strip_nonreadable_storage_buffers(spv);
+	}
 
 	// Last: freezing specialization constants above turns ubershader branches into
 	// statically dead code, but the samplers and textures they mention stay
@@ -2769,8 +2825,12 @@ Vector<uint8_t> run_all(const Vector<uint8_t> &p_bytes, Vector<DepthImageFixResu
 	// samplers on Metal, which Godot's Forward Mobile vertex stage otherwise
 	// exceeds). Deleting the dead code drops those references.
 	// Before the dead code sweep, so the samplers this frees up get removed by it.
-	if (want()) { spv = alias_anisotropic_samplers(spv, r_unused_binding_keys); }
-	if (want()) { spv = eliminate_dead_code(spv); }
+	if (want()) {
+		spv = alias_anisotropic_samplers(spv, r_unused_binding_keys);
+	}
+	if (want()) {
+		spv = eliminate_dead_code(spv);
+	}
 
 	return spv;
 }

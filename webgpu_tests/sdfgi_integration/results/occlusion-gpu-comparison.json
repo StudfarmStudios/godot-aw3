@@ -1,0 +1,75 @@
+{
+  "description": "Actual GPU readback comparison; measured fidelity difference, not a bit-identity claim.",
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "buffer_engine_sha256": "9bff02c4a795126c140e2d280c9f9ca926c5b540178b6c6b1d32564dc1e1f2fb",
+  "texture_engine_sha256": "9bff02c4a795126c140e2d280c9f9ca926c5b540178b6c6b1d32564dc1e1f2fb",
+  "shader_sha256": "520c29e93e813c984d27531abe81cdf00396ba988711ea58e771ca98d0f5375c",
+  "cases": [
+    {
+      "case": "empty",
+      "values": 32768,
+      "different_values": 0,
+      "max_error_unorm8": 0,
+      "mean_error_unorm8": 0.0,
+      "buffer_greater_values": 0,
+      "buffer_less_values": 0,
+      "original_unorm4_threshold_crossings": 0,
+      "max_error_original_unorm4": 0
+    },
+    {
+      "case": "solid",
+      "values": 32768,
+      "different_values": 0,
+      "max_error_unorm8": 0,
+      "mean_error_unorm8": 0.0,
+      "buffer_greater_values": 0,
+      "buffer_less_values": 0,
+      "original_unorm4_threshold_crossings": 0,
+      "max_error_original_unorm4": 0
+    },
+    {
+      "case": "walls",
+      "values": 32768,
+      "different_values": 419,
+      "max_error_unorm8": 1,
+      "mean_error_unorm8": 0.012786865234375,
+      "buffer_greater_values": 419,
+      "buffer_less_values": 0,
+      "original_unorm4_threshold_crossings": 12,
+      "max_error_original_unorm4": 1
+    },
+    {
+      "case": "walls_shifted",
+      "values": 32768,
+      "different_values": 419,
+      "max_error_unorm8": 1,
+      "mean_error_unorm8": 0.012786865234375,
+      "buffer_greater_values": 419,
+      "buffer_less_values": 0,
+      "original_unorm4_threshold_crossings": 12,
+      "max_error_original_unorm4": 1
+    },
+    {
+      "case": "sparse",
+      "values": 32768,
+      "different_values": 3231,
+      "max_error_unorm8": 3,
+      "mean_error_unorm8": 0.0997314453125,
+      "buffer_greater_values": 3231,
+      "buffer_less_values": 0,
+      "original_unorm4_threshold_crossings": 163,
+      "max_error_original_unorm4": 1
+    },
+    {
+      "case": "sparse_shifted",
+      "values": 32768,
+      "different_values": 3231,
+      "max_error_unorm8": 3,
+      "mean_error_unorm8": 0.0997314453125,
+      "buffer_greater_values": 3231,
+      "buffer_less_values": 0,
+      "original_unorm4_threshold_crossings": 163,
+      "max_error_original_unorm4": 1
+    }
+  ]
+}

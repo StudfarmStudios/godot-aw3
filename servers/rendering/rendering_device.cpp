@@ -2361,8 +2361,7 @@ Error RenderingDevice::_texture_initialize(RID p_texture, uint32_t p_layer, cons
 			upload.logical_width = logical_width;
 			upload.logical_height = logical_height;
 
-			if (depth != 1 || !_texture_direct_upload_layout(aligned_width, aligned_height, pixel_size, staging_pixel_size,
-					pixel_rshift, block_w, block_h, driver->api_trait_get(RDD::API_TRAIT_TEXTURE_DATA_ROW_PITCH_STEP), upload.layout) ||
+			if (depth != 1 || !_texture_direct_upload_layout(aligned_width, aligned_height, pixel_size, staging_pixel_size, pixel_rshift, block_w, block_h, driver->api_trait_get(RDD::API_TRAIT_TEXTURE_DATA_ROW_PITCH_STEP), upload.layout) ||
 					(uint64_t)upload.layout.source_row_pitch * upload.layout.rows_per_image != upload.source_size) {
 				layouts_valid = false;
 				break;
@@ -4686,7 +4685,7 @@ Vector<uint8_t> RenderingDevice::shader_compile_binary_from_spirv(const Vector<S
 	// Dump SPIR-V to disk when GODOT_DUMP_SPIRV is set (for CI shader validation).
 	static const String dump_dir = OS::get_singleton()->get_environment("GODOT_DUMP_SPIRV");
 	if (!dump_dir.is_empty()) {
-		static const char *stage_suffixes[] = { "vert", "frag", "tesc", "tese", "comp" };
+		static const char *stage_suffixes[] = { "vert", "frag", "tesc", "tese", "comp" }; // codespell:ignore tese
 		Ref<DirAccess> da = DirAccess::open(dump_dir);
 		if (da.is_null()) {
 			DirAccess::make_dir_recursive_absolute(dump_dir);
@@ -4820,6 +4819,59 @@ RID RenderingDevice::shader_create_from_bytecode_with_samplers(const Vector<uint
 	set_resource_name(id, "RID:" + itos(id.get_id()));
 #endif
 	return id;
+}
+
+Vector<RID> RenderingDevice::shader_create_from_bytecode_batch(const Vector<Vector<uint8_t>> &p_shader_binaries, const Vector<RID> &p_placeholders, const Vector<PipelineImmutableSampler> &p_immutable_samplers) {
+	_THREAD_SAFE_METHOD_
+
+	ERR_FAIL_COND_V(p_shader_binaries.size() != p_placeholders.size(), Vector<RID>());
+	HashSet<RID> destinations;
+	for (int i = 0; i < p_placeholders.size(); i++) {
+		if (p_placeholders[i].is_null()) {
+			continue;
+		}
+		Shader *placeholder = shader_owner.get_or_null(p_placeholders[i]);
+		ERR_FAIL_COND_V(placeholder == nullptr || placeholder->driver_id || p_shader_binaries[i].is_empty() || destinations.has(p_placeholders[i]), Vector<RID>());
+		destinations.insert(p_placeholders[i]);
+	}
+
+	// Create into private RIDs first. A later malformed variant or driver
+	// failure must not populate earlier placeholders before cache fallback.
+	Vector<RID> shaders;
+	shaders.resize(p_shader_binaries.size());
+	for (int i = 0; i < p_shader_binaries.size(); i++) {
+		if (p_shader_binaries[i].is_empty()) {
+			continue;
+		}
+		shaders.write[i] = shader_create_from_bytecode_with_samplers(p_shader_binaries[i], RID(), p_immutable_samplers);
+		if (shaders[i].is_null()) {
+			for (RID shader : shaders) {
+				if (shader.is_valid()) {
+					free_rid(shader);
+				}
+			}
+			return Vector<RID>();
+		}
+	}
+
+	// The private RIDs have never been published, so they have no resource
+	// dependencies. Copy the complete Shader (reflection, formats, stage bits
+	// and driver ownership) while preserving the destination RID and its
+	// existing dependency graph. Owner-only removal must not queue the moved
+	// driver shader for destruction. All fallible work precedes this loop.
+	for (int i = 0; i < shaders.size(); i++) {
+		if (p_placeholders[i].is_null()) {
+			continue;
+		}
+		DEV_ASSERT(!dependency_map.has(shaders[i]) && !reverse_dependency_map.has(shaders[i]));
+		*shader_owner.get_or_null(p_placeholders[i]) = *shader_owner.get_or_null(shaders[i]);
+#ifdef DEV_ENABLED
+		resource_names.erase(shaders[i]);
+#endif
+		shader_owner.free(shaders[i]);
+		shaders.write[i] = p_placeholders[i];
+	}
+	return shaders;
 }
 
 void RenderingDevice::shader_destroy_modules(RID p_shader) {

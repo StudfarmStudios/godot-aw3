@@ -34,6 +34,9 @@ if [[ "$CLEAN" == true ]]; then
 fi
 
 mkdir -p "$BUILD_DIR/spirv_tools" "$BUILD_DIR/tint" "$BUILD_DIR/cli"
+python3 drivers/webgpu/cache_identity.py \
+    --header drivers/webgpu/generated/wgsl_cache_identity.gen.h \
+    --build-stamps "$BUILD_DIR" >/dev/null
 
 # Common flags.
 WARNINGS="-w"  # Suppress warnings from thirdparty code.
@@ -119,12 +122,6 @@ esac
 # ─────────────────────────────────────────────────────────────────────────────
 # Compile function: skip if .o is newer than source.
 # ─────────────────────────────────────────────────────────────────────────────
-# Newest header in drivers/webgpu: objects older than this are stale even when
-# their .cpp has not changed, which otherwise shows up as a link error about a
-# signature that no longer exists.
-# `|| true`: this script runs under `set -o pipefail`, and head exiting early
-# makes ls fail with SIGPIPE.
-NEWEST_HEADER=$( { ls -t "$SHIM_DIR"/../*.h "$SHIM_DIR"/*.h 2>/dev/null || true; } | head -1 || true)
 
 compile_one() {
     local src="$1"
@@ -133,14 +130,46 @@ compile_one() {
     shift 3
     local flags=("$@")
 
-    if [[ -f "$obj" && "$obj" -nt "$src" ]]; then
-        if [[ -z "$NEWEST_HEADER" || "$obj" -nt "$NEWEST_HEADER" ]]; then
-            return 0
-        fi
+    local component="${obj#"$BUILD_DIR/"}"
+    component="${component%%/*}"
+    if [[ -f "$obj" && "$obj" -nt "$src" && "$obj" -nt "$BUILD_DIR/$component.inputs" ]]; then
+        return 0
     fi
 
     mkdir -p "$(dirname "$obj")"
-    $CXX -c "$src" -o "$obj" -std="$std" $COMMON_FLAGS "${flags[@]}"
+    local temporary="${obj}.tmp.${BASHPID:-$$}"
+    if $CXX -c "$src" -o "$temporary" -std="$std" $COMMON_FLAGS ${flags[@]+"${flags[@]}"}; then
+        mv -f "$temporary" "$obj"
+    else
+        rm -f "$temporary"
+        return 1
+    fi
+}
+
+# Bash 3.2 on macOS has no wait -n. Keep a bounded PID queue and propagate
+# every failure; plain wait can hide an earlier background compile failure.
+COMPILE_PIDS=()
+wait_compiles() {
+    if (( ${#COMPILE_PIDS[@]} == 0 )); then
+        return 0
+    fi
+    local failed=0
+    local pid
+    for pid in "${COMPILE_PIDS[@]}"; do
+        if ! wait "$pid"; then
+            failed=1
+        fi
+    done
+    COMPILE_PIDS=()
+    return "$failed"
+}
+
+start_compile() {
+    compile_one "$@" &
+    COMPILE_PIDS+=("$!")
+    if (( ${#COMPILE_PIDS[@]} >= JOBS )); then
+        wait_compiles
+    fi
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -156,13 +185,9 @@ while IFS= read -r src; do
     obj="$BUILD_DIR/spirv_tools/$objname"
     SPIRV_TOOLS_OBJS+=("$obj")
     # Run in parallel via background jobs.
-    compile_one "$src" "$obj" "c++17" "${SPIRV_TOOLS_INCLUDES[@]}" &
-    # Limit parallelism.
-    if (( $(jobs -r | wc -l) >= JOBS )); then
-        wait -n 2>/dev/null || true
-    fi
+    start_compile "$src" "$obj" "c++17" "${SPIRV_TOOLS_INCLUDES[@]}"
 done < <(find "$SPIRV_TOOLS_DIR/source" -name '*.cpp' -not -name '*test*' -not -name '*_test.cpp' -not -path '*/test/*' | sort)
-wait
+wait_compiles
 
 echo "  ${#SPIRV_TOOLS_OBJS[@]} objects"
 
@@ -180,10 +205,7 @@ while IFS= read -r src; do
     objname="${objname%.cc}.o"
     obj="$BUILD_DIR/tint/$objname"
     TINT_OBJS+=("$obj")
-    compile_one "$src" "$obj" "c++20" "${TINT_INCLUDES[@]}" "${TINT_DEFINES[@]}" &
-    if (( $(jobs -r | wc -l) >= JOBS )); then
-        wait -n 2>/dev/null || true
-    fi
+    start_compile "$src" "$obj" "c++20" "${TINT_INCLUDES[@]}" "${TINT_DEFINES[@]}"
 done < <(find "$TINT_DIR/src/tint" -name '*.cc' \
     -not -name '*_test.cc' \
     -not -name '*_bench*.cc' \
@@ -223,7 +245,7 @@ for src in "${TINT_PLATFORM_SOURCES[@]}"; do
         objname="${src%.cc}.o"
         obj="$BUILD_DIR/tint/$objname"
         TINT_OBJS+=("$obj")
-        compile_one "$full_src" "$obj" "c++20" "${TINT_INCLUDES[@]}" "${TINT_DEFINES[@]}" &
+        start_compile "$full_src" "$obj" "c++20" "${TINT_INCLUDES[@]}" "${TINT_DEFINES[@]}"
     fi
 done
 
@@ -234,11 +256,11 @@ for src in "src/tint/utils/command/args.cc" "src/tint/utils/command/cli.cc"; do
         objname="${src%.cc}.o"
         obj="$BUILD_DIR/tint/$objname"
         TINT_OBJS+=("$obj")
-        compile_one "$full_src" "$obj" "c++20" "${TINT_INCLUDES[@]}" "${TINT_DEFINES[@]}" &
+        start_compile "$full_src" "$obj" "c++20" "${TINT_INCLUDES[@]}" "${TINT_DEFINES[@]}"
     fi
 done
 
-wait
+wait_compiles
 echo "  ${#TINT_OBJS[@]} objects"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -248,38 +270,40 @@ echo "[3/4] Compiling CLI sources..."
 
 # spirv_preprocess.cpp — compiled with shim include path (before repo root so
 # the shim core/templates/ is found instead of Godot's).
-compile_one "drivers/webgpu/spirv_preprocess.cpp" \
+start_compile "drivers/webgpu/spirv_preprocess.cpp" \
     "$BUILD_DIR/cli/spirv_preprocess.o" \
     "c++17" \
     -I"$SHIM_DIR" \
-    "${SPIRV_TOOLS_INCLUDES[@]}" &
+    "${SPIRV_TOOLS_INCLUDES[@]}"
 
 # tint_wrapper.cpp — compiled with Tint C++20 environment.
-compile_one "drivers/webgpu/tint_wrapper.cpp" \
+start_compile "drivers/webgpu/tint_wrapper.cpp" \
     "$BUILD_DIR/cli/tint_wrapper.o" \
     "c++20" \
     "${TINT_INCLUDES[@]}" "${TINT_DEFINES[@]}" \
-    -I"drivers/webgpu/" &
+    -I"drivers/webgpu/"
 
 # main.cpp — compiled with shim + Tint includes.
-compile_one "drivers/webgpu/tint_cli/main.cpp" \
+start_compile "drivers/webgpu/tint_cli/main.cpp" \
     "$BUILD_DIR/cli/main.o" \
     "c++20" \
     -I"$SHIM_DIR" \
+    -I"$REPO_ROOT" \
     -I"drivers/webgpu/" \
-    "${TINT_INCLUDES[@]}" "${TINT_DEFINES[@]}" &
+    "${TINT_INCLUDES[@]}" "${TINT_DEFINES[@]}"
 
-wait
+wait_compiles
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 4. Link
 # ─────────────────────────────────────────────────────────────────────────────
 echo "[4/4] Linking tint_convert_cli..."
 
-# Filter to only .o files that were successfully compiled.
+# Every listed object must have compiled successfully before linking.
 LINK_OBJS=("$BUILD_DIR/cli/main.o" "$BUILD_DIR/cli/spirv_preprocess.o" "$BUILD_DIR/cli/tint_wrapper.o")
 for obj in "${SPIRV_TOOLS_OBJS[@]}" "${TINT_OBJS[@]}"; do
-    [[ -f "$obj" ]] && LINK_OBJS+=("$obj")
+    [[ -f "$obj" ]] || { echo "Missing object: $obj" >&2; exit 1; }
+    LINK_OBJS+=("$obj")
 done
 
 echo "  Linking ${#LINK_OBJS[@]} objects..."

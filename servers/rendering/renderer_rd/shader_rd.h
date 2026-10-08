@@ -33,6 +33,7 @@
 #include "core/os/mutex.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/local_vector.h"
+#include "core/templates/rb_set.h"
 #include "core/templates/rid_owner.h"
 #include "servers/rendering/rendering_device.h"
 #include "servers/rendering/rendering_server_types.h"
@@ -183,6 +184,7 @@ private:
 	String _get_cache_file_relative_path(Version *p_version, int p_group, const String &p_api_name);
 	String _get_cache_file_path(Version *p_version, int p_group, const String &p_api_name, bool p_user_dir);
 	bool _load_from_cache(Version *p_version, int p_group);
+	bool _load_from_cache_file(Version *p_version, int p_group, const String &p_path);
 	void _save_to_cache(Version *p_version, int p_group);
 	void _initialize_cache();
 	void _version_set(Version *p_version, const HashMap<String, String> &p_code, const Vector<String> &p_custom_defines);
@@ -194,6 +196,22 @@ protected:
 
 public:
 	RID version_create(bool p_embedded = true);
+	// The returned handles are non-owning; source snapshots ignore versions
+	// removed before capture. ShaderRD itself must outlive the export.
+	LocalVector<RID> get_all_versions() const;
+	struct VersionSourceSnapshot {
+		struct Variant {
+			int index = 0;
+			Vector<String> stage_sources;
+		};
+		struct Group {
+			String cache_path;
+			LocalVector<int> variants;
+			LocalVector<Variant> enabled_variants;
+		};
+		LocalVector<Group> groups;
+	};
+	bool version_get_source_snapshot(RID p_version, const String &p_api_name, const RBSet<String> &p_paths_processed, VersionSourceSnapshot &r_snapshot);
 
 	void version_set_code(RID p_version, const HashMap<String, String> &p_code, const String &p_uniforms, const String &p_vertex_globals, const String &p_fragment_globals, const Vector<String> &p_custom_defines);
 	void version_set_compute_code(RID p_version, const HashMap<String, String> &p_code, const String &p_uniforms, const String &p_compute_globals, const Vector<String> &p_custom_defines);

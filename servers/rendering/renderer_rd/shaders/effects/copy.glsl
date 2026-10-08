@@ -63,6 +63,8 @@ layout(set = 1, binding = 0) uniform sampler2D source_auto_exposure;
 
 #if defined(MODE_LINEARIZE_DEPTH_COPY) || defined(MODE_SIMPLE_COPY_DEPTH)
 layout(r32f, set = 3, binding = 0) uniform restrict writeonly image2D dest_buffer;
+#elif defined(DST_IMAGE_RG16F)
+layout(rg16f, set = 3, binding = 0) uniform restrict writeonly image2D dest_buffer;
 #elif defined(DST_IMAGE_8BIT)
 layout(rgba8, set = 3, binding = 0) uniform restrict writeonly image2D dest_buffer;
 #else

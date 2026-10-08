@@ -1,0 +1,173 @@
+{
+  "passed": true,
+  "engine_sha256": "413b6443bc377c8bf83f06c2344b36f1c4525d3b6b16bf387c70f7ea1e54562d",
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "literal_proofs": [
+    {
+      "case": "fmax",
+      "passed": true,
+      "spirv_sha256": "6c338c97a4f3b1c5aea944875e26a17d8a69e82b97da43af6feecef05532c6eb",
+      "collision_handle_id": 40
+    },
+    {
+      "case": "composite",
+      "passed": true,
+      "spirv_sha256": "37e54a968f4486fee697e423817c49f62c19f82726e8744ec77940360a5dd149",
+      "collision_handle_id": 40
+    },
+    {
+      "case": "switch",
+      "passed": true,
+      "spirv_sha256": "da61fd66fd1e7b28c20ca45d41408e212cff95dcac7dbc16c5c25ae28aff1e7e",
+      "collision_handle_id": 40
+    },
+    {
+      "case": "debug",
+      "passed": true,
+      "spirv_sha256": "f380c0b923d04632e960007f400007d1bc958aa079a758cc57808612eb4e2fe3",
+      "collision_handle_id": 40
+    }
+  ],
+  "runs": [
+    {
+      "mode": "native",
+      "passed": true,
+      "returncode": 0,
+      "errors": [],
+      "command": [
+        "/private/tmp/aw3-webgpu-ssr-sampler",
+        "--path",
+        "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sampled_texture_literals",
+        "--rendering-method",
+        "forward_plus",
+        "--rendering-driver",
+        "webgpu",
+        "--script",
+        "res://main.gd",
+        "--",
+        "--literal-directory=/private/tmp/aw3-sampled-literals-final"
+      ],
+      "checks": [
+        "SAMPLED_LITERALS PASS fmax_pipeline ",
+        "SAMPLED_LITERALS PASS fmax_value [0.25]",
+        "SAMPLED_LITERALS PASS fmax_source_unchanged ",
+        "SAMPLED_LITERALS PASS composite_pipeline ",
+        "SAMPLED_LITERALS PASS composite_value [0.25]",
+        "SAMPLED_LITERALS PASS composite_source_unchanged ",
+        "SAMPLED_LITERALS PASS switch_pipeline ",
+        "SAMPLED_LITERALS PASS switch_value [0.25]",
+        "SAMPLED_LITERALS PASS switch_source_unchanged ",
+        "SAMPLED_LITERALS PASS debug_pipeline ",
+        "SAMPLED_LITERALS PASS debug_value [0.25]",
+        "SAMPLED_LITERALS PASS debug_source_unchanged ",
+        "SAMPLED_LITERALS COMPLETE passed=12 failed=0"
+      ]
+    },
+    {
+      "mode": "fallback",
+      "passed": true,
+      "returncode": 0,
+      "errors": [],
+      "command": [
+        "/private/tmp/aw3-webgpu-ssr-sampler",
+        "--path",
+        "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sampled_texture_literals",
+        "--rendering-method",
+        "forward_plus",
+        "--rendering-driver",
+        "webgpu",
+        "--script",
+        "res://main.gd",
+        "--",
+        "--literal-directory=/private/tmp/aw3-sampled-literals-final",
+        "--webgpu-force-fallbacks"
+      ],
+      "checks": [
+        "SAMPLED_LITERALS PASS fmax_pipeline ",
+        "SAMPLED_LITERALS PASS fmax_value [0.25]",
+        "SAMPLED_LITERALS PASS fmax_source_unchanged ",
+        "SAMPLED_LITERALS PASS composite_pipeline ",
+        "SAMPLED_LITERALS PASS composite_value [0.25]",
+        "SAMPLED_LITERALS PASS composite_source_unchanged ",
+        "SAMPLED_LITERALS PASS switch_pipeline ",
+        "SAMPLED_LITERALS PASS switch_value [0.25]",
+        "SAMPLED_LITERALS PASS switch_source_unchanged ",
+        "SAMPLED_LITERALS PASS debug_pipeline ",
+        "SAMPLED_LITERALS PASS debug_value [0.25]",
+        "SAMPLED_LITERALS PASS debug_source_unchanged ",
+        "SAMPLED_LITERALS COMPLETE passed=12 failed=0"
+      ]
+    },
+    {
+      "mode": "nofilter",
+      "passed": true,
+      "returncode": 0,
+      "errors": [],
+      "command": [
+        "/private/tmp/aw3-webgpu-ssr-sampler",
+        "--path",
+        "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sampled_texture_literals",
+        "--rendering-method",
+        "forward_plus",
+        "--rendering-driver",
+        "webgpu",
+        "--script",
+        "res://main.gd",
+        "--",
+        "--literal-directory=/private/tmp/aw3-sampled-literals-final",
+        "--webgpu-no-float32-filterable"
+      ],
+      "checks": [
+        "SAMPLED_LITERALS PASS fmax_pipeline ",
+        "SAMPLED_LITERALS PASS fmax_value [0.25]",
+        "SAMPLED_LITERALS PASS fmax_source_unchanged ",
+        "SAMPLED_LITERALS PASS composite_pipeline ",
+        "SAMPLED_LITERALS PASS composite_value [0.25]",
+        "SAMPLED_LITERALS PASS composite_source_unchanged ",
+        "SAMPLED_LITERALS PASS switch_pipeline ",
+        "SAMPLED_LITERALS PASS switch_value [0.25]",
+        "SAMPLED_LITERALS PASS switch_source_unchanged ",
+        "SAMPLED_LITERALS PASS debug_pipeline ",
+        "SAMPLED_LITERALS PASS debug_value [0.25]",
+        "SAMPLED_LITERALS PASS debug_source_unchanged ",
+        "SAMPLED_LITERALS COMPLETE passed=12 failed=0"
+      ]
+    },
+    {
+      "mode": "combined",
+      "passed": true,
+      "returncode": 0,
+      "errors": [],
+      "command": [
+        "/private/tmp/aw3-webgpu-ssr-sampler",
+        "--path",
+        "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sampled_texture_literals",
+        "--rendering-method",
+        "forward_plus",
+        "--rendering-driver",
+        "webgpu",
+        "--script",
+        "res://main.gd",
+        "--",
+        "--literal-directory=/private/tmp/aw3-sampled-literals-final",
+        "--webgpu-force-fallbacks",
+        "--webgpu-no-float32-filterable"
+      ],
+      "checks": [
+        "SAMPLED_LITERALS PASS fmax_pipeline ",
+        "SAMPLED_LITERALS PASS fmax_value [0.25]",
+        "SAMPLED_LITERALS PASS fmax_source_unchanged ",
+        "SAMPLED_LITERALS PASS composite_pipeline ",
+        "SAMPLED_LITERALS PASS composite_value [0.25]",
+        "SAMPLED_LITERALS PASS composite_source_unchanged ",
+        "SAMPLED_LITERALS PASS switch_pipeline ",
+        "SAMPLED_LITERALS PASS switch_value [0.25]",
+        "SAMPLED_LITERALS PASS switch_source_unchanged ",
+        "SAMPLED_LITERALS PASS debug_pipeline ",
+        "SAMPLED_LITERALS PASS debug_value [0.25]",
+        "SAMPLED_LITERALS PASS debug_source_unchanged ",
+        "SAMPLED_LITERALS COMPLETE passed=12 failed=0"
+      ]
+    }
+  ]
+}

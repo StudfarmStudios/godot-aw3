@@ -276,6 +276,7 @@ private:
 			PRE_PROCESS_JUMP_FLOOD_UPSCALE,
 			PRE_PROCESS_OCCLUSION,
 			PRE_PROCESS_STORE,
+			PRE_PROCESS_CLEAR_LIGHT,
 			PRE_PROCESS_MAX
 		};
 
@@ -628,6 +629,11 @@ public:
 		RID render_albedo;
 		RID render_emission;
 		RID render_emission_aniso;
+		bool buffer_storage = false;
+		RID render_occlusion_buffer;
+		RID cascade_atlases[4];
+		RID clear_light_uniform_set;
+		RID parent_average_fallback;
 		RID render_occlusion[8];
 		RID render_geom_facing;
 
@@ -833,6 +839,7 @@ public:
 	void init(RendererRD::SkyRD *p_sky);
 	void free();
 
+	String sdfgi_get_unsupported_reason(uint32_t p_cascades) const;
 	Ref<SDFGI> create_sdfgi(RID p_env, const Vector3 &p_world_position, uint32_t p_requested_history_size);
 
 	void setup_voxel_gi_instances(RenderDataRD *p_render_data, Ref<RenderSceneBuffersRD> p_render_buffers, const Transform3D &p_transform, const PagedArray<RID> &p_voxel_gi_instances, uint32_t &r_voxel_gi_instances_used);

@@ -193,6 +193,10 @@
 #include "editor/shader/shader_baker/shader_baker_export_plugin_platform_metal.h"
 #endif
 
+#if defined(WEBGPU_ENABLED) && !defined(WEB_ENABLED)
+#include "editor/shader/shader_baker/shader_baker_export_plugin_platform_webgpu.h"
+#endif
+
 #ifndef PHYSICS_2D_DISABLED
 #include "servers/physics_2d/physics_server_2d.h"
 #endif // PHYSICS_2D_DISABLED
@@ -9516,6 +9520,12 @@ EditorNode::EditorNode() {
 	Ref<ShaderBakerExportPluginPlatformMetal> shader_baker_export_plugin_platform_metal;
 	shader_baker_export_plugin_platform_metal.instantiate();
 	shader_baker_export_plugin->add_platform(shader_baker_export_plugin_platform_metal);
+#endif
+
+#if defined(WEBGPU_ENABLED) && !defined(WEB_ENABLED)
+	Ref<ShaderBakerExportPluginPlatformWebGPU> shader_baker_export_plugin_platform_webgpu;
+	shader_baker_export_plugin_platform_webgpu.instantiate();
+	shader_baker_export_plugin->add_platform(shader_baker_export_plugin_platform_webgpu);
 #endif
 
 	EditorExport::get_singleton()->add_export_plugin(shader_baker_export_plugin);

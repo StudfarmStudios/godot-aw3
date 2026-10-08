@@ -1,0 +1,132 @@
+{
+  "passed": true,
+  "checks": [
+    {
+      "case": "sdf_normalized_MODE_LOAD",
+      "passed": true,
+      "glslang_errors": "",
+      "tint_errors": "",
+      "source_sha256": "4ff1f286cdb5517d593a4e67d04dd53c498718e67ceeedcfab455249bb203914"
+    },
+    {
+      "case": "sdf_normalized_MODE_LOAD_SHRINK",
+      "passed": true,
+      "glslang_errors": "",
+      "tint_errors": "",
+      "source_sha256": "a1cb72273640254ae99b6973c8197216d5c1c4ca08ddcbbbe08f104f857eb1d0"
+    },
+    {
+      "case": "sdf_normalized_MODE_PROCESS",
+      "passed": true,
+      "glslang_errors": "",
+      "tint_errors": "",
+      "source_sha256": "4cf8694a110d4cd99ae4f5f807cff9992655f24479aa6cc3ffa9bc34aee081f1"
+    },
+    {
+      "case": "sdf_normalized_MODE_PROCESS_OPTIMIZED",
+      "passed": true,
+      "glslang_errors": "",
+      "tint_errors": "",
+      "source_sha256": "f151d485537b666e760ada1dd15590768b7574449711466e2e3564b46e392fa8"
+    },
+    {
+      "case": "sdf_normalized_MODE_STORE",
+      "passed": true,
+      "glslang_errors": "",
+      "tint_errors": "",
+      "source_sha256": "66fd1e4826c462bb175e5cdf115547efa365d8ff357b403732554bd8dbd6f4eb"
+    },
+    {
+      "case": "sdf_normalized_MODE_STORE_SHRINK",
+      "passed": true,
+      "glslang_errors": "",
+      "tint_errors": "",
+      "source_sha256": "8d56adca9b33b93ea1cbe93bc484b3b392326f0eb70c2ec4277dda17ba0e2e5e"
+    },
+    {
+      "case": "sdf_SDF_R16F_MODE_LOAD",
+      "passed": true,
+      "glslang_errors": "",
+      "tint_errors": "",
+      "source_sha256": "9bf379fb75ba4bf8f22c5b42c0e0b6a1dc915859d4a86994a4729a08a08928b7"
+    },
+    {
+      "case": "sdf_SDF_R16F_MODE_LOAD_SHRINK",
+      "passed": true,
+      "glslang_errors": "",
+      "tint_errors": "",
+      "source_sha256": "8b8d8e4965f6115061dd021936f32d7a76b5a77a7729145b48eb560831cbf16a"
+    },
+    {
+      "case": "sdf_SDF_R16F_MODE_PROCESS",
+      "passed": true,
+      "glslang_errors": "",
+      "tint_errors": "",
+      "source_sha256": "fa980438a733d0424b4c9196fe78c92da6dbb2fc03b54905e666fceffa018a78"
+    },
+    {
+      "case": "sdf_SDF_R16F_MODE_PROCESS_OPTIMIZED",
+      "passed": true,
+      "glslang_errors": "",
+      "tint_errors": "",
+      "source_sha256": "f2b2073ec7c6ac27de5d68f13db48c25b400e471d434abf745034aca088d933d"
+    },
+    {
+      "case": "sdf_SDF_R16F_MODE_STORE",
+      "passed": true,
+      "glslang_errors": "",
+      "tint_errors": "",
+      "source_sha256": "92ac6cdf8c05c91ecd7224b1b098566e3705bff8eab8a8943b535799896ab624"
+    },
+    {
+      "case": "sdf_SDF_R16F_MODE_STORE_SHRINK",
+      "passed": true,
+      "glslang_errors": "",
+      "tint_errors": "",
+      "source_sha256": "86ca3dd538cb3d0f2379b11ca580f1dc16af980ff78faae9e0790585d7db0ed8"
+    },
+    {
+      "case": "sdf_SDF_RGBA16F_MODE_LOAD",
+      "passed": true,
+      "glslang_errors": "",
+      "tint_errors": "",
+      "source_sha256": "1bae838cbf73ec4e940b44907015fb2b31d2ca43d81ae9f7cf1fa06accbbc56a"
+    },
+    {
+      "case": "sdf_SDF_RGBA16F_MODE_LOAD_SHRINK",
+      "passed": true,
+      "glslang_errors": "",
+      "tint_errors": "",
+      "source_sha256": "14ab99d9e43bdc1da79209b9360c33c57f594ecf049a5755d2ec6193aa6b3154"
+    },
+    {
+      "case": "sdf_SDF_RGBA16F_MODE_PROCESS",
+      "passed": true,
+      "glslang_errors": "",
+      "tint_errors": "",
+      "source_sha256": "31a52b36853e1fc313e55bd10af7b5e8c6e66865cfb2914456bc225caa9c6a51"
+    },
+    {
+      "case": "sdf_SDF_RGBA16F_MODE_PROCESS_OPTIMIZED",
+      "passed": true,
+      "glslang_errors": "",
+      "tint_errors": "",
+      "source_sha256": "3728c99364861d9167150297563a342cdcdbb0e0dae81eb26c94fba8900fb1ea"
+    },
+    {
+      "case": "sdf_SDF_RGBA16F_MODE_STORE",
+      "passed": true,
+      "glslang_errors": "",
+      "tint_errors": "",
+      "source_sha256": "5eb132ac5d17182d3cfbc0e92d3f5f1f9bb38b3c89f103c78499016fe4df6e86"
+    },
+    {
+      "case": "sdf_SDF_RGBA16F_MODE_STORE_SHRINK",
+      "passed": true,
+      "glslang_errors": "",
+      "tint_errors": "",
+      "source_sha256": "b9b5b93adec96d63eb0e7de390f49fadc8f1105bb1395690fee1e7f8a1288421"
+    }
+  ],
+  "tint_cli_sha256": "6fd86eea9eb98aff979901e8abb45a814123d7d9aae91ef4d47c51d585b5c072"
+}

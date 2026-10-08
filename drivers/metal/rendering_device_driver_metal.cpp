@@ -2749,6 +2749,10 @@ uint64_t RenderingDeviceDriverMetal::api_trait_get(ApiTrait p_trait) {
 			return false;
 		case API_TRAIT_TEXTURES_REQUIRE_LAYOUT_TRANSITIONS:
 			return false;
+		case API_TRAIT_SUPPORTED_TEXTURE_SAMPLE_COUNTS:
+			// Report the same device mask used when creating textures and
+			// pipelines so shader-side resolves use their actual sample count.
+			return device_properties->features.supportedSampleCounts;
 		default:
 			return RenderingDeviceDriver::api_trait_get(p_trait);
 	}

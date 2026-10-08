@@ -1,5 +1,32 @@
-// Copyright (c) 2014-present Godot Engine contributors.
-// SPDX-License-Identifier: MIT
+/**************************************************************************/
+/*  texture_format_conversion.h                                           */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #pragma once
 
@@ -199,33 +226,65 @@ inline double clamp_number(double p_value, double p_min, double p_max) {
 
 inline double read_component(const uint8_t *p_src, Encoding p_encoding) {
 	switch (p_encoding) {
-		case Encoding::UNORM8: return load<uint8_t>(p_src) / 255.0;
-		case Encoding::SNORM8: return std::max(-1.0, load<int8_t>(p_src) / 127.0);
-		case Encoding::UINT8: return load<uint8_t>(p_src);
-		case Encoding::SINT8: return load<int8_t>(p_src);
-		case Encoding::UINT16: return load<uint16_t>(p_src);
-		case Encoding::SINT16: return load<int16_t>(p_src);
-		case Encoding::FLOAT16: return half_to_float(load<uint16_t>(p_src));
-		case Encoding::UINT32: return load<uint32_t>(p_src);
-		case Encoding::SINT32: return load<int32_t>(p_src);
-		case Encoding::FLOAT32: return load<float>(p_src);
-		default: return 0;
+		case Encoding::UNORM8:
+			return load<uint8_t>(p_src) / 255.0;
+		case Encoding::SNORM8:
+			return std::max(-1.0, load<int8_t>(p_src) / 127.0);
+		case Encoding::UINT8:
+			return load<uint8_t>(p_src);
+		case Encoding::SINT8:
+			return load<int8_t>(p_src);
+		case Encoding::UINT16:
+			return load<uint16_t>(p_src);
+		case Encoding::SINT16:
+			return load<int16_t>(p_src);
+		case Encoding::FLOAT16:
+			return half_to_float(load<uint16_t>(p_src));
+		case Encoding::UINT32:
+			return load<uint32_t>(p_src);
+		case Encoding::SINT32:
+			return load<int32_t>(p_src);
+		case Encoding::FLOAT32:
+			return load<float>(p_src);
+		default:
+			return 0;
 	}
 }
 
 inline void write_component(uint8_t *p_dst, Encoding p_encoding, double p_value) {
 	switch (p_encoding) {
-		case Encoding::UNORM8: store<uint8_t>(p_dst, uint8_t(std::round(clamp_number(p_value, 0, 1) * 255))); break;
-		case Encoding::SNORM8: store<int8_t>(p_dst, int8_t(std::round(clamp_number(p_value, -1, 1) * 127))); break;
-		case Encoding::UINT8: store<uint8_t>(p_dst, uint8_t(clamp_number(p_value, 0, UINT8_MAX))); break;
-		case Encoding::SINT8: store<int8_t>(p_dst, int8_t(clamp_number(p_value, INT8_MIN, INT8_MAX))); break;
-		case Encoding::UINT16: store<uint16_t>(p_dst, uint16_t(clamp_number(p_value, 0, UINT16_MAX))); break;
-		case Encoding::SINT16: store<int16_t>(p_dst, int16_t(clamp_number(p_value, INT16_MIN, INT16_MAX))); break;
-		case Encoding::FLOAT16: store<uint16_t>(p_dst, float_to_half(float(p_value))); break;
-		case Encoding::UINT32: store<uint32_t>(p_dst, uint32_t(clamp_number(p_value, 0, UINT32_MAX))); break;
-		case Encoding::SINT32: store<int32_t>(p_dst, int32_t(clamp_number(p_value, INT32_MIN, INT32_MAX))); break;
-		case Encoding::FLOAT32: store<float>(p_dst, float(p_value)); break;
-		default: break;
+		case Encoding::UNORM8:
+			store<uint8_t>(p_dst, uint8_t(std::round(clamp_number(p_value, 0, 1) * 255)));
+			break;
+		case Encoding::SNORM8:
+			store<int8_t>(p_dst, int8_t(std::round(clamp_number(p_value, -1, 1) * 127)));
+			break;
+		case Encoding::UINT8:
+			store<uint8_t>(p_dst, uint8_t(clamp_number(p_value, 0, UINT8_MAX)));
+			break;
+		case Encoding::SINT8:
+			store<int8_t>(p_dst, int8_t(clamp_number(p_value, INT8_MIN, INT8_MAX)));
+			break;
+		case Encoding::UINT16:
+			store<uint16_t>(p_dst, uint16_t(clamp_number(p_value, 0, UINT16_MAX)));
+			break;
+		case Encoding::SINT16:
+			store<int16_t>(p_dst, int16_t(clamp_number(p_value, INT16_MIN, INT16_MAX)));
+			break;
+		case Encoding::FLOAT16:
+			store<uint16_t>(p_dst, float_to_half(float(p_value)));
+			break;
+		case Encoding::UINT32:
+			store<uint32_t>(p_dst, uint32_t(clamp_number(p_value, 0, UINT32_MAX)));
+			break;
+		case Encoding::SINT32:
+			store<int32_t>(p_dst, int32_t(clamp_number(p_value, INT32_MIN, INT32_MAX)));
+			break;
+		case Encoding::FLOAT32:
+			store<float>(p_dst, float(p_value));
+			break;
+		default:
+			break;
 	}
 }
 

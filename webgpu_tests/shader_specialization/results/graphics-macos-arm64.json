@@ -1,0 +1,121 @@
+{
+  "passed": true,
+  "engine_sha256": "d06206f6c8f66ecd6e8708d477c4ed07f2bb3227a835598c69122dfc7bf305ed",
+  "runs": [
+    {
+      "mode": "native",
+      "case": "vertex_read",
+      "expected_rejection": false,
+      "passed": true,
+      "checks": 3,
+      "returncode": 0,
+      "errors": [],
+      "unexpected_errors": []
+    },
+    {
+      "mode": "native",
+      "case": "fragment_read",
+      "expected_rejection": false,
+      "passed": true,
+      "checks": 3,
+      "returncode": 0,
+      "errors": [],
+      "unexpected_errors": []
+    },
+    {
+      "mode": "native",
+      "case": "fragment_rw",
+      "expected_rejection": false,
+      "passed": true,
+      "checks": 3,
+      "returncode": 0,
+      "errors": [],
+      "unexpected_errors": []
+    },
+    {
+      "mode": "native",
+      "case": "fragment_rg_rw",
+      "expected_rejection": true,
+      "passed": true,
+      "checks": 1,
+      "returncode": 0,
+      "errors": [
+        "ERROR: WebGPU: split read/write storage textures require a compute stage (shader '', set 0 binding 0).",
+        "ERROR: Condition \"!_ensure_shader_layout(p_shader)\" is true. Returning: false",
+        "ERROR: Condition \"!_ensure_shader_modules(shader)\" is true. Returning: PipelineID()",
+        "ERROR: Condition \"!pipeline.driver_id\" is true. Returning: RID()"
+      ],
+      "unexpected_errors": []
+    },
+    {
+      "mode": "native",
+      "case": "unused_rg_rw",
+      "expected_rejection": false,
+      "passed": true,
+      "checks": 3,
+      "returncode": 0,
+      "errors": [],
+      "unexpected_errors": []
+    },
+    {
+      "mode": "fallback",
+      "case": "vertex_read",
+      "expected_rejection": false,
+      "passed": true,
+      "checks": 3,
+      "returncode": 0,
+      "errors": [],
+      "unexpected_errors": []
+    },
+    {
+      "mode": "fallback",
+      "case": "fragment_read",
+      "expected_rejection": false,
+      "passed": true,
+      "checks": 3,
+      "returncode": 0,
+      "errors": [],
+      "unexpected_errors": []
+    },
+    {
+      "mode": "fallback",
+      "case": "fragment_rw",
+      "expected_rejection": true,
+      "passed": true,
+      "checks": 1,
+      "returncode": 0,
+      "errors": [
+        "ERROR: WebGPU: split read/write storage textures require a compute stage (shader '', set 0 binding 0).",
+        "ERROR: Condition \"!_ensure_shader_layout(p_shader)\" is true. Returning: false",
+        "ERROR: Condition \"!_ensure_shader_modules(shader)\" is true. Returning: PipelineID()",
+        "ERROR: Condition \"!pipeline.driver_id\" is true. Returning: RID()"
+      ],
+      "unexpected_errors": []
+    },
+    {
+      "mode": "fallback",
+      "case": "fragment_rg_rw",
+      "expected_rejection": true,
+      "passed": true,
+      "checks": 1,
+      "returncode": 0,
+      "errors": [
+        "ERROR: WebGPU: split read/write storage textures require a compute stage (shader '', set 0 binding 0).",
+        "ERROR: Condition \"!_ensure_shader_layout(p_shader)\" is true. Returning: false",
+        "ERROR: Condition \"!_ensure_shader_modules(shader)\" is true. Returning: PipelineID()",
+        "ERROR: Condition \"!pipeline.driver_id\" is true. Returning: RID()"
+      ],
+      "unexpected_errors": []
+    },
+    {
+      "mode": "fallback",
+      "case": "unused_rg_rw",
+      "expected_rejection": false,
+      "passed": true,
+      "checks": 3,
+      "returncode": 0,
+      "errors": [],
+      "unexpected_errors": []
+    }
+  ]
+}

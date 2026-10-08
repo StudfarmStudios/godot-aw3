@@ -1,0 +1,5 @@
+.godot/
+artifacts/
+*.uid
+
+__pycache__/

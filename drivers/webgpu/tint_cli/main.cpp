@@ -1,3 +1,33 @@
+/**************************************************************************/
+/*  main.cpp                                                              */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
+
 // tint_convert_cli — Standalone SPIR-V → WGSL converter for build-time precompilation.
 //
 // Runs the same 11 preprocessing passes as the Godot WebGPU runtime driver,
@@ -9,18 +39,24 @@
 //   tint_convert_cli <file.spv>                       # single file → WGSL to stdout
 //   tint_convert_cli --batch <file1.spv> <file2.spv>  # batch → JSON to stdout
 
-#include "../spirv_preprocess.h"
-#include "../tint_wrapper.h"
+#include "drivers/webgpu/generated/wgsl_cache_identity.gen.h"
+#include "drivers/webgpu/spirv_preprocess.h"
+#include "drivers/webgpu/tint_wrapper.h"
 
+#include <fcntl.h>
+#include <poll.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+#include <cerrno>
+#include <chrono>
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <fcntl.h>
 #include <fstream>
 #include <iostream>
 #include <string>
-#include <sys/wait.h>
-#include <unistd.h>
 #include <vector>
 
 // Read a binary file into a byte vector.
@@ -95,12 +131,30 @@ static std::string json_escape(const std::string &p_str) {
 	out.reserve(p_str.size() + p_str.size() / 8);
 	for (char c : p_str) {
 		switch (c) {
-			case '"': out += "\\\""; break;
-			case '\\': out += "\\\\"; break;
-			case '\n': out += "\\n"; break;
-			case '\r': out += "\\r"; break;
-			case '\t': out += "\\t"; break;
-			default: out += c; break;
+			case '"':
+				out += "\\\"";
+				break;
+			case '\\':
+				out += "\\\\";
+				break;
+			case '\n':
+				out += "\\n";
+				break;
+			case '\r':
+				out += "\\r";
+				break;
+			case '\t':
+				out += "\\t";
+				break;
+			default:
+				if ((unsigned char)c < 0x20) {
+					char escaped[7];
+					snprintf(escaped, sizeof(escaped), "\\u%04x", (unsigned char)c);
+					out += escaped;
+				} else {
+					out += c;
+				}
+				break;
 		}
 	}
 	return out;
@@ -111,84 +165,119 @@ static std::string json_escape(const std::string &p_str) {
 // one bad shader from killing the entire batch.
 //
 // Returns WGSL on success, or sets r_error on failure.
-static std::string convert_isolated(const std::vector<uint8_t> &p_spv_bytes, std::string &r_error) {
-	// Create a pipe for the child to send results back.
+static bool write_all(int p_fd, const char *p_data, size_t p_size) {
+	while (p_size > 0) {
+		const ssize_t written = write(p_fd, p_data, p_size);
+		if (written < 0 && errno == EINTR) {
+			continue;
+		}
+		if (written <= 0) {
+			return false;
+		}
+		p_data += written;
+		p_size -= (size_t)written;
+	}
+	return true;
+}
+
+static std::string convert_isolated(const std::vector<uint8_t> &p_spv_bytes, std::string &r_error, std::chrono::milliseconds p_timeout = std::chrono::seconds(120)) {
 	int pipefd[2];
 	if (pipe(pipefd) != 0) {
-		// Fallback: convert in-process if pipe fails.
-		return convert_spirv_to_wgsl(p_spv_bytes, r_error);
+		r_error = std::string("Cannot isolate Tint: pipe failed: ") + strerror(errno);
+		return {};
 	}
-
-	// Flush parent's stdout before forking so the child doesn't
-	// inherit any buffered data.
 	fflush(stdout);
 	std::cout.flush();
-
 	pid_t pid = fork();
 	if (pid < 0) {
+		const int error = errno;
 		close(pipefd[0]);
 		close(pipefd[1]);
-		return convert_spirv_to_wgsl(p_spv_bytes, r_error);
+		r_error = std::string("Cannot isolate Tint: fork failed: ") + strerror(error);
+		return {};
 	}
-
 	if (pid == 0) {
-		// Child process.
-		close(pipefd[0]); // Close read end.
-
-		// Redirect stdout/stderr to /dev/null so Tint crash messages and
-		// C++ runtime flush on abort() don't corrupt the parent's JSON
-		// output stream. Don't use fclose() — it flushes the parent's
-		// buffered cout data (copied on fork), duplicating output.
+		close(pipefd[0]);
 		int devnull = open("/dev/null", O_WRONLY);
 		if (devnull >= 0) {
 			dup2(devnull, STDOUT_FILENO);
 			dup2(devnull, STDERR_FILENO);
 			close(devnull);
 		}
-
-		std::string err;
-		std::string wgsl = convert_spirv_to_wgsl(p_spv_bytes, err);
-
-		// Protocol: first byte is status ('W' = wgsl, 'E' = error).
-		if (!wgsl.empty()) {
-			char status = 'W';
-			write(pipefd[1], &status, 1);
-			write(pipefd[1], wgsl.data(), wgsl.size());
-		} else {
-			char status = 'E';
-			write(pipefd[1], &status, 1);
-			write(pipefd[1], err.data(), err.size());
-		}
+		std::string error;
+		std::string wgsl = convert_spirv_to_wgsl(p_spv_bytes, error);
+		const char status = wgsl.empty() ? 'E' : 'W';
+		const std::string &message = wgsl.empty() ? error : wgsl;
+		const bool sent = write_all(pipefd[1], &status, 1) && write_all(pipefd[1], message.data(), message.size());
 		close(pipefd[1]);
-		_exit(0);
+		_exit(sent ? 0 : 1);
 	}
 
-	// Parent process.
-	close(pipefd[1]); // Close write end.
-
-	// Read all data from child.
+	close(pipefd[1]);
 	std::string data;
-	char buf[4096];
-	ssize_t n;
-	while ((n = read(pipefd[0], buf, sizeof(buf))) > 0) {
-		data.append(buf, (size_t)n);
+	const auto deadline = std::chrono::steady_clock::now() + p_timeout;
+	bool failed = false;
+	while (true) {
+		const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
+		if (remaining <= 0) {
+			r_error = "Tint conversion timed out";
+			failed = true;
+			break;
+		}
+		pollfd descriptor = { pipefd[0], POLLIN, 0 };
+		const int ready = poll(&descriptor, 1, (int)remaining);
+		if (ready < 0 && errno == EINTR) {
+			continue;
+		}
+		if (ready == 0) {
+			continue;
+		}
+		if (ready < 0) {
+			r_error = std::string("Tint result poll failed: ") + strerror(errno);
+			failed = true;
+			break;
+		}
+		char buffer[4096];
+		const ssize_t count = read(pipefd[0], buffer, sizeof(buffer));
+		if (count < 0 && errno == EINTR) {
+			continue;
+		}
+		if (count < 0) {
+			r_error = std::string("Tint result read failed: ") + strerror(errno);
+			failed = true;
+			break;
+		}
+		if (count == 0) {
+			break;
+		}
+		if (data.size() + (size_t)count > 16 * 1024 * 1024 + 1) {
+			r_error = "Tint result exceeds the 16 MiB WGSL cache limit";
+			failed = true;
+			break;
+		}
+		data.append(buffer, (size_t)count);
 	}
 	close(pipefd[0]);
-
-	int status;
-	waitpid(pid, &status, 0);
-
-	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0 || data.empty()) {
-		r_error = "Tint crashed (likely TINT_UNIMPLEMENTED on unsupported SPIR-V feature)";
+	if (failed) {
+		kill(pid, SIGKILL);
+	}
+	int status = 0;
+	pid_t waited;
+	do {
+		waited = waitpid(pid, &status, 0);
+	} while (waited < 0 && errno == EINTR);
+	if (failed) {
 		return {};
 	}
-
+	if (waited != pid || !WIFEXITED(status) || WEXITSTATUS(status) != 0 || data.empty()) {
+		r_error = "Tint child failed or crashed while converting SPIR-V";
+		return {};
+	}
 	if (data[0] == 'W') {
 		return data.substr(1);
-	} else {
-		r_error = data.substr(1);
-		return {};
 	}
+	r_error = data[0] == 'E' ? data.substr(1) : "Invalid Tint child response";
+	return {};
 }
 
 static void print_usage() {
@@ -201,6 +290,11 @@ int main(int argc, char *argv[]) {
 	if (argc < 2) {
 		print_usage();
 		return 1;
+	}
+
+	if (strcmp(argv[1], "--fingerprint") == 0) {
+		std::cout << WEBGPU_TRANSLATOR_FINGERPRINT << std::endl;
+		return 0;
 	}
 
 	tint_wrapper_initialize();
@@ -251,7 +345,7 @@ int main(int argc, char *argv[]) {
 		}
 
 		std::string error;
-		std::string wgsl = convert_spirv_to_wgsl(spv_bytes, error);
+		std::string wgsl = convert_isolated(spv_bytes, error);
 		if (wgsl.empty()) {
 			fprintf(stderr, "Error: %s\n", error.c_str());
 			return 1;

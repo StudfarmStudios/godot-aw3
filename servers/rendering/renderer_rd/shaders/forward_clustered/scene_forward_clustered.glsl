@@ -1054,6 +1054,9 @@ layout(location = 1) out uvec2 voxel_gi_buffer;
 #endif
 
 #endif //MODE_RENDER_NORMAL
+#if defined(MODE_RENDER_SDF) && defined(SDFGI_NEEDS_DUMMY_ATTACHMENT)
+layout(location = 0) out vec4 sdfgi_dummy_attachment;
+#endif
 #else // RENDER DEPTH
 
 #ifdef MODE_SEPARATE_SPECULAR
@@ -1193,8 +1196,13 @@ vec3 encode24(vec3 v) {
 	vTexCoord /= maxNAbs;
 	vTexCoord = vTexCoord.x < vTexCoord.y ? vTexCoord.yx : vTexCoord.xy;
 	// Stretch:
-	vTexCoord.y /= vTexCoord.x;
-	float fFittingScale = texture(sampler2D(best_fit_normal_texture, SAMPLER_NEAREST_CLAMP), vTexCoord).r;
+	// An axis-aligned normal has zero in both lookup components.
+	vTexCoord.y = vTexCoord.x > 0.0 ? vTexCoord.y / vTexCoord.x : 0.0;
+	// This one-mip LUT uses nearest/clamp sampling. An explicit fetch preserves
+	// that lookup when WebGPU promotes its R8 storage to unfilterable R32F.
+	ivec2 fitting_size = textureSize(sampler2D(best_fit_normal_texture, SAMPLER_NEAREST_CLAMP), 0);
+	ivec2 fitting_texel = clamp(ivec2(floor(vTexCoord * vec2(fitting_size))), ivec2(0), fitting_size - ivec2(1));
+	float fFittingScale = texelFetch(sampler2D(best_fit_normal_texture, SAMPLER_NEAREST_CLAMP), fitting_texel, 0).r;
 	// Make vector touch unit cube
 	vec3 result = v / maxNAbs;
 	// scale the normal to get the best fit
@@ -2203,10 +2211,18 @@ void fragment_shader(in SceneData scene_data) {
 
 			float ssr_mip_level = 0.0;
 			if (resolve_ssr) {
+				// This single-level nearest lookup needs no filtering, including
+				// when scalar storage is promoted to an unfilterable R32F texture.
 #ifdef USE_MULTIVIEW
-				ssr_mip_level = textureLod(sampler2DArray(ssr_mip_level_buffer, SAMPLER_NEAREST_CLAMP), vec3(screen_uv, ViewIndex), 0.0).x;
+				ivec2 ssr_mip_size = textureSize(sampler2DArray(ssr_mip_level_buffer, SAMPLER_NEAREST_CLAMP), 0).xy;
 #else
-				ssr_mip_level = textureLod(sampler2D(ssr_mip_level_buffer, SAMPLER_NEAREST_CLAMP), screen_uv, 0.0).x;
+				ivec2 ssr_mip_size = textureSize(sampler2D(ssr_mip_level_buffer, SAMPLER_NEAREST_CLAMP), 0);
+#endif // USE_MULTIVIEW
+				ivec2 ssr_mip_pos = clamp(ivec2(floor(screen_uv * vec2(ssr_mip_size))), ivec2(0), ssr_mip_size - ivec2(1));
+#ifdef USE_MULTIVIEW
+				ssr_mip_level = texelFetch(sampler2DArray(ssr_mip_level_buffer, SAMPLER_NEAREST_CLAMP), ivec3(ssr_mip_pos, ViewIndex), 0).x;
+#else
+				ssr_mip_level = texelFetch(sampler2D(ssr_mip_level_buffer, SAMPLER_NEAREST_CLAMP), ssr_mip_pos, 0).x;
 #endif // USE_MULTIVIEW
 
 				ssr_mip_level *= 14.0;
@@ -2907,6 +2923,9 @@ void fragment_shader(in SceneData scene_data) {
 #ifdef MODE_RENDER_DEPTH
 
 #ifdef MODE_RENDER_SDF
+#ifdef SDFGI_NEEDS_DUMMY_ATTACHMENT
+	sdfgi_dummy_attachment = vec4(0.0);
+#endif
 
 	{
 		vec3 local_pos = (implementation_data.sdf_to_bounds * vec4(vertex, 1.0)).xyz;
@@ -2940,10 +2959,17 @@ void fragment_shader(in SceneData scene_data) {
 			}
 		}
 
-#ifdef NO_IMAGE_ATOMICS
-		imageStore(geom_facing_grid, grid_pos, uvec4(imageLoad(geom_facing_grid, grid_pos).r | facing_bits)); //store facing bits
+#ifdef SDFGI_BUFFER_STORAGE
+		// Concurrent fragments must preserve every facing bit, including shared edge voxels.
+		ivec3 grid_size = imageSize(albedo_volume_grid);
+		if (all(greaterThanEqual(grid_pos, ivec3(0))) && all(lessThan(grid_pos, grid_size))) {
+			uint index = uint((grid_pos.z * grid_size.y + grid_pos.y) * grid_size.x + grid_pos.x);
+			atomicOr(geom_facing_grid.data[index], facing_bits);
+		}
+#elif defined(NO_IMAGE_ATOMICS)
+		imageStore(geom_facing_grid, grid_pos, uvec4(imageLoad(geom_facing_grid, grid_pos).r | facing_bits));
 #else
-		imageAtomicOr(geom_facing_grid, grid_pos, facing_bits); //store facing bits
+	imageAtomicOr(geom_facing_grid, grid_pos, facing_bits);
 #endif
 
 		if (length(emission) > 0.001) {

@@ -1,0 +1,69 @@
+{
+  "passed": false,
+  "runs": [
+    {
+      "mode": "metal",
+      "passed": false,
+      "passed_checks": 13,
+      "failed_checks": 3,
+      "returncode": 1,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "9bff02c4a795126c140e2d280c9f9ca926c5b540178b6c6b1d32564dc1e1f2fb",
+      "errors": [],
+      "checks": [
+        "TAA_INTEGRATION PASS native_pixels (1.0, 0.0, 0.0, 1.0)",
+        "TAA_INTEGRATION PASS native_history_format_extent { \"size\": (160, 120), \"taa\": true, \"format\": 82, \"history_size\": (160, 120), \"current\": RID(4836133175355), \"history\": RID(4960687226944) }",
+        "TAA_INTEGRATION PASS native_motion_present 0.04122924804688",
+        "TAA_INTEGRATION PASS native_exact_history_copy 0.0",
+        "TAA_INTEGRATION PASS half_pixels (1.0, 0.0, 0.0, 1.0)",
+        "TAA_INTEGRATION PASS half_history_format_extent { \"size\": (80, 60), \"taa\": true, \"format\": 82, \"history_size\": (80, 60), \"current\": RID(5166845657150), \"history\": RID(5209795330105) }",
+        "TAA_INTEGRATION PASS half_motion_present 0.04122924804688",
+        "TAA_INTEGRATION PASS half_exact_history_copy 0.0",
+        "TAA_INTEGRATION PASS supersample_pixels (1.0, 0.0, 0.0, 1.0)",
+        "TAA_INTEGRATION PASS supersample_history_format_extent { \"size\": (240, 180), \"taa\": true, \"format\": 82, \"history_size\": (240, 180), \"current\": RID(5381594021947), \"history\": RID(5424543694912) }",
+        "TAA_INTEGRATION FAIL supersample_motion_present 0.04122924804688",
+        "TAA_INTEGRATION FAIL supersample_exact_history_copy 0.04122924804688",
+        "TAA_INTEGRATION PASS odd_supersample_pixels (1.0, 0.0, 0.0, 1.0)",
+        "TAA_INTEGRATION PASS odd_supersample_history_format_extent { \"size\": (241, 163), \"taa\": true, \"format\": 82, \"history_size\": (241, 163), \"current\": RID(5738076307518), \"history\": RID(5781025980473) }",
+        "TAA_INTEGRATION PASS odd_supersample_motion_present 0.03717041015625",
+        "TAA_INTEGRATION FAIL odd_supersample_exact_history_copy 0.03717041015625"
+      ],
+      "error_count": 0
+    },
+    {
+      "mode": "native",
+      "passed": false,
+      "passed_checks": 8,
+      "failed_checks": 8,
+      "returncode": 1,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "9bff02c4a795126c140e2d280c9f9ca926c5b540178b6c6b1d32564dc1e1f2fb",
+      "errors": [
+        "ERROR: [BINDGROUP-FAIL] shader=CopyShaderRD:4 set=3: Format (TextureFormat::RG32Float) of [Texture \"RenderBuffer taa/prev_velocity\"] expected to be (TextureFormat::RGBA16Float).",
+        "ERROR: WebGPU: Dawn uncaptured error (type 2): [Invalid BindGroup (unlabeled)] is invalid due to a previous error.",
+        "ERROR: WebGPU: Dawn uncaptured error (type 2): [Invalid CommandBuffer] is invalid due to a previous error."
+      ],
+      "checks": [
+        "TAA_INTEGRATION FAIL native_pixels (0.0, 0.0, 0.0, 1.0)",
+        "TAA_INTEGRATION PASS native_history_format_extent { \"size\": (160, 120), \"taa\": true, \"format\": 82, \"history_size\": (160, 120), \"current\": RID(4432406249531), \"history\": RID(4556960301120) }",
+        "TAA_INTEGRATION FAIL native_motion_present 0.0",
+        "TAA_INTEGRATION PASS native_exact_history_copy 0.0",
+        "TAA_INTEGRATION FAIL half_pixels (0.0, 0.0, 0.0, 1.0)",
+        "TAA_INTEGRATION PASS half_history_format_extent { \"size\": (80, 60), \"taa\": true, \"format\": 82, \"history_size\": (80, 60), \"current\": RID(4763118731326), \"history\": RID(4806068404281) }",
+        "TAA_INTEGRATION FAIL half_motion_present 0.0",
+        "TAA_INTEGRATION PASS half_exact_history_copy 0.0",
+        "TAA_INTEGRATION FAIL supersample_pixels (0.0, 0.0, 0.0, 1.0)",
+        "TAA_INTEGRATION PASS supersample_history_format_extent { \"size\": (240, 180), \"taa\": true, \"format\": 82, \"history_size\": (240, 180), \"current\": RID(4977867096123), \"history\": RID(5020816769088) }",
+        "TAA_INTEGRATION FAIL supersample_motion_present 0.0",
+        "TAA_INTEGRATION PASS supersample_exact_history_copy 0.0",
+        "TAA_INTEGRATION FAIL odd_supersample_pixels (0.0, 0.0, 0.0, 1.0)",
+        "TAA_INTEGRATION PASS odd_supersample_history_format_extent { \"size\": (241, 163), \"taa\": true, \"format\": 82, \"history_size\": (241, 163), \"current\": RID(5334349381694), \"history\": RID(5377299054649) }",
+        "TAA_INTEGRATION FAIL odd_supersample_motion_present 0.0",
+        "TAA_INTEGRATION PASS odd_supersample_exact_history_copy 0.0"
+      ],
+      "error_count": 9348
+    }
+  ]
+}

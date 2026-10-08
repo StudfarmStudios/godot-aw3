@@ -1,0 +1,10 @@
+{
+  "host": "macOS arm64, native Dawn/Metal",
+  "modules": 245,
+  "compiled": 245,
+  "glsl_failures": 0,
+  "tint_failures": 0,
+  "unique_entries": 217,
+  "log": "/private/tmp/aw3-webgpu-sidecar-ssr-build.log",
+  "scope": "Curated built-in recipes; source-defined material coverage is tested separately by native export."
+}

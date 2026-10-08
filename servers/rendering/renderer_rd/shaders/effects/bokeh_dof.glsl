@@ -10,7 +10,12 @@ layout(local_size_x = BLOCK_SIZE, local_size_y = BLOCK_SIZE, local_size_z = 1) i
 
 #ifdef MODE_GEN_BLUR_SIZE
 layout(rgba16f, set = 0, binding = 0) uniform restrict image2D color_image;
+#ifdef SOURCE_DEPTH
+layout(set = 1, binding = 0) uniform sampler2D godot_depth_source;
+#define source_depth godot_depth_source
+#else
 layout(set = 1, binding = 0) uniform sampler2D source_depth;
+#endif
 #endif
 
 #if defined(MODE_BOKEH_BOX) || defined(MODE_BOKEH_HEXAGONAL) || defined(MODE_BOKEH_CIRCULAR)
@@ -29,8 +34,10 @@ layout(set = 1, binding = 0) uniform sampler2D source_bokeh;
 
 #ifdef MODE_GEN_BLUR_SIZE
 
-float get_depth_at_pos(vec2 uv) {
-	float depth = textureLod(source_depth, uv, 0.0).x * 2.0 - 1.0;
+float get_depth_at_pos(ivec2 pos) {
+	// The blur-size pass visits exact pixel centers. Fetching that texel avoids
+	// requiring float32 filtering for the resolved R32F MSAA depth texture.
+	float depth = texelFetch(source_depth, pos, 0).x * 2.0 - 1.0;
 	if (params.orthogonal) {
 		depth = -(depth * (params.z_far - params.z_near) - (params.z_far + params.z_near)) / 2.0;
 	} else {
@@ -126,7 +133,7 @@ void main() {
 #ifdef MODE_GEN_BLUR_SIZE
 	uv += pixel_size * 0.5;
 	//precompute size in alpha channel
-	float depth = get_depth_at_pos(uv);
+	float depth = get_depth_at_pos(pos);
 	float size = get_blur_size(depth);
 
 	vec4 color = imageLoad(color_image, pos);

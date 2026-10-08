@@ -13,24 +13,25 @@ Reference report: [AW3 comparison](https://github.com/StudfarmStudios/aw3/blob/6
 Source fork: `470f89e78eece1c7a73285345e2ca39b8f8706ad`.
 Starting AW3 engine: `c0d51825faad2c1a773f4e21c34e74b60c53da21`.
 
-## Work remaining
+## Implementation and verification status
 
 | Report findings | Work | Status / evidence |
 | --- | --- | --- |
 | 1–3, 7–8 | Capability-aware packed/narrow storage formats, matching WGSL and views, complete upload/readback conversions | Implemented; ASan/UBSan production helper tests pass. 25 native GPU checks pass in each capability mode; browser runtime pending |
 | 4 | Bind uniform sets against the requested shader, preserving lazy layout initialization | Implemented; native GPU variant and push-constant checks pass; browser runtime pending |
 | 5–6 | GPU-written shadow refresh, variant adaptation, first-use ordering and mip/layer correctness | Implemented at dispatch, one restart for all active sets; no CPU shadow replay. Native 2D/array/3D/slice checks pass; browser runtime pending |
-| 9–10 | Effective MSAA count and format-converting resolve | Implemented; requested 2/4/8, native/promoted RG16F resolve and nonzero destination mip/layer pass in both native modes. Full renderer AA matrix/browser pending |
+| 9–10 | Effective MSAA count and format-converting resolve | Implemented; requested 2/4/8, native/promoted RG16F resolve and nonzero destination mip/layer pass in both native modes. 153 renderer checks pass on Metal and four WebGPU capability modes, including combined missing features; browser pending |
 | 11 | Block-aligned compressed texture copies; preserve array stride fix | Implemented; native compressed array/mip-tail GPU copy and readback checks pass; browser runtime pending |
 | 12 | Partial color/stencil clears; preserve depth-region clears and batched submissions | Implemented; mixed HDR/float/integer targets, sparse masks, depth/stencil probes, MSAA and ring exhaustion pass natively. Browser pending |
-| 14–16 | SDFGI formats, cascade bindings, typed defaults and correct atomic fallback | In progress; explicit cascade bindings and buffer-based atomic/occlusion bundle under implementation |
+| 14–16 | SDFGI formats, cascade bindings, typed defaults and correct atomic fallback | Implemented on 4.7 with four packed cascade atlases and real buffer atomics; 1/4/8-cascade scenes pass normally and with both fallback flags. Normal/fallback images are pixel-identical before/after cascade scrolling, but both lose retained voxel lighting after scrolling compared with native Metal; this is an open merge blocker. Performance and browser verification pending; see SDFGI fixture README |
 | 17 | FSR2 capability variants and atomic-buffer fallbacks without last-writer-wins depth reduction | Implemented; 144 atomic-callback checks and 8 Forward+ smoke checks per native capability mode. 90 temporal/quality probes per run across Metal and both WebGPU modes, two runs each; deterministic captures. Exposure regression fixed; edge/HDR differences remain, no full quality-parity claim |
-| 18–19 | FSR1 destination fallback and Canvas SDF format fallback | Implemented; 30 FSR1 renderer checks per native mode cover SDR/HDR, resize and direct/conversion XR targets. Canvas SDF compiled; dedicated visual/browser coverage pending |
+| 18–19 | FSR1 destination fallback and Canvas SDF format fallback | Implemented; 30 FSR1 renderer checks per native mode cover SDR/HDR, resize and direct/conversion XR targets. Canvas SDF passes 36 numerical/visual checks in five native capability modes, including no float32 filtering. Browser pending |
 | 20–22, 24 | Logical-copy lowering, reviewed SPIR-V normalization/Tint fixes, structural vertex-access transform | Implemented: 34 preprocessor sanitizer/validator checks; 52 translation checks across SPIR-V 1.0/1.3/1.4/1.5; two clean semantic rejection guards; 32 numerical GPU checks per native mode. Retain existing initialized-array, matrix traversal and depth behavior; reject blanket operand stripping and generic subgroup emulation. Browser pending |
-| 27–31 | Export baking, target capabilities, coverage, subprocess conversion, combined cache metadata and cache preference | Coverage and valid packaged-cache preference in progress; target/sidecar/translator-identity work still pending |
-| 35–36 | Atlas upload coalescing and glyph classification, retaining immutable render-thread snapshots | WebGPU upload coalescing implemented; 35 checks across Advanced/Fallback text servers, including immutable snapshots, mipmaps, replacement/freeing and LA8/RGBA tint. Keep LA8 CPU atlas and current classification; direct RGBA would double memory without a demonstrated additional benefit. Browser/emoji/SVG/LCD/MSDF coverage pending |
+| 27–31 | Export baking, target capabilities, coverage, subprocess conversion, combined cache metadata and cache preference | Implemented: native WebGPU editor baker, material traversal, transactional live-placeholder replacement, packaged-cache preference, isolated batch conversion, explicit target profile and WGSC v4 source identity. Export sidecar and runtime metadata match 1,095/1,095, including 26 anisotropic alias changes; cache matrix 11/11; placeholder matrix 14/14; concurrent cache stress 160/160. Cross-driver source regeneration and browser startup/cache measurements remain unverified |
+| 35–36 | Atlas upload coalescing and glyph classification, retaining immutable render-thread snapshots | WebGPU upload coalescing implemented; 35 checks across Advanced/Fallback text servers, including immutable snapshots, mipmaps, replacement/freeing and LA8/RGBA tint. Keep LA8 CPU atlas and current classification; direct RGBA would double memory without a demonstrated additional benefit. Additional 53/53 checks pass with both text servers, covering actual bitmap emoji, authored SVG glyphs, LCD and MSDF. Browser pending |
 | 37–38 | CPU gradient regeneration and compressed-texture readback | Gradients implemented/tested. Finding 38 correction: disk-backed `CompressedTexture2D::get_image()` is already identical in our base; no additional port needed |
 | 45–49 | Feature fixtures, actual-driver regressions, browser/backend metadata, CI integration | Production C++ format tests and initial RenderingDevice GPU fixture added. Full matrix/CI pending |
+| 61 | SSR storage format and hardware/resolved depth contract | Implemented; all 278 build-time modules compile/translate. 20 native renderer runs pass 300 checks and 80 strict Metal-reference comparisons across half/full resolution, odd dimensions, MSAA and four WebGPU capability profiles; no-float-filter HiZ/literal-ID and nearest mip-field contracts corrected. Browser pending |
 | 58 | Headless export teardown lifetime | Implemented on 4.7. Baseline import reproduces null-singleton error/crash; fixed import plus three Web pack exports pass with clean shutdown |
 
 ## Constraints and preserved behavior
@@ -65,16 +66,20 @@ Created an isolated worktree from the current `origin/aw-web-export`. Ran `rsync
 with the main checkout's LFS file list as instructed; this engine checkout has no
 tracked LFS files. The main engine checkout remains untouched.
 
-## Initial batch validation
+## Initial batch validation (historical)
+
+The earlier shader-baker failures below are resolved: the current strict bake
+converts **278/278 modules**, with zero GLSL/Tint failures. Earlier outstanding
+readback, specialization, cache, Canvas and glyph coverage is superseded by the
+status table and each fixture's saved results. Browser validation remains open.
 
 See [VALIDATION.md](VALIDATION.md) for commands, measured performance and limits.
 Production CPU helpers pass ASan/UBSan; 25 actual GPU checks pass in each of the
 normal and forced-fallback native Dawn/Metal modes (50 total), with zero
 validation errors and clean shutdown. Headless gradient checks and the existing
-327 JavaScript driver-model checks pass. Native editor linking and threaded web
-WebGPU driver object compilation passed; the full web template/browser run is
-still pending. The build-time shader baker reports 10 GLSL and 4 Tint failures,
-which remain part of the shader/export work above, not passing coverage.
+327 JavaScript driver-model checks pass. Native editor linking and the full threaded WebGPU template build passed;
+browser execution and the non-threaded template remain pending. That initial build reported 10 GLSL and 4 Tint failures; the current strict
+bake resolves all of them (278/278 modules).
 
 Additional issues found by the new fixture were fixed in this batch:
 
@@ -99,7 +104,7 @@ readback remains disabled under the existing compatibility constraint. Profiling
 adds one tiny clear pass per marker; accepted clear benchmarks use local-device
 `submit()`/`sync()` instead, without that instrumentation.
 
-## Parallel feature batch
+## Parallel feature batch (historical)
 
 Logical copies, FSR1, FSR2 buffer atomics/two-dispatch luminance reduction, and font
 upload coalescing are now implemented. New FSR2 coverage also exposed two driver
@@ -112,9 +117,11 @@ The native editor links, and threaded web objects compile for the driver,
 preprocessor, both upscalers, texture storage and both text servers. This is not a
 complete web-template build: the existing baker still reports 10 GLSL and 4 Tint
 failures. Detailed native evidence, negative controls and performance results are
-in VALIDATION.md. Remaining items discovered by these tests include shared-slice
-mip readback and applying storage lowering to SPIR-V-specialized shader modules;
-these are not covered by the passing ordinary shader-variant checks.
+in VALIDATION.md. At this checkpoint, shared-slice mip readback and storage lowering for SPIR-V-
+specialized shader modules remained open. Later native fixtures close these
+contracts with 18 readback checks and 320 specialization checks per mode; see
+VALIDATION.md. The earlier ordinary shader-variant tests alone did not establish
+those contracts.
 
 ### Auto-exposure follow-up
 
@@ -126,3 +133,15 @@ predicate fails 20 while full-workgroup controls pass. FSR2 temporal tests now
 check 90 properties over 19 captures, with two exact repeated runs per backend.
 This establishes bounded scene evidence, not full quality parity or browser
 verification. See VALIDATION.md for the before/after exposure comparison.
+
+## Final sampled contracts and SSR
+
+The final native snapshot `413b6443bc377c8bf83f06c2344b36f1c4525d3b6b16bf387c70f7ea1e54562d`
+passes 72 sampled-contract checks and 12 literal-collision checks in each of four
+capability modes. SPIRV-Tools operand metadata prevents literals from being
+mistaken for descriptor IDs while preserving conservative unknown-use and
+stage/specialization contracts. SSR passes all 20 configurations and all 80
+Metal-reference energy comparisons, including actual float32-filter omission.
+Canvas SDF, MSAA/DOF, TAA, FSR1 and bounded FSR2 temporal coverage are recorded in
+VALIDATION.md; these feature fixes are complete in native scope. Browser/backend
+coverage and end-to-end performance remain separate acceptance work.

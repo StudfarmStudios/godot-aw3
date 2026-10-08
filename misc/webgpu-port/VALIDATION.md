@@ -1,7 +1,9 @@
 # WebGPU compatibility batches — 8 October 2026
 
-The engine remains on Godot 4.7.1. This validates the initial storage-format,
-shadow-snapshot, transfer and procedural-gradient changes. It does **not** close
+The engine remains on Godot 4.7.1. This records the initial storage-format,
+shadow-snapshot, transfer and procedural-gradient changes and subsequent native
+feature validation. The first results table is historical; later sections record
+the expanded coverage and corrected defects. It does **not** close
 the full port checklist in [STATUS.md](STATUS.md).
 
 ## Results
@@ -121,9 +123,10 @@ once by RenderingDevice, fixing the old double offset. Resolve dimension validat
 now rejects a mismatch in any dimension.
 
 The source fork's extra DOF pre-pass resolve was not copied: our final MSAA stage
-already resolves depth unconditionally before post-processing. DOF's depth typing
-and rendered output still need the feature fixture; this is not a claim that all
-DOF cases are verified.
+already resolves depth unconditionally before post-processing. At this checkpoint, DOF's depth typing
+and rendered output still needed the feature fixture. The later reduced-capability
+renderer section records 153 passing checks in five modes; it does not claim all
+possible DOF cases are verified.
 
 ## Partial attachment clears
 
@@ -252,7 +255,7 @@ failures, tracked under the remaining shader/export bundle.
   exercising multiple SPD groups. FSR2 now uses real SSBO depth atomics and a
   separate final luminance dispatch, with numeric SNORM16-table conversion only
   when the backend cannot sample that format. This is not temporal-quality parity;
-  motion, disocclusion, exposure and native-reference comparisons remain in progress.
+  motion, disocclusion, exposure and native-reference comparisons were still in progress at this checkpoint and are recorded in the later temporal follow-up.
 - **FSR2 atomic callbacks: 144/144 per mode**:
   [normal](../../webgpu_tests/fsr2_atomic_depth/results/native-macos-arm64.json),
   [fallback](../../webgpu_tests/fsr2_atomic_depth/results/fallback-macos-arm64.json).
@@ -300,10 +303,11 @@ FSR1 and FSR2 smoke fixtures explicitly draw offscreen frames, wait on the actua
 pipeline queue and require stable compilation counters before sampling. Occluded
 native windows can otherwise stall `frame_post_draw`. Expected image values never
 drive retries. Font mip validation copies a requested mip into a one-mip temporary
-because shared-slice native readback currently ignores base mip/layer; correcting
-that driver issue remains tracked. Actual shader specialization also needs the
-same storage-lowering transformations as ordinary shader creation; ordinary
-variant-binding checks do not establish that contract.
+because shared-slice native readback ignored base mip/layer at this checkpoint;
+the later readback fixture verifies its correction with 18 checks per mode.
+Actual shader specialization now receives the same storage-lowering transformations
+as ordinary shader creation, verified by 320 checks per mode; the earlier ordinary
+variant-binding checks alone did not establish that contract.
 
 Commands are in each fixture README. GPU test durations include startup/compilation
 and are not performance claims. FSR2 adds a tail dispatch for correct inter-group
@@ -342,8 +346,9 @@ include binary/source identities. Remaining HDR checker transitions have mean
 RGB error 0.041 and 99th-percentile error 0.758 on values up to 4; moving edges can
 also differ. These results establish bounded motion/history stability and the
 specific exposure fix, **not** FSR2 quality parity. Timings from concurrent GPU
-correctness runs are not performance measurements. Firefox/Windows/D3D12, game
-scenes and the DOF/MSAA/GI feature matrix remain pending.
+correctness runs are not performance measurements. Firefox/Windows/D3D12 and game-scene quality/performance remain unverified.
+The later renderer follow-up records completed native DOF/MSAA coverage; current
+GI evidence is tracked separately in STATUS.md.
 
 ## SPIR-V resource interfaces and vertex access
 
@@ -367,3 +372,93 @@ writes, and mip-1 fetches with distinct mip-0 controls. Candidate SHA-256:
 `d06206f6c8f66ecd6e8708d477c4ed07f2bb3227a835598c69122dfc7bf305ed`.
 See [fixture and results](../../webgpu_tests/tint_translation/README.md).
 This native Dawn/Metal evidence does not establish browser/D3D12 compatibility.
+
+## Reduced-capability renderer and resource follow-up
+
+Frozen native candidate `e6d26dd46c9871a75b75e62b5cac42dd2bbc7b0fe727a67414cf7a56bc4fdfa9`
+provides the MSAA/DOF and Canvas results below on macOS/Apple M1 Ultra through
+Dawn/Metal. Final sampled-contract and SSR checks use
+`413b6443bc377c8bf83f06c2344b36f1c4525d3b6b16bf387c70f7ea1e54562d`. `--webgpu-force-fallbacks`
+omits storage-format tiers and adapts read/write storage; the independent
+`--webgpu-no-float32-filterable` flag omits that actual device feature. Their
+combination tests a stricter capability profile without claiming a particular
+browser's current feature set.
+
+- [Sampled texture contracts](../../webgpu_tests/sampled_texture_filtering/README.md):
+  **72/72 in four modes**, plus 12 CLI specialization/pruning proofs. Fetch-only
+  float textures use an unfilterable layout only when original SPIR-V provenance
+  establishes that contract across all stages and specialization branches.
+  Reused bind groups adapt from original textures and samplers. Negative controls
+  catch a wrong texture type, a blank exact fetch and lost linear filtering.
+  All checks also pass on the final operand-role snapshot.
+- [Literal/ID collisions](../../webgpu_tests/sampled_texture_literals/README.md):
+  **12/12 in four modes**. Valid SPIR-V intentionally collides sampled-image
+  ID 40 with FMax, composite-index, switch-case and debug-line literals. The old
+  no-filter path silently returns zero in all four cases; actual operand roles
+  preserve exact data without weakening unknown-use or future-filter guards.
+- [MSAA and DOF](../../webgpu_tests/msaa_dof_integration/README.md):
+  **153/153 in five modes**, covering hardware/resolved depth, focus, effective
+  sample counts and resize. WebGPU images match Metal exactly in 24/27 captures;
+  requested 2x uses Metal 2x versus WebGPU 4x, with maximum mean error 0.000265.
+- [Canvas SDF](../../webgpu_tests/canvas_sdf_integration/README.md):
+  **36/36 in five modes**. The no-normalized16/no-float-filter combination uses
+  RGBA16F for filterable distance data; other devices keep the narrower format.
+  No extra pass is added. Largest distance mean error is 0.000153; selected
+  nonambiguous normals match the native reference.
+- [TAA](../../webgpu_tests/taa_integration/README.md): dedicated RG16F history copy
+  format and internal-size dispatch fix the full renderer at 1.0/0.5/1.5/odd1.25
+  scales. Earlier frozen-binary runs pass 16/16 per reference/native/fallback mode.
+- [Readback](../../webgpu_tests/texture_readback/README.md): all requested mips,
+  layers and 3D planes are now copied and converted with block-aware pitch;
+  18/18 checks pass in both native capability modes. The older binary fails all
+  18 checks.
+- [Shader specialization](../../webgpu_tests/shader_specialization/README.md):
+  capability-aware storage lowering applies to both base and specialized WGSL.
+  Earlier runs pass 320 numerical checks per capability mode and 40 CLI shape
+  assertions; graphics tests reject unsupported read/write emulation explicitly
+  instead of relying on compute-only snapshots.
+
+- [SSR](../../webgpu_tests/ssr_integration/README.md): **20/20 runs**, all **300 scene
+  checks and 80 Metal-reference comparisons** pass across half/full resolution,
+  odd dimensions and MSAA off/4x. Normal and omitted-filtering reflection energies
+  match Metal exactly; storage and combined fallbacks range from 0.998625 to
+  1.001855 of reference energy. Earlier no-filter runs retained only 0.7–27%.
+  Intermediate GPU probes isolated all-zero HiZ mip levels after a correct base
+  level, caused by a literal instruction number being treated as a resource ID.
+  Grammar-defined operands fix the general contract; exact nearest/clamp mip-field
+  fetches preserve full-size composition. Reflection-color filtering remains.
+
+These are correctness runs, some concurrent, so their durations are not frame
+performance measurements. Native SSR and sampled contracts are complete in this
+scope. Browser/backend coverage and end-to-end performance remain outstanding.
+
+## Exported shader caches and metadata
+
+The native macOS WebGPU editor with SHA-256
+`413b6443bc377c8bf83f06c2344b36f1c4525d3b6b16bf387c70f7ea1e54562d`
+and translator/profile
+`d375989c9e230ac4456d94d3da5b10bb7471c941585ac53e69f20695e1cd7aa0`
+passes the [export/cache fixtures](../../webgpu_tests/shader_baker/README.md):
+
+- Sidecar export translates **1,095/1,095** source modules without failure, covers
+  11 named material routes, reloads all records and renders the expected pixels.
+- Every metadata record matches production pre-specialization analysis, including
+  **26 anisotropic sampler alias changes**. The prior raw-source metadata would
+  retain removed sampler bindings. The serializer participates in content identity,
+  so old metadata cannot retain a matching WGSC fingerprint.
+- WGSC v4 identity, corruption and precedence matrix: **11/11**. Stale/legacy
+  identities are rejected; a corrupt later record prevents partial acceptance.
+- Existing shader-placeholder fallback matrix: **14/14**, including repeated later
+  container failure and malformed inner counts. Private staging completes before
+  RID adoption, preserving destination ownership when fallback is needed.
+- Four worker-owned local RenderingDevices verify **160/160 GPU values** while
+  the main renderer advances 421 frames. Shared cache maps, counters and persistence
+  are synchronized; SPIR-V analysis, Tint and GPU work stay outside the cache lock.
+  This is concurrency stress evidence, not a ThreadSanitizer proof or a benchmark.
+
+The compact shader container remains version 1 with SMOL-V, GDSC remains version 4,
+and WGSC v4 retains analysis wire version 1. Missing image format/scalar metadata
+is recovered from source SPIR-V where required. Shader creation remains deferred.
+Native baking requires the active WebGPU driver; regeneration from a Vulkan/Metal
+editor and equivalent coverage on browser adapters remain future work. Browser
+tests use the separate candidate harness; these results do not validate D3D12.

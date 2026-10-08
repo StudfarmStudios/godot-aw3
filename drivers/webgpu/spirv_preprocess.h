@@ -67,6 +67,7 @@ struct ImageBindingInfo {
 	uint32_t arrayed = 0;
 	uint32_t multisampled = 0;
 	uint32_t format = 0; // SPIR-V ImageFormat; recovered from source for legacy cache metadata.
+	uint32_t sampled_type = UINT32_MAX; // 0=float, 1=signed integer, 2=unsigned integer; unknown in cached analysis v1.
 };
 
 void binding_image_info(const Vector<uint8_t> &p_bytes, HashMap<uint32_t, ImageBindingInfo> *r_info);

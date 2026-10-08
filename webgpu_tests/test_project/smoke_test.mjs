@@ -48,6 +48,12 @@ function startServer(dir) {
             const url = req.url.split('?')[0];
             const filePath = join(dir, url === '/' ? 'index.html' : url);
 
+            if (url === '/favicon.ico' && !existsSync(filePath)) {
+                res.writeHead(204);
+                res.end();
+                return;
+            }
+
             if (!existsSync(filePath) || statSync(filePath).isDirectory()) {
                 res.writeHead(404);
                 res.end('Not found');
@@ -124,6 +130,7 @@ async function main() {
     let deviceLost = false;
     let engineStarted = false;
     let engineFinished = false;
+    let enginePassed = false;
 
     page.on('console', (msg) => {
         const text = msg.text();
@@ -147,15 +154,17 @@ async function main() {
         }
         if (text.includes('[ShaderCoverage] PASS')) {
             engineFinished = true;
+            enginePassed = true;
             console.log('  Engine reports PASS.');
         }
         if (text.includes('[ShaderCoverage] FAIL')) {
             engineFinished = true;
+            consoleErrors.push(text);
             console.error('  Engine reports FAIL.');
         }
 
         // Log significant messages
-        if (msg.type() === 'error') {
+        if (msg.type() === 'error' || /(^|\s)(ERROR:|SCRIPT ERROR:|SHADER ERROR:)|GPUValidationError|uncaptured error/i.test(text)) {
             consoleErrors.push(text);
         }
 
@@ -200,6 +209,17 @@ async function main() {
 
     if (!engineFinished) {
         console.error('  FAIL: Engine did not complete within timeout');
+        exitCode = 1;
+    }
+
+    if (engineFinished && !enginePassed) {
+        console.error('  FAIL: Engine did not report a successful result');
+        exitCode = 1;
+    }
+
+    if (consoleErrors.length > 0) {
+        console.error(`  FAIL: ${consoleErrors.length} browser or engine error(s):`);
+        for (const error of consoleErrors.slice(0, 10)) console.error(`    - ${error}`);
         exitCode = 1;
     }
 

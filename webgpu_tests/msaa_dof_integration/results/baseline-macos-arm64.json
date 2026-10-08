@@ -1,0 +1,2671 @@
+{
+  "passed": false,
+  "runs": [
+    {
+      "mode": "metal",
+      "passed": false,
+      "passed_checks": 149,
+      "failed_checks": 4,
+      "returncode": 1,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "67c9e7d81941c96e1218cd3d7a0e222af17b283a1d94a54e69bdb9dda428e136",
+      "command": [
+        "/private/tmp/aw3-webgpu-integrated-fifth",
+        "--path",
+        "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/msaa_dof_integration",
+        "--rendering-method",
+        "forward_plus",
+        "--rendering-driver",
+        "metal",
+        "--disable-vsync",
+        "--",
+        "--effects-output=/private/tmp/aw3-msaa-dof-baseline-final/metal"
+      ],
+      "error_count": 0,
+      "errors": [],
+      "checks": [
+        "MSAA_DOF PASS ortho_1_off_extent ",
+        "MSAA_DOF PASS ortho_1_off_finite ",
+        "MSAA_DOF PASS ortho_1_geometric_sample_coverage 0",
+        "MSAA_DOF PASS ortho_1_sharp_contrast [0.49999976158136, 0.49999976158136, 0.49999976158136]",
+        "MSAA_DOF PASS ortho_1_effective_samples { \"size\": (320, 240), \"samples\": 1, \"requested_msaa\": 0, \"depth\": RID(5282809774138), \"depth_format\": 129, \"depth_attachment\": true }",
+        "MSAA_DOF PASS ortho_1_depth_extent { \"size\": (320, 240), \"samples\": 1, \"requested_msaa\": 0, \"depth\": RID(5282809774138), \"depth_format\": 129, \"depth_attachment\": true }",
+        "MSAA_DOF PASS ortho_1_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS ortho_1_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS ortho_1_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS ortho_1_on_extent ",
+        "MSAA_DOF PASS ortho_1_on_finite ",
+        "MSAA_DOF PASS ortho_1_near_blurred [0.00370119281322, 0.49999976158136, 0.00370119281322]",
+        "MSAA_DOF PASS ortho_1_focus_preserved [0.00370119281322, 0.49999976158136, 0.00370119281322]",
+        "MSAA_DOF PASS ortho_1_far_blurred [0.00370119281322, 0.49999976158136, 0.00370119281322]",
+        "MSAA_DOF PASS ortho_1_reset_extent ",
+        "MSAA_DOF PASS ortho_1_reset_finite ",
+        "MSAA_DOF PASS ortho_1_reset_exact ",
+        "MSAA_DOF PASS ortho_2_off_extent ",
+        "MSAA_DOF PASS ortho_2_off_finite ",
+        "MSAA_DOF PASS ortho_2_geometric_sample_coverage 60",
+        "MSAA_DOF PASS ortho_2_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS ortho_2_effective_samples { \"size\": (320, 240), \"samples\": 2, \"requested_msaa\": 1, \"depth\": RID(5712306503744), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_2_depth_extent { \"size\": (320, 240), \"samples\": 2, \"requested_msaa\": 1, \"depth\": RID(5712306503744), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_2_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS ortho_2_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS ortho_2_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS ortho_2_on_extent ",
+        "MSAA_DOF PASS ortho_2_on_finite ",
+        "MSAA_DOF PASS ortho_2_near_blurred [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_2_focus_preserved [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_2_far_blurred [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_2_reset_extent ",
+        "MSAA_DOF PASS ortho_2_reset_finite ",
+        "MSAA_DOF PASS ortho_2_reset_exact ",
+        "MSAA_DOF PASS ortho_4_off_extent ",
+        "MSAA_DOF PASS ortho_4_off_finite ",
+        "MSAA_DOF PASS ortho_4_geometric_sample_coverage 86",
+        "MSAA_DOF PASS ortho_4_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS ortho_4_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(6025839116354), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_4_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(6025839116354), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_4_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS ortho_4_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS ortho_4_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS ortho_4_on_extent ",
+        "MSAA_DOF PASS ortho_4_on_finite ",
+        "MSAA_DOF PASS ortho_4_near_blurred [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_4_focus_preserved [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_4_far_blurred [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_4_reset_extent ",
+        "MSAA_DOF PASS ortho_4_reset_finite ",
+        "MSAA_DOF PASS ortho_4_reset_exact ",
+        "MSAA_DOF PASS ortho_8_off_extent ",
+        "MSAA_DOF PASS ortho_8_off_finite ",
+        "MSAA_DOF PASS ortho_8_geometric_sample_coverage 86",
+        "MSAA_DOF PASS ortho_8_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS ortho_8_effective_samples { \"size\": (320, 240), \"samples\": 8, \"requested_msaa\": 3, \"depth\": RID(6339371728960), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_8_depth_extent { \"size\": (320, 240), \"samples\": 8, \"requested_msaa\": 3, \"depth\": RID(6339371728960), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF FAIL ortho_8_depth_0 [0.48548549413681, 0.97097097097097]",
+        "MSAA_DOF FAIL ortho_8_depth_1 [0.47047045826912, 0.94094094094094]",
+        "MSAA_DOF FAIL ortho_8_depth_2 [0.45045045018196, 0.9009009009009]",
+        "MSAA_DOF PASS ortho_8_on_extent ",
+        "MSAA_DOF PASS ortho_8_on_finite ",
+        "MSAA_DOF PASS ortho_8_near_blurred [0.00327023502775, 0.00335125385094, 0.00327023502775]",
+        "MSAA_DOF FAIL ortho_8_focus_preserved [0.00327023502775, 0.00335125385094, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_8_far_blurred [0.00327023502775, 0.00335125385094, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_8_reset_extent ",
+        "MSAA_DOF PASS ortho_8_reset_finite ",
+        "MSAA_DOF PASS ortho_8_reset_exact ",
+        "MSAA_DOF PASS odd_hdr_off_extent ",
+        "MSAA_DOF PASS odd_hdr_off_finite ",
+        "MSAA_DOF PASS odd_hdr_geometric_sample_coverage 88",
+        "MSAA_DOF PASS odd_hdr_sharp_contrast [0.49999904632477, 0.5, 0.49999904632477]",
+        "MSAA_DOF PASS odd_hdr_effective_samples { \"size\": (323, 243), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(6803228196925), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS odd_hdr_depth_extent { \"size\": (323, 243), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(6803228196925), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS odd_hdr_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS odd_hdr_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS odd_hdr_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS odd_hdr_on_extent ",
+        "MSAA_DOF PASS odd_hdr_on_finite ",
+        "MSAA_DOF PASS odd_hdr_near_blurred [0.00242853424192, 0.5, 0.00307860094019]",
+        "MSAA_DOF PASS odd_hdr_focus_preserved [0.00242853424192, 0.5, 0.00307860094019]",
+        "MSAA_DOF PASS odd_hdr_far_blurred [0.00242853424192, 0.5, 0.00307860094019]",
+        "MSAA_DOF PASS odd_hdr_reset_extent ",
+        "MSAA_DOF PASS odd_hdr_reset_finite ",
+        "MSAA_DOF PASS odd_hdr_reset_exact ",
+        "MSAA_DOF PASS odd_sdr_off_extent ",
+        "MSAA_DOF PASS odd_sdr_off_finite ",
+        "MSAA_DOF PASS odd_sdr_geometric_sample_coverage 88",
+        "MSAA_DOF PASS odd_sdr_sharp_contrast [0.49999904632477, 0.5, 0.49999904632477]",
+        "MSAA_DOF PASS odd_sdr_effective_samples { \"size\": (323, 243), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7073811136576), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS odd_sdr_depth_extent { \"size\": (323, 243), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7073811136576), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS odd_sdr_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS odd_sdr_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS odd_sdr_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS odd_sdr_on_extent ",
+        "MSAA_DOF PASS odd_sdr_on_finite ",
+        "MSAA_DOF PASS odd_sdr_near_blurred [0.00171852933893, 0.5, 0.00213693123841]",
+        "MSAA_DOF PASS odd_sdr_focus_preserved [0.00171852933893, 0.5, 0.00213693123841]",
+        "MSAA_DOF PASS odd_sdr_far_blurred [0.00171852933893, 0.5, 0.00213693123841]",
+        "MSAA_DOF PASS odd_sdr_reset_extent ",
+        "MSAA_DOF PASS odd_sdr_reset_finite ",
+        "MSAA_DOF PASS odd_sdr_reset_exact ",
+        "MSAA_DOF PASS perspective_off_extent ",
+        "MSAA_DOF PASS perspective_off_finite ",
+        "MSAA_DOF PASS perspective_geometric_sample_coverage 86",
+        "MSAA_DOF PASS perspective_sharp_contrast [0.49999618528818, 0.49999618528818, 0.49975198316538]",
+        "MSAA_DOF PASS perspective_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7499012898873), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS perspective_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7499012898873), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS perspective_depth_0 [0.03236569836736, 0.03236569903237]",
+        "MSAA_DOF PASS perspective_depth_1 [0.0156823489815, 0.01568234901568]",
+        "MSAA_DOF PASS perspective_depth_2 [0.00900900922716, 0.00900900900901]",
+        "MSAA_DOF PASS perspective_on_extent ",
+        "MSAA_DOF PASS perspective_on_finite ",
+        "MSAA_DOF PASS perspective_near_blurred [0.00237835820384, 0.49999618528818, 0.0029703546389]",
+        "MSAA_DOF PASS perspective_focus_preserved [0.00237835820384, 0.49999618528818, 0.0029703546389]",
+        "MSAA_DOF PASS perspective_far_blurred [0.00237835820384, 0.49999618528818, 0.0029703546389]",
+        "MSAA_DOF PASS perspective_reset_extent ",
+        "MSAA_DOF PASS perspective_reset_finite ",
+        "MSAA_DOF PASS perspective_reset_exact ",
+        "MSAA_DOF PASS box_off_extent ",
+        "MSAA_DOF PASS box_off_finite ",
+        "MSAA_DOF PASS box_geometric_sample_coverage 86",
+        "MSAA_DOF PASS box_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS box_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7499012898873), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS box_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7499012898873), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS box_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS box_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS box_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS box_on_extent ",
+        "MSAA_DOF PASS box_on_finite ",
+        "MSAA_DOF PASS box_near_blurred [0.00921103689813, 0.4997548456, 0.00921103689813]",
+        "MSAA_DOF PASS box_focus_preserved [0.00921103689813, 0.4997548456, 0.00921103689813]",
+        "MSAA_DOF PASS box_far_blurred [0.00921103689813, 0.4997548456, 0.00921103689813]",
+        "MSAA_DOF PASS box_reset_extent ",
+        "MSAA_DOF PASS box_reset_finite ",
+        "MSAA_DOF PASS box_reset_exact ",
+        "MSAA_DOF PASS circle_off_extent ",
+        "MSAA_DOF PASS circle_off_finite ",
+        "MSAA_DOF PASS circle_geometric_sample_coverage 86",
+        "MSAA_DOF PASS circle_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS circle_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7499012898873), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS circle_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7499012898873), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS circle_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS circle_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS circle_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS circle_on_extent ",
+        "MSAA_DOF PASS circle_on_finite ",
+        "MSAA_DOF PASS circle_near_blurred [0.04417233923367, 0.4997548456, 0.04378451289711]",
+        "MSAA_DOF PASS circle_focus_preserved [0.04417233923367, 0.4997548456, 0.04378451289711]",
+        "MSAA_DOF PASS circle_far_blurred [0.04417233923367, 0.4997548456, 0.04378451289711]",
+        "MSAA_DOF PASS circle_reset_extent ",
+        "MSAA_DOF PASS circle_reset_finite ",
+        "MSAA_DOF PASS circle_reset_exact "
+      ],
+      "captures": [
+        {
+          "height": 240,
+          "label": "ortho_1_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_1_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_1_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_2_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_2_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_2_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_4_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_4_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_4_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_8_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_8_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_8_reset",
+          "width": 320
+        },
+        {
+          "height": 243,
+          "label": "odd_hdr_off",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_hdr_on",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_hdr_reset",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_sdr_off",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_sdr_on",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_sdr_reset",
+          "width": 323
+        },
+        {
+          "height": 240,
+          "label": "perspective_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "perspective_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "perspective_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "box_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "box_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "box_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "circle_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "circle_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "circle_reset",
+          "width": 320
+        }
+      ]
+    },
+    {
+      "mode": "native",
+      "passed": false,
+      "passed_checks": 152,
+      "failed_checks": 1,
+      "returncode": 1,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "67c9e7d81941c96e1218cd3d7a0e222af17b283a1d94a54e69bdb9dda428e136",
+      "command": [
+        "/private/tmp/aw3-webgpu-integrated-fifth",
+        "--path",
+        "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/msaa_dof_integration",
+        "--rendering-method",
+        "forward_plus",
+        "--rendering-driver",
+        "webgpu",
+        "--disable-vsync",
+        "--",
+        "--effects-output=/private/tmp/aw3-msaa-dof-baseline-final/native"
+      ],
+      "error_count": 0,
+      "errors": [],
+      "checks": [
+        "MSAA_DOF PASS ortho_1_off_extent ",
+        "MSAA_DOF PASS ortho_1_off_finite ",
+        "MSAA_DOF PASS ortho_1_geometric_sample_coverage 0",
+        "MSAA_DOF PASS ortho_1_sharp_contrast [0.49999976158136, 0.49999976158136, 0.49999976158136]",
+        "MSAA_DOF PASS ortho_1_effective_samples { \"size\": (320, 240), \"samples\": 1, \"requested_msaa\": 0, \"depth\": RID(5244155068474), \"depth_format\": 129, \"depth_attachment\": true }",
+        "MSAA_DOF PASS ortho_1_depth_extent { \"size\": (320, 240), \"samples\": 1, \"requested_msaa\": 0, \"depth\": RID(5244155068474), \"depth_format\": 129, \"depth_attachment\": true }",
+        "MSAA_DOF PASS ortho_1_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS ortho_1_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS ortho_1_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS ortho_1_on_extent ",
+        "MSAA_DOF PASS ortho_1_on_finite ",
+        "MSAA_DOF PASS ortho_1_near_blurred [0.00370119281322, 0.00395833135924, 0.00370119281322]",
+        "MSAA_DOF FAIL ortho_1_focus_preserved [0.00370119281322, 0.00395833135924, 0.00370119281322]",
+        "MSAA_DOF PASS ortho_1_far_blurred [0.00370119281322, 0.00395833135924, 0.00370119281322]",
+        "MSAA_DOF PASS ortho_1_reset_extent ",
+        "MSAA_DOF PASS ortho_1_reset_finite ",
+        "MSAA_DOF PASS ortho_1_reset_exact ",
+        "MSAA_DOF PASS ortho_2_off_extent ",
+        "MSAA_DOF PASS ortho_2_off_finite ",
+        "MSAA_DOF PASS ortho_2_geometric_sample_coverage 86",
+        "MSAA_DOF PASS ortho_2_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS ortho_2_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 1, \"depth\": RID(5673651798080), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_2_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 1, \"depth\": RID(5673651798080), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_2_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS ortho_2_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS ortho_2_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS ortho_2_on_extent ",
+        "MSAA_DOF PASS ortho_2_on_finite ",
+        "MSAA_DOF PASS ortho_2_near_blurred [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_2_focus_preserved [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_2_far_blurred [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_2_reset_extent ",
+        "MSAA_DOF PASS ortho_2_reset_finite ",
+        "MSAA_DOF PASS ortho_2_reset_exact ",
+        "MSAA_DOF PASS ortho_4_off_extent ",
+        "MSAA_DOF PASS ortho_4_off_finite ",
+        "MSAA_DOF PASS ortho_4_geometric_sample_coverage 86",
+        "MSAA_DOF PASS ortho_4_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS ortho_4_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(5987184410690), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_4_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(5987184410690), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_4_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS ortho_4_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS ortho_4_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS ortho_4_on_extent ",
+        "MSAA_DOF PASS ortho_4_on_finite ",
+        "MSAA_DOF PASS ortho_4_near_blurred [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_4_focus_preserved [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_4_far_blurred [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_4_reset_extent ",
+        "MSAA_DOF PASS ortho_4_reset_finite ",
+        "MSAA_DOF PASS ortho_4_reset_exact ",
+        "MSAA_DOF PASS ortho_8_off_extent ",
+        "MSAA_DOF PASS ortho_8_off_finite ",
+        "MSAA_DOF PASS ortho_8_geometric_sample_coverage 86",
+        "MSAA_DOF PASS ortho_8_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS ortho_8_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 3, \"depth\": RID(6231997546560), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_8_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 3, \"depth\": RID(6231997546560), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_8_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS ortho_8_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS ortho_8_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS ortho_8_on_extent ",
+        "MSAA_DOF PASS ortho_8_on_finite ",
+        "MSAA_DOF PASS ortho_8_near_blurred [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_8_focus_preserved [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_8_far_blurred [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_8_reset_extent ",
+        "MSAA_DOF PASS ortho_8_reset_finite ",
+        "MSAA_DOF PASS ortho_8_reset_exact ",
+        "MSAA_DOF PASS odd_hdr_off_extent ",
+        "MSAA_DOF PASS odd_hdr_off_finite ",
+        "MSAA_DOF PASS odd_hdr_geometric_sample_coverage 88",
+        "MSAA_DOF PASS odd_hdr_sharp_contrast [0.49999904632477, 0.5, 0.49999904632477]",
+        "MSAA_DOF PASS odd_hdr_effective_samples { \"size\": (323, 243), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(6627134537789), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS odd_hdr_depth_extent { \"size\": (323, 243), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(6627134537789), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS odd_hdr_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS odd_hdr_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS odd_hdr_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS odd_hdr_on_extent ",
+        "MSAA_DOF PASS odd_hdr_on_finite ",
+        "MSAA_DOF PASS odd_hdr_near_blurred [0.00242853424192, 0.5, 0.00307860094019]",
+        "MSAA_DOF PASS odd_hdr_focus_preserved [0.00242853424192, 0.5, 0.00307860094019]",
+        "MSAA_DOF PASS odd_hdr_far_blurred [0.00242853424192, 0.5, 0.00307860094019]",
+        "MSAA_DOF PASS odd_hdr_reset_extent ",
+        "MSAA_DOF PASS odd_hdr_reset_finite ",
+        "MSAA_DOF PASS odd_hdr_reset_exact ",
+        "MSAA_DOF PASS odd_sdr_off_extent ",
+        "MSAA_DOF PASS odd_sdr_off_finite ",
+        "MSAA_DOF PASS odd_sdr_geometric_sample_coverage 88",
+        "MSAA_DOF PASS odd_sdr_sharp_contrast [0.49999904632477, 0.5, 0.49999904632477]",
+        "MSAA_DOF PASS odd_sdr_effective_samples { \"size\": (323, 243), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(6897717477440), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS odd_sdr_depth_extent { \"size\": (323, 243), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(6897717477440), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS odd_sdr_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS odd_sdr_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS odd_sdr_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS odd_sdr_on_extent ",
+        "MSAA_DOF PASS odd_sdr_on_finite ",
+        "MSAA_DOF PASS odd_sdr_near_blurred [0.00171852933893, 0.5, 0.00213693123841]",
+        "MSAA_DOF PASS odd_sdr_focus_preserved [0.00171852933893, 0.5, 0.00213693123841]",
+        "MSAA_DOF PASS odd_sdr_far_blurred [0.00171852933893, 0.5, 0.00213693123841]",
+        "MSAA_DOF PASS odd_sdr_reset_extent ",
+        "MSAA_DOF PASS odd_sdr_reset_finite ",
+        "MSAA_DOF PASS odd_sdr_reset_exact ",
+        "MSAA_DOF PASS perspective_off_extent ",
+        "MSAA_DOF PASS perspective_off_finite ",
+        "MSAA_DOF PASS perspective_geometric_sample_coverage 86",
+        "MSAA_DOF PASS perspective_sharp_contrast [0.49999618528818, 0.49999618528818, 0.49975198316538]",
+        "MSAA_DOF PASS perspective_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS perspective_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS perspective_depth_0 [0.03236569836736, 0.03236569903237]",
+        "MSAA_DOF PASS perspective_depth_1 [0.0156823489815, 0.01568234901568]",
+        "MSAA_DOF PASS perspective_depth_2 [0.00900900922716, 0.00900900900901]",
+        "MSAA_DOF PASS perspective_on_extent ",
+        "MSAA_DOF PASS perspective_on_finite ",
+        "MSAA_DOF PASS perspective_near_blurred [0.00237835820384, 0.49999618528818, 0.0029703546389]",
+        "MSAA_DOF PASS perspective_focus_preserved [0.00237835820384, 0.49999618528818, 0.0029703546389]",
+        "MSAA_DOF PASS perspective_far_blurred [0.00237835820384, 0.49999618528818, 0.0029703546389]",
+        "MSAA_DOF PASS perspective_reset_extent ",
+        "MSAA_DOF PASS perspective_reset_finite ",
+        "MSAA_DOF PASS perspective_reset_exact ",
+        "MSAA_DOF PASS box_off_extent ",
+        "MSAA_DOF PASS box_off_finite ",
+        "MSAA_DOF PASS box_geometric_sample_coverage 86",
+        "MSAA_DOF PASS box_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS box_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS box_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS box_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS box_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS box_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS box_on_extent ",
+        "MSAA_DOF PASS box_on_finite ",
+        "MSAA_DOF PASS box_near_blurred [0.00921103689813, 0.4997548456, 0.00921103689813]",
+        "MSAA_DOF PASS box_focus_preserved [0.00921103689813, 0.4997548456, 0.00921103689813]",
+        "MSAA_DOF PASS box_far_blurred [0.00921103689813, 0.4997548456, 0.00921103689813]",
+        "MSAA_DOF PASS box_reset_extent ",
+        "MSAA_DOF PASS box_reset_finite ",
+        "MSAA_DOF PASS box_reset_exact ",
+        "MSAA_DOF PASS circle_off_extent ",
+        "MSAA_DOF PASS circle_off_finite ",
+        "MSAA_DOF PASS circle_geometric_sample_coverage 86",
+        "MSAA_DOF PASS circle_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS circle_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS circle_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS circle_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS circle_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS circle_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS circle_on_extent ",
+        "MSAA_DOF PASS circle_on_finite ",
+        "MSAA_DOF PASS circle_near_blurred [0.04417233923367, 0.4997548456, 0.04378451289711]",
+        "MSAA_DOF PASS circle_focus_preserved [0.04417233923367, 0.4997548456, 0.04378451289711]",
+        "MSAA_DOF PASS circle_far_blurred [0.04417233923367, 0.4997548456, 0.04378451289711]",
+        "MSAA_DOF PASS circle_reset_extent ",
+        "MSAA_DOF PASS circle_reset_finite ",
+        "MSAA_DOF PASS circle_reset_exact "
+      ],
+      "captures": [
+        {
+          "height": 240,
+          "label": "ortho_1_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_1_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_1_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_2_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_2_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_2_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_4_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_4_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_4_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_8_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_8_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_8_reset",
+          "width": 320
+        },
+        {
+          "height": 243,
+          "label": "odd_hdr_off",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_hdr_on",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_hdr_reset",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_sdr_off",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_sdr_on",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_sdr_reset",
+          "width": 323
+        },
+        {
+          "height": 240,
+          "label": "perspective_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "perspective_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "perspective_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "box_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "box_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "box_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "circle_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "circle_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "circle_reset",
+          "width": 320
+        }
+      ]
+    },
+    {
+      "mode": "fallback",
+      "passed": false,
+      "passed_checks": 152,
+      "failed_checks": 1,
+      "returncode": 1,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "67c9e7d81941c96e1218cd3d7a0e222af17b283a1d94a54e69bdb9dda428e136",
+      "command": [
+        "/private/tmp/aw3-webgpu-integrated-fifth",
+        "--path",
+        "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/msaa_dof_integration",
+        "--rendering-method",
+        "forward_plus",
+        "--rendering-driver",
+        "webgpu",
+        "--disable-vsync",
+        "--",
+        "--effects-output=/private/tmp/aw3-msaa-dof-baseline-final/fallback",
+        "--webgpu-force-fallbacks"
+      ],
+      "error_count": 0,
+      "errors": [],
+      "checks": [
+        "MSAA_DOF PASS ortho_1_off_extent ",
+        "MSAA_DOF PASS ortho_1_off_finite ",
+        "MSAA_DOF PASS ortho_1_geometric_sample_coverage 0",
+        "MSAA_DOF PASS ortho_1_sharp_contrast [0.49999976158136, 0.49999976158136, 0.49999976158136]",
+        "MSAA_DOF PASS ortho_1_effective_samples { \"size\": (320, 240), \"samples\": 1, \"requested_msaa\": 0, \"depth\": RID(5244155068474), \"depth_format\": 129, \"depth_attachment\": true }",
+        "MSAA_DOF PASS ortho_1_depth_extent { \"size\": (320, 240), \"samples\": 1, \"requested_msaa\": 0, \"depth\": RID(5244155068474), \"depth_format\": 129, \"depth_attachment\": true }",
+        "MSAA_DOF PASS ortho_1_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS ortho_1_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS ortho_1_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS ortho_1_on_extent ",
+        "MSAA_DOF PASS ortho_1_on_finite ",
+        "MSAA_DOF PASS ortho_1_near_blurred [0.00370119281322, 0.00395833135924, 0.00370119281322]",
+        "MSAA_DOF FAIL ortho_1_focus_preserved [0.00370119281322, 0.00395833135924, 0.00370119281322]",
+        "MSAA_DOF PASS ortho_1_far_blurred [0.00370119281322, 0.00395833135924, 0.00370119281322]",
+        "MSAA_DOF PASS ortho_1_reset_extent ",
+        "MSAA_DOF PASS ortho_1_reset_finite ",
+        "MSAA_DOF PASS ortho_1_reset_exact ",
+        "MSAA_DOF PASS ortho_2_off_extent ",
+        "MSAA_DOF PASS ortho_2_off_finite ",
+        "MSAA_DOF PASS ortho_2_geometric_sample_coverage 86",
+        "MSAA_DOF PASS ortho_2_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS ortho_2_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 1, \"depth\": RID(5673651798080), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_2_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 1, \"depth\": RID(5673651798080), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_2_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS ortho_2_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS ortho_2_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS ortho_2_on_extent ",
+        "MSAA_DOF PASS ortho_2_on_finite ",
+        "MSAA_DOF PASS ortho_2_near_blurred [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_2_focus_preserved [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_2_far_blurred [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_2_reset_extent ",
+        "MSAA_DOF PASS ortho_2_reset_finite ",
+        "MSAA_DOF PASS ortho_2_reset_exact ",
+        "MSAA_DOF PASS ortho_4_off_extent ",
+        "MSAA_DOF PASS ortho_4_off_finite ",
+        "MSAA_DOF PASS ortho_4_geometric_sample_coverage 86",
+        "MSAA_DOF PASS ortho_4_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS ortho_4_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(5987184410690), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_4_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(5987184410690), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_4_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS ortho_4_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS ortho_4_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS ortho_4_on_extent ",
+        "MSAA_DOF PASS ortho_4_on_finite ",
+        "MSAA_DOF PASS ortho_4_near_blurred [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_4_focus_preserved [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_4_far_blurred [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_4_reset_extent ",
+        "MSAA_DOF PASS ortho_4_reset_finite ",
+        "MSAA_DOF PASS ortho_4_reset_exact ",
+        "MSAA_DOF PASS ortho_8_off_extent ",
+        "MSAA_DOF PASS ortho_8_off_finite ",
+        "MSAA_DOF PASS ortho_8_geometric_sample_coverage 86",
+        "MSAA_DOF PASS ortho_8_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS ortho_8_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 3, \"depth\": RID(6231997546560), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_8_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 3, \"depth\": RID(6231997546560), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_8_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS ortho_8_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS ortho_8_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS ortho_8_on_extent ",
+        "MSAA_DOF PASS ortho_8_on_finite ",
+        "MSAA_DOF PASS ortho_8_near_blurred [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_8_focus_preserved [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_8_far_blurred [0.00327023502775, 0.4997548456, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_8_reset_extent ",
+        "MSAA_DOF PASS ortho_8_reset_finite ",
+        "MSAA_DOF PASS ortho_8_reset_exact ",
+        "MSAA_DOF PASS odd_hdr_off_extent ",
+        "MSAA_DOF PASS odd_hdr_off_finite ",
+        "MSAA_DOF PASS odd_hdr_geometric_sample_coverage 88",
+        "MSAA_DOF PASS odd_hdr_sharp_contrast [0.49999904632477, 0.5, 0.49999904632477]",
+        "MSAA_DOF PASS odd_hdr_effective_samples { \"size\": (323, 243), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(6627134537789), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS odd_hdr_depth_extent { \"size\": (323, 243), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(6627134537789), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS odd_hdr_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS odd_hdr_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS odd_hdr_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS odd_hdr_on_extent ",
+        "MSAA_DOF PASS odd_hdr_on_finite ",
+        "MSAA_DOF PASS odd_hdr_near_blurred [0.00242853424192, 0.5, 0.00307860094019]",
+        "MSAA_DOF PASS odd_hdr_focus_preserved [0.00242853424192, 0.5, 0.00307860094019]",
+        "MSAA_DOF PASS odd_hdr_far_blurred [0.00242853424192, 0.5, 0.00307860094019]",
+        "MSAA_DOF PASS odd_hdr_reset_extent ",
+        "MSAA_DOF PASS odd_hdr_reset_finite ",
+        "MSAA_DOF PASS odd_hdr_reset_exact ",
+        "MSAA_DOF PASS odd_sdr_off_extent ",
+        "MSAA_DOF PASS odd_sdr_off_finite ",
+        "MSAA_DOF PASS odd_sdr_geometric_sample_coverage 88",
+        "MSAA_DOF PASS odd_sdr_sharp_contrast [0.49999904632477, 0.5, 0.49999904632477]",
+        "MSAA_DOF PASS odd_sdr_effective_samples { \"size\": (323, 243), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(6897717477440), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS odd_sdr_depth_extent { \"size\": (323, 243), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(6897717477440), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS odd_sdr_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS odd_sdr_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS odd_sdr_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS odd_sdr_on_extent ",
+        "MSAA_DOF PASS odd_sdr_on_finite ",
+        "MSAA_DOF PASS odd_sdr_near_blurred [0.00171852933893, 0.5, 0.00213693123841]",
+        "MSAA_DOF PASS odd_sdr_focus_preserved [0.00171852933893, 0.5, 0.00213693123841]",
+        "MSAA_DOF PASS odd_sdr_far_blurred [0.00171852933893, 0.5, 0.00213693123841]",
+        "MSAA_DOF PASS odd_sdr_reset_extent ",
+        "MSAA_DOF PASS odd_sdr_reset_finite ",
+        "MSAA_DOF PASS odd_sdr_reset_exact ",
+        "MSAA_DOF PASS perspective_off_extent ",
+        "MSAA_DOF PASS perspective_off_finite ",
+        "MSAA_DOF PASS perspective_geometric_sample_coverage 86",
+        "MSAA_DOF PASS perspective_sharp_contrast [0.49999618528818, 0.49999618528818, 0.49975198316538]",
+        "MSAA_DOF PASS perspective_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS perspective_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS perspective_depth_0 [0.03236569836736, 0.03236569903237]",
+        "MSAA_DOF PASS perspective_depth_1 [0.0156823489815, 0.01568234901568]",
+        "MSAA_DOF PASS perspective_depth_2 [0.00900900922716, 0.00900900900901]",
+        "MSAA_DOF PASS perspective_on_extent ",
+        "MSAA_DOF PASS perspective_on_finite ",
+        "MSAA_DOF PASS perspective_near_blurred [0.00237835820384, 0.49999618528818, 0.0029703546389]",
+        "MSAA_DOF PASS perspective_focus_preserved [0.00237835820384, 0.49999618528818, 0.0029703546389]",
+        "MSAA_DOF PASS perspective_far_blurred [0.00237835820384, 0.49999618528818, 0.0029703546389]",
+        "MSAA_DOF PASS perspective_reset_extent ",
+        "MSAA_DOF PASS perspective_reset_finite ",
+        "MSAA_DOF PASS perspective_reset_exact ",
+        "MSAA_DOF PASS box_off_extent ",
+        "MSAA_DOF PASS box_off_finite ",
+        "MSAA_DOF PASS box_geometric_sample_coverage 86",
+        "MSAA_DOF PASS box_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS box_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS box_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS box_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS box_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS box_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS box_on_extent ",
+        "MSAA_DOF PASS box_on_finite ",
+        "MSAA_DOF PASS box_near_blurred [0.00921103689813, 0.4997548456, 0.00921103689813]",
+        "MSAA_DOF PASS box_focus_preserved [0.00921103689813, 0.4997548456, 0.00921103689813]",
+        "MSAA_DOF PASS box_far_blurred [0.00921103689813, 0.4997548456, 0.00921103689813]",
+        "MSAA_DOF PASS box_reset_extent ",
+        "MSAA_DOF PASS box_reset_finite ",
+        "MSAA_DOF PASS box_reset_exact ",
+        "MSAA_DOF PASS circle_off_extent ",
+        "MSAA_DOF PASS circle_off_finite ",
+        "MSAA_DOF PASS circle_geometric_sample_coverage 86",
+        "MSAA_DOF PASS circle_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS circle_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS circle_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS circle_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS circle_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS circle_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS circle_on_extent ",
+        "MSAA_DOF PASS circle_on_finite ",
+        "MSAA_DOF PASS circle_near_blurred [0.04417233923367, 0.4997548456, 0.04378451289711]",
+        "MSAA_DOF PASS circle_focus_preserved [0.04417233923367, 0.4997548456, 0.04378451289711]",
+        "MSAA_DOF PASS circle_far_blurred [0.04417233923367, 0.4997548456, 0.04378451289711]",
+        "MSAA_DOF PASS circle_reset_extent ",
+        "MSAA_DOF PASS circle_reset_finite ",
+        "MSAA_DOF PASS circle_reset_exact "
+      ],
+      "captures": [
+        {
+          "height": 240,
+          "label": "ortho_1_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_1_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_1_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_2_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_2_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_2_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_4_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_4_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_4_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_8_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_8_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_8_reset",
+          "width": 320
+        },
+        {
+          "height": 243,
+          "label": "odd_hdr_off",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_hdr_on",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_hdr_reset",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_sdr_off",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_sdr_on",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_sdr_reset",
+          "width": 323
+        },
+        {
+          "height": 240,
+          "label": "perspective_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "perspective_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "perspective_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "box_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "box_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "box_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "circle_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "circle_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "circle_reset",
+          "width": 320
+        }
+      ]
+    },
+    {
+      "mode": "nofilter",
+      "passed": false,
+      "passed_checks": 120,
+      "failed_checks": 33,
+      "returncode": 1,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "67c9e7d81941c96e1218cd3d7a0e222af17b283a1d94a54e69bdb9dda428e136",
+      "command": [
+        "/private/tmp/aw3-webgpu-integrated-fifth",
+        "--path",
+        "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/msaa_dof_integration",
+        "--rendering-method",
+        "forward_plus",
+        "--rendering-driver",
+        "webgpu",
+        "--disable-vsync",
+        "--",
+        "--effects-output=/private/tmp/aw3-msaa-dof-baseline-final/nofilter",
+        "--webgpu-no-float32-filterable"
+      ],
+      "error_count": 0,
+      "errors": [],
+      "checks": [
+        "MSAA_DOF PASS ortho_1_off_extent ",
+        "MSAA_DOF PASS ortho_1_off_finite ",
+        "MSAA_DOF PASS ortho_1_geometric_sample_coverage 0",
+        "MSAA_DOF PASS ortho_1_sharp_contrast [0.49999976158136, 0.49999976158136, 0.49999976158136]",
+        "MSAA_DOF PASS ortho_1_effective_samples { \"size\": (320, 240), \"samples\": 1, \"requested_msaa\": 0, \"depth\": RID(5244155068474), \"depth_format\": 129, \"depth_attachment\": true }",
+        "MSAA_DOF PASS ortho_1_depth_extent { \"size\": (320, 240), \"samples\": 1, \"requested_msaa\": 0, \"depth\": RID(5244155068474), \"depth_format\": 129, \"depth_attachment\": true }",
+        "MSAA_DOF PASS ortho_1_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS ortho_1_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS ortho_1_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS ortho_1_on_extent ",
+        "MSAA_DOF PASS ortho_1_on_finite ",
+        "MSAA_DOF PASS ortho_1_near_blurred [0.00370119281322, 0.00395833135924, 0.00370119281322]",
+        "MSAA_DOF FAIL ortho_1_focus_preserved [0.00370119281322, 0.00395833135924, 0.00370119281322]",
+        "MSAA_DOF PASS ortho_1_far_blurred [0.00370119281322, 0.00395833135924, 0.00370119281322]",
+        "MSAA_DOF PASS ortho_1_reset_extent ",
+        "MSAA_DOF PASS ortho_1_reset_finite ",
+        "MSAA_DOF PASS ortho_1_reset_exact ",
+        "MSAA_DOF PASS ortho_2_off_extent ",
+        "MSAA_DOF PASS ortho_2_off_finite ",
+        "MSAA_DOF PASS ortho_2_geometric_sample_coverage 86",
+        "MSAA_DOF PASS ortho_2_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS ortho_2_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 1, \"depth\": RID(5673651798080), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_2_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 1, \"depth\": RID(5673651798080), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF FAIL ortho_2_depth_0 [0.0, 0.97097097097097]",
+        "MSAA_DOF FAIL ortho_2_depth_1 [0.0, 0.94094094094094]",
+        "MSAA_DOF FAIL ortho_2_depth_2 [0.0, 0.9009009009009]",
+        "MSAA_DOF PASS ortho_2_on_extent ",
+        "MSAA_DOF PASS ortho_2_on_finite ",
+        "MSAA_DOF PASS ortho_2_near_blurred [0.00327023502775, 0.00335125385094, 0.00327023502775]",
+        "MSAA_DOF FAIL ortho_2_focus_preserved [0.00327023502775, 0.00335125385094, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_2_far_blurred [0.00327023502775, 0.00335125385094, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_2_reset_extent ",
+        "MSAA_DOF PASS ortho_2_reset_finite ",
+        "MSAA_DOF PASS ortho_2_reset_exact ",
+        "MSAA_DOF PASS ortho_4_off_extent ",
+        "MSAA_DOF PASS ortho_4_off_finite ",
+        "MSAA_DOF PASS ortho_4_geometric_sample_coverage 86",
+        "MSAA_DOF PASS ortho_4_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS ortho_4_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(5987184410690), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_4_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(5987184410690), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF FAIL ortho_4_depth_0 [0.0, 0.97097097097097]",
+        "MSAA_DOF FAIL ortho_4_depth_1 [0.0, 0.94094094094094]",
+        "MSAA_DOF FAIL ortho_4_depth_2 [0.0, 0.9009009009009]",
+        "MSAA_DOF PASS ortho_4_on_extent ",
+        "MSAA_DOF PASS ortho_4_on_finite ",
+        "MSAA_DOF PASS ortho_4_near_blurred [0.00327023502775, 0.00335125385094, 0.00327023502775]",
+        "MSAA_DOF FAIL ortho_4_focus_preserved [0.00327023502775, 0.00335125385094, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_4_far_blurred [0.00327023502775, 0.00335125385094, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_4_reset_extent ",
+        "MSAA_DOF PASS ortho_4_reset_finite ",
+        "MSAA_DOF PASS ortho_4_reset_exact ",
+        "MSAA_DOF PASS ortho_8_off_extent ",
+        "MSAA_DOF PASS ortho_8_off_finite ",
+        "MSAA_DOF PASS ortho_8_geometric_sample_coverage 86",
+        "MSAA_DOF PASS ortho_8_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS ortho_8_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 3, \"depth\": RID(6231997546560), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_8_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 3, \"depth\": RID(6231997546560), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF FAIL ortho_8_depth_0 [0.0, 0.97097097097097]",
+        "MSAA_DOF FAIL ortho_8_depth_1 [0.0, 0.94094094094094]",
+        "MSAA_DOF FAIL ortho_8_depth_2 [0.0, 0.9009009009009]",
+        "MSAA_DOF PASS ortho_8_on_extent ",
+        "MSAA_DOF PASS ortho_8_on_finite ",
+        "MSAA_DOF PASS ortho_8_near_blurred [0.00327023502775, 0.00335125385094, 0.00327023502775]",
+        "MSAA_DOF FAIL ortho_8_focus_preserved [0.00327023502775, 0.00335125385094, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_8_far_blurred [0.00327023502775, 0.00335125385094, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_8_reset_extent ",
+        "MSAA_DOF PASS ortho_8_reset_finite ",
+        "MSAA_DOF PASS ortho_8_reset_exact ",
+        "MSAA_DOF PASS odd_hdr_off_extent ",
+        "MSAA_DOF PASS odd_hdr_off_finite ",
+        "MSAA_DOF PASS odd_hdr_geometric_sample_coverage 88",
+        "MSAA_DOF PASS odd_hdr_sharp_contrast [0.49999904632477, 0.5, 0.49999904632477]",
+        "MSAA_DOF PASS odd_hdr_effective_samples { \"size\": (323, 243), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(6627134537789), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS odd_hdr_depth_extent { \"size\": (323, 243), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(6627134537789), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF FAIL odd_hdr_depth_0 [0.0, 0.97097097097097]",
+        "MSAA_DOF FAIL odd_hdr_depth_1 [0.0, 0.94094094094094]",
+        "MSAA_DOF FAIL odd_hdr_depth_2 [0.0, 0.9009009009009]",
+        "MSAA_DOF PASS odd_hdr_on_extent ",
+        "MSAA_DOF PASS odd_hdr_on_finite ",
+        "MSAA_DOF PASS odd_hdr_near_blurred [0.00242853424192, 0.00319379463036, 0.00307860094019]",
+        "MSAA_DOF FAIL odd_hdr_focus_preserved [0.00242853424192, 0.00319379463036, 0.00307860094019]",
+        "MSAA_DOF PASS odd_hdr_far_blurred [0.00242853424192, 0.00319379463036, 0.00307860094019]",
+        "MSAA_DOF PASS odd_hdr_reset_extent ",
+        "MSAA_DOF PASS odd_hdr_reset_finite ",
+        "MSAA_DOF PASS odd_hdr_reset_exact ",
+        "MSAA_DOF PASS odd_sdr_off_extent ",
+        "MSAA_DOF PASS odd_sdr_off_finite ",
+        "MSAA_DOF PASS odd_sdr_geometric_sample_coverage 88",
+        "MSAA_DOF PASS odd_sdr_sharp_contrast [0.49999904632477, 0.5, 0.49999904632477]",
+        "MSAA_DOF PASS odd_sdr_effective_samples { \"size\": (323, 243), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(6897717477440), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS odd_sdr_depth_extent { \"size\": (323, 243), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(6897717477440), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF FAIL odd_sdr_depth_0 [0.0, 0.97097097097097]",
+        "MSAA_DOF FAIL odd_sdr_depth_1 [0.0, 0.94094094094094]",
+        "MSAA_DOF FAIL odd_sdr_depth_2 [0.0, 0.9009009009009]",
+        "MSAA_DOF PASS odd_sdr_on_extent ",
+        "MSAA_DOF PASS odd_sdr_on_finite ",
+        "MSAA_DOF PASS odd_sdr_near_blurred [0.00171852933893, 0.00227344881133, 0.00213693123841]",
+        "MSAA_DOF FAIL odd_sdr_focus_preserved [0.00171852933893, 0.00227344881133, 0.00213693123841]",
+        "MSAA_DOF PASS odd_sdr_far_blurred [0.00171852933893, 0.00227344881133, 0.00213693123841]",
+        "MSAA_DOF PASS odd_sdr_reset_extent ",
+        "MSAA_DOF PASS odd_sdr_reset_finite ",
+        "MSAA_DOF PASS odd_sdr_reset_exact ",
+        "MSAA_DOF PASS perspective_off_extent ",
+        "MSAA_DOF PASS perspective_off_finite ",
+        "MSAA_DOF PASS perspective_geometric_sample_coverage 86",
+        "MSAA_DOF PASS perspective_sharp_contrast [0.49999618528818, 0.49999618528818, 0.49975198316538]",
+        "MSAA_DOF PASS perspective_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS perspective_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF FAIL perspective_depth_0 [0.0, 0.03236569903237]",
+        "MSAA_DOF FAIL perspective_depth_1 [0.0, 0.01568234901568]",
+        "MSAA_DOF FAIL perspective_depth_2 [0.0, 0.00900900900901]",
+        "MSAA_DOF PASS perspective_on_extent ",
+        "MSAA_DOF PASS perspective_on_finite ",
+        "MSAA_DOF PASS perspective_near_blurred [0.00237835820384, 0.00237835820384, 0.0029703546389]",
+        "MSAA_DOF FAIL perspective_focus_preserved [0.00237835820384, 0.00237835820384, 0.0029703546389]",
+        "MSAA_DOF PASS perspective_far_blurred [0.00237835820384, 0.00237835820384, 0.0029703546389]",
+        "MSAA_DOF PASS perspective_reset_extent ",
+        "MSAA_DOF PASS perspective_reset_finite ",
+        "MSAA_DOF PASS perspective_reset_exact ",
+        "MSAA_DOF PASS box_off_extent ",
+        "MSAA_DOF PASS box_off_finite ",
+        "MSAA_DOF PASS box_geometric_sample_coverage 86",
+        "MSAA_DOF PASS box_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS box_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS box_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF FAIL box_depth_0 [0.0, 0.97097097097097]",
+        "MSAA_DOF FAIL box_depth_1 [0.0, 0.94094094094094]",
+        "MSAA_DOF FAIL box_depth_2 [0.0, 0.9009009009009]",
+        "MSAA_DOF PASS box_on_extent ",
+        "MSAA_DOF PASS box_on_finite ",
+        "MSAA_DOF PASS box_near_blurred [0.00921103689813, 0.00923093100741, 0.00921103689813]",
+        "MSAA_DOF FAIL box_focus_preserved [0.00921103689813, 0.00923093100741, 0.00921103689813]",
+        "MSAA_DOF PASS box_far_blurred [0.00921103689813, 0.00923093100741, 0.00921103689813]",
+        "MSAA_DOF PASS box_reset_extent ",
+        "MSAA_DOF PASS box_reset_finite ",
+        "MSAA_DOF PASS box_reset_exact ",
+        "MSAA_DOF PASS circle_off_extent ",
+        "MSAA_DOF PASS circle_off_finite ",
+        "MSAA_DOF PASS circle_geometric_sample_coverage 86",
+        "MSAA_DOF PASS circle_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS circle_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS circle_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF FAIL circle_depth_0 [0.0, 0.97097097097097]",
+        "MSAA_DOF FAIL circle_depth_1 [0.0, 0.94094094094094]",
+        "MSAA_DOF FAIL circle_depth_2 [0.0, 0.9009009009009]",
+        "MSAA_DOF PASS circle_on_extent ",
+        "MSAA_DOF PASS circle_on_finite ",
+        "MSAA_DOF PASS circle_near_blurred [0.04378639214435, 0.04277623334631, 0.04378451289711]",
+        "MSAA_DOF FAIL circle_focus_preserved [0.04378639214435, 0.04277623334631, 0.04378451289711]",
+        "MSAA_DOF PASS circle_far_blurred [0.04378639214435, 0.04277623334631, 0.04378451289711]",
+        "MSAA_DOF PASS circle_reset_extent ",
+        "MSAA_DOF PASS circle_reset_finite ",
+        "MSAA_DOF PASS circle_reset_exact "
+      ],
+      "captures": [
+        {
+          "height": 240,
+          "label": "ortho_1_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_1_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_1_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_2_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_2_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_2_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_4_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_4_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_4_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_8_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_8_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_8_reset",
+          "width": 320
+        },
+        {
+          "height": 243,
+          "label": "odd_hdr_off",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_hdr_on",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_hdr_reset",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_sdr_off",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_sdr_on",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_sdr_reset",
+          "width": 323
+        },
+        {
+          "height": 240,
+          "label": "perspective_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "perspective_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "perspective_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "box_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "box_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "box_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "circle_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "circle_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "circle_reset",
+          "width": 320
+        }
+      ]
+    },
+    {
+      "mode": "combined",
+      "passed": false,
+      "passed_checks": 120,
+      "failed_checks": 33,
+      "returncode": 1,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "67c9e7d81941c96e1218cd3d7a0e222af17b283a1d94a54e69bdb9dda428e136",
+      "command": [
+        "/private/tmp/aw3-webgpu-integrated-fifth",
+        "--path",
+        "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/msaa_dof_integration",
+        "--rendering-method",
+        "forward_plus",
+        "--rendering-driver",
+        "webgpu",
+        "--disable-vsync",
+        "--",
+        "--effects-output=/private/tmp/aw3-msaa-dof-baseline-final/combined",
+        "--webgpu-force-fallbacks",
+        "--webgpu-no-float32-filterable"
+      ],
+      "error_count": 0,
+      "errors": [],
+      "checks": [
+        "MSAA_DOF PASS ortho_1_off_extent ",
+        "MSAA_DOF PASS ortho_1_off_finite ",
+        "MSAA_DOF PASS ortho_1_geometric_sample_coverage 0",
+        "MSAA_DOF PASS ortho_1_sharp_contrast [0.49999976158136, 0.49999976158136, 0.49999976158136]",
+        "MSAA_DOF PASS ortho_1_effective_samples { \"size\": (320, 240), \"samples\": 1, \"requested_msaa\": 0, \"depth\": RID(5244155068474), \"depth_format\": 129, \"depth_attachment\": true }",
+        "MSAA_DOF PASS ortho_1_depth_extent { \"size\": (320, 240), \"samples\": 1, \"requested_msaa\": 0, \"depth\": RID(5244155068474), \"depth_format\": 129, \"depth_attachment\": true }",
+        "MSAA_DOF PASS ortho_1_depth_0 [0.97097098827362, 0.97097097097097]",
+        "MSAA_DOF PASS ortho_1_depth_1 [0.94094091653824, 0.94094094094094]",
+        "MSAA_DOF PASS ortho_1_depth_2 [0.90090090036392, 0.9009009009009]",
+        "MSAA_DOF PASS ortho_1_on_extent ",
+        "MSAA_DOF PASS ortho_1_on_finite ",
+        "MSAA_DOF PASS ortho_1_near_blurred [0.00370119281322, 0.00395833135924, 0.00370119281322]",
+        "MSAA_DOF FAIL ortho_1_focus_preserved [0.00370119281322, 0.00395833135924, 0.00370119281322]",
+        "MSAA_DOF PASS ortho_1_far_blurred [0.00370119281322, 0.00395833135924, 0.00370119281322]",
+        "MSAA_DOF PASS ortho_1_reset_extent ",
+        "MSAA_DOF PASS ortho_1_reset_finite ",
+        "MSAA_DOF PASS ortho_1_reset_exact ",
+        "MSAA_DOF PASS ortho_2_off_extent ",
+        "MSAA_DOF PASS ortho_2_off_finite ",
+        "MSAA_DOF PASS ortho_2_geometric_sample_coverage 86",
+        "MSAA_DOF PASS ortho_2_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS ortho_2_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 1, \"depth\": RID(5673651798080), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_2_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 1, \"depth\": RID(5673651798080), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF FAIL ortho_2_depth_0 [0.0, 0.97097097097097]",
+        "MSAA_DOF FAIL ortho_2_depth_1 [0.0, 0.94094094094094]",
+        "MSAA_DOF FAIL ortho_2_depth_2 [0.0, 0.9009009009009]",
+        "MSAA_DOF PASS ortho_2_on_extent ",
+        "MSAA_DOF PASS ortho_2_on_finite ",
+        "MSAA_DOF PASS ortho_2_near_blurred [0.00327023502775, 0.00335125385094, 0.00327023502775]",
+        "MSAA_DOF FAIL ortho_2_focus_preserved [0.00327023502775, 0.00335125385094, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_2_far_blurred [0.00327023502775, 0.00335125385094, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_2_reset_extent ",
+        "MSAA_DOF PASS ortho_2_reset_finite ",
+        "MSAA_DOF PASS ortho_2_reset_exact ",
+        "MSAA_DOF PASS ortho_4_off_extent ",
+        "MSAA_DOF PASS ortho_4_off_finite ",
+        "MSAA_DOF PASS ortho_4_geometric_sample_coverage 86",
+        "MSAA_DOF PASS ortho_4_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS ortho_4_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(5987184410690), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_4_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(5987184410690), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF FAIL ortho_4_depth_0 [0.0, 0.97097097097097]",
+        "MSAA_DOF FAIL ortho_4_depth_1 [0.0, 0.94094094094094]",
+        "MSAA_DOF FAIL ortho_4_depth_2 [0.0, 0.9009009009009]",
+        "MSAA_DOF PASS ortho_4_on_extent ",
+        "MSAA_DOF PASS ortho_4_on_finite ",
+        "MSAA_DOF PASS ortho_4_near_blurred [0.00327023502775, 0.00335125385094, 0.00327023502775]",
+        "MSAA_DOF FAIL ortho_4_focus_preserved [0.00327023502775, 0.00335125385094, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_4_far_blurred [0.00327023502775, 0.00335125385094, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_4_reset_extent ",
+        "MSAA_DOF PASS ortho_4_reset_finite ",
+        "MSAA_DOF PASS ortho_4_reset_exact ",
+        "MSAA_DOF PASS ortho_8_off_extent ",
+        "MSAA_DOF PASS ortho_8_off_finite ",
+        "MSAA_DOF PASS ortho_8_geometric_sample_coverage 86",
+        "MSAA_DOF PASS ortho_8_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS ortho_8_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 3, \"depth\": RID(6231997546560), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS ortho_8_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 3, \"depth\": RID(6231997546560), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF FAIL ortho_8_depth_0 [0.0, 0.97097097097097]",
+        "MSAA_DOF FAIL ortho_8_depth_1 [0.0, 0.94094094094094]",
+        "MSAA_DOF FAIL ortho_8_depth_2 [0.0, 0.9009009009009]",
+        "MSAA_DOF PASS ortho_8_on_extent ",
+        "MSAA_DOF PASS ortho_8_on_finite ",
+        "MSAA_DOF PASS ortho_8_near_blurred [0.00327023502775, 0.00335125385094, 0.00327023502775]",
+        "MSAA_DOF FAIL ortho_8_focus_preserved [0.00327023502775, 0.00335125385094, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_8_far_blurred [0.00327023502775, 0.00335125385094, 0.00327023502775]",
+        "MSAA_DOF PASS ortho_8_reset_extent ",
+        "MSAA_DOF PASS ortho_8_reset_finite ",
+        "MSAA_DOF PASS ortho_8_reset_exact ",
+        "MSAA_DOF PASS odd_hdr_off_extent ",
+        "MSAA_DOF PASS odd_hdr_off_finite ",
+        "MSAA_DOF PASS odd_hdr_geometric_sample_coverage 88",
+        "MSAA_DOF PASS odd_hdr_sharp_contrast [0.49999904632477, 0.5, 0.49999904632477]",
+        "MSAA_DOF PASS odd_hdr_effective_samples { \"size\": (323, 243), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(6627134537789), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS odd_hdr_depth_extent { \"size\": (323, 243), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(6627134537789), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF FAIL odd_hdr_depth_0 [0.0, 0.97097097097097]",
+        "MSAA_DOF FAIL odd_hdr_depth_1 [0.0, 0.94094094094094]",
+        "MSAA_DOF FAIL odd_hdr_depth_2 [0.0, 0.9009009009009]",
+        "MSAA_DOF PASS odd_hdr_on_extent ",
+        "MSAA_DOF PASS odd_hdr_on_finite ",
+        "MSAA_DOF PASS odd_hdr_near_blurred [0.00242853424192, 0.00319379463036, 0.00307860094019]",
+        "MSAA_DOF FAIL odd_hdr_focus_preserved [0.00242853424192, 0.00319379463036, 0.00307860094019]",
+        "MSAA_DOF PASS odd_hdr_far_blurred [0.00242853424192, 0.00319379463036, 0.00307860094019]",
+        "MSAA_DOF PASS odd_hdr_reset_extent ",
+        "MSAA_DOF PASS odd_hdr_reset_finite ",
+        "MSAA_DOF PASS odd_hdr_reset_exact ",
+        "MSAA_DOF PASS odd_sdr_off_extent ",
+        "MSAA_DOF PASS odd_sdr_off_finite ",
+        "MSAA_DOF PASS odd_sdr_geometric_sample_coverage 88",
+        "MSAA_DOF PASS odd_sdr_sharp_contrast [0.49999904632477, 0.5, 0.49999904632477]",
+        "MSAA_DOF PASS odd_sdr_effective_samples { \"size\": (323, 243), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(6897717477440), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS odd_sdr_depth_extent { \"size\": (323, 243), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(6897717477440), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF FAIL odd_sdr_depth_0 [0.0, 0.97097097097097]",
+        "MSAA_DOF FAIL odd_sdr_depth_1 [0.0, 0.94094094094094]",
+        "MSAA_DOF FAIL odd_sdr_depth_2 [0.0, 0.9009009009009]",
+        "MSAA_DOF PASS odd_sdr_on_extent ",
+        "MSAA_DOF PASS odd_sdr_on_finite ",
+        "MSAA_DOF PASS odd_sdr_near_blurred [0.00171852933893, 0.00227344881133, 0.00213693123841]",
+        "MSAA_DOF FAIL odd_sdr_focus_preserved [0.00171852933893, 0.00227344881133, 0.00213693123841]",
+        "MSAA_DOF PASS odd_sdr_far_blurred [0.00171852933893, 0.00227344881133, 0.00213693123841]",
+        "MSAA_DOF PASS odd_sdr_reset_extent ",
+        "MSAA_DOF PASS odd_sdr_reset_finite ",
+        "MSAA_DOF PASS odd_sdr_reset_exact ",
+        "MSAA_DOF PASS perspective_off_extent ",
+        "MSAA_DOF PASS perspective_off_finite ",
+        "MSAA_DOF PASS perspective_geometric_sample_coverage 86",
+        "MSAA_DOF PASS perspective_sharp_contrast [0.49999618528818, 0.49999618528818, 0.49975198316538]",
+        "MSAA_DOF PASS perspective_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS perspective_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF FAIL perspective_depth_0 [0.0, 0.03236569903237]",
+        "MSAA_DOF FAIL perspective_depth_1 [0.0, 0.01568234901568]",
+        "MSAA_DOF FAIL perspective_depth_2 [0.0, 0.00900900900901]",
+        "MSAA_DOF PASS perspective_on_extent ",
+        "MSAA_DOF PASS perspective_on_finite ",
+        "MSAA_DOF PASS perspective_near_blurred [0.00237835820384, 0.00237835820384, 0.0029703546389]",
+        "MSAA_DOF FAIL perspective_focus_preserved [0.00237835820384, 0.00237835820384, 0.0029703546389]",
+        "MSAA_DOF PASS perspective_far_blurred [0.00237835820384, 0.00237835820384, 0.0029703546389]",
+        "MSAA_DOF PASS perspective_reset_extent ",
+        "MSAA_DOF PASS perspective_reset_finite ",
+        "MSAA_DOF PASS perspective_reset_exact ",
+        "MSAA_DOF PASS box_off_extent ",
+        "MSAA_DOF PASS box_off_finite ",
+        "MSAA_DOF PASS box_geometric_sample_coverage 86",
+        "MSAA_DOF PASS box_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS box_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS box_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF FAIL box_depth_0 [0.0, 0.97097097097097]",
+        "MSAA_DOF FAIL box_depth_1 [0.0, 0.94094094094094]",
+        "MSAA_DOF FAIL box_depth_2 [0.0, 0.9009009009009]",
+        "MSAA_DOF PASS box_on_extent ",
+        "MSAA_DOF PASS box_on_finite ",
+        "MSAA_DOF PASS box_near_blurred [0.00921103689813, 0.00923093100741, 0.00921103689813]",
+        "MSAA_DOF FAIL box_focus_preserved [0.00921103689813, 0.00923093100741, 0.00921103689813]",
+        "MSAA_DOF PASS box_far_blurred [0.00921103689813, 0.00923093100741, 0.00921103689813]",
+        "MSAA_DOF PASS box_reset_extent ",
+        "MSAA_DOF PASS box_reset_finite ",
+        "MSAA_DOF PASS box_reset_exact ",
+        "MSAA_DOF PASS circle_off_extent ",
+        "MSAA_DOF PASS circle_off_finite ",
+        "MSAA_DOF PASS circle_geometric_sample_coverage 86",
+        "MSAA_DOF PASS circle_sharp_contrast [0.4997548456, 0.4997548456, 0.4997548456]",
+        "MSAA_DOF PASS circle_effective_samples { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF PASS circle_depth_extent { \"size\": (320, 240), \"samples\": 4, \"requested_msaa\": 2, \"depth\": RID(7322919239737), \"depth_format\": 99, \"depth_attachment\": false }",
+        "MSAA_DOF FAIL circle_depth_0 [0.0, 0.97097097097097]",
+        "MSAA_DOF FAIL circle_depth_1 [0.0, 0.94094094094094]",
+        "MSAA_DOF FAIL circle_depth_2 [0.0, 0.9009009009009]",
+        "MSAA_DOF PASS circle_on_extent ",
+        "MSAA_DOF PASS circle_on_finite ",
+        "MSAA_DOF PASS circle_near_blurred [0.04378639214435, 0.04277623334631, 0.04378451289711]",
+        "MSAA_DOF FAIL circle_focus_preserved [0.04378639214435, 0.04277623334631, 0.04378451289711]",
+        "MSAA_DOF PASS circle_far_blurred [0.04378639214435, 0.04277623334631, 0.04378451289711]",
+        "MSAA_DOF PASS circle_reset_extent ",
+        "MSAA_DOF PASS circle_reset_finite ",
+        "MSAA_DOF PASS circle_reset_exact "
+      ],
+      "captures": [
+        {
+          "height": 240,
+          "label": "ortho_1_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_1_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_1_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_2_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_2_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_2_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_4_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_4_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_4_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_8_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_8_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "ortho_8_reset",
+          "width": 320
+        },
+        {
+          "height": 243,
+          "label": "odd_hdr_off",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_hdr_on",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_hdr_reset",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_sdr_off",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_sdr_on",
+          "width": 323
+        },
+        {
+          "height": 243,
+          "label": "odd_sdr_reset",
+          "width": 323
+        },
+        {
+          "height": 240,
+          "label": "perspective_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "perspective_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "perspective_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "box_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "box_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "box_reset",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "circle_off",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "circle_on",
+          "width": 320
+        },
+        {
+          "height": 240,
+          "label": "circle_reset",
+          "width": 320
+        }
+      ]
+    }
+  ],
+  "metal_comparisons": [
+    {
+      "mode": "native",
+      "capture": "ortho_1_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "ortho_1_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.06395301540692647,
+      "maximum_absolute_error": 0.8702392578125,
+      "p99_absolute_error": 0.684814453125,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "ortho_1_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "ortho_2_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.00026437282562255857,
+      "maximum_absolute_error": 0.241790771484375,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "ortho_2_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.00025202592213948566,
+      "maximum_absolute_error": 0.890869140625,
+      "p99_absolute_error": 0.00341796875,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "ortho_2_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.00026437282562255857,
+      "maximum_absolute_error": 0.241790771484375,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "ortho_4_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "ortho_4_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "ortho_4_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "ortho_8_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "ortho_8_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0633891608317693,
+      "maximum_absolute_error": 0.870361328125,
+      "p99_absolute_error": 0.6826171875,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "ortho_8_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "odd_hdr_off",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "odd_hdr_on",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "odd_hdr_reset",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "odd_sdr_off",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "odd_sdr_on",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "odd_sdr_reset",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "perspective_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "perspective_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "perspective_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "box_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "box_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "box_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "circle_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "circle_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "circle_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "ortho_1_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "ortho_1_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.06395301540692647,
+      "maximum_absolute_error": 0.8702392578125,
+      "p99_absolute_error": 0.684814453125,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "ortho_1_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "ortho_2_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.00026437282562255857,
+      "maximum_absolute_error": 0.241790771484375,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "ortho_2_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.00025202592213948566,
+      "maximum_absolute_error": 0.890869140625,
+      "p99_absolute_error": 0.00341796875,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "ortho_2_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.00026437282562255857,
+      "maximum_absolute_error": 0.241790771484375,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "ortho_4_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "ortho_4_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "ortho_4_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "ortho_8_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "ortho_8_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0633891608317693,
+      "maximum_absolute_error": 0.870361328125,
+      "p99_absolute_error": 0.6826171875,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "ortho_8_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "odd_hdr_off",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "odd_hdr_on",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "odd_hdr_reset",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "odd_sdr_off",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "odd_sdr_on",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "odd_sdr_reset",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "perspective_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "perspective_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "perspective_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "box_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "box_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "box_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "circle_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "circle_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "circle_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "ortho_1_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "ortho_1_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.06395301540692647,
+      "maximum_absolute_error": 0.8702392578125,
+      "p99_absolute_error": 0.684814453125,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "ortho_1_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "ortho_2_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.00026437282562255857,
+      "maximum_absolute_error": 0.241790771484375,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "ortho_2_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.063543554743131,
+      "maximum_absolute_error": 0.870361328125,
+      "p99_absolute_error": 0.6826171875,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "ortho_2_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.00026437282562255857,
+      "maximum_absolute_error": 0.241790771484375,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "ortho_4_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "ortho_4_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0633891608317693,
+      "maximum_absolute_error": 0.870361328125,
+      "p99_absolute_error": 0.6826171875,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "ortho_4_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "ortho_8_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "ortho_8_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "ortho_8_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "odd_hdr_off",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "odd_hdr_on",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.06196055284530814,
+      "maximum_absolute_error": 0.8681640625,
+      "p99_absolute_error": 0.67626953125,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "odd_hdr_reset",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "odd_sdr_off",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "odd_sdr_on",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.06512469980288524,
+      "maximum_absolute_error": 0.7372549176216125,
+      "p99_absolute_error": 0.7333333492279053,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "odd_sdr_reset",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "perspective_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "perspective_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.063765696088473,
+      "maximum_absolute_error": 0.867431640625,
+      "p99_absolute_error": 0.684326171875,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "perspective_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "box_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "box_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.06514491856098176,
+      "maximum_absolute_error": 0.8433837890625,
+      "p99_absolute_error": 0.682373046875,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "box_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "circle_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "circle_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.062256894906361895,
+      "maximum_absolute_error": 0.891357421875,
+      "p99_absolute_error": 0.66748046875,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "circle_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "ortho_1_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "ortho_1_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.06395301540692647,
+      "maximum_absolute_error": 0.8702392578125,
+      "p99_absolute_error": 0.684814453125,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "ortho_1_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "ortho_2_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.00026437282562255857,
+      "maximum_absolute_error": 0.241790771484375,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "ortho_2_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.063543554743131,
+      "maximum_absolute_error": 0.870361328125,
+      "p99_absolute_error": 0.6826171875,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "ortho_2_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.00026437282562255857,
+      "maximum_absolute_error": 0.241790771484375,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "ortho_4_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "ortho_4_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0633891608317693,
+      "maximum_absolute_error": 0.870361328125,
+      "p99_absolute_error": 0.6826171875,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "ortho_4_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "ortho_8_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "ortho_8_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "ortho_8_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "odd_hdr_off",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "odd_hdr_on",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.06196055284530814,
+      "maximum_absolute_error": 0.8681640625,
+      "p99_absolute_error": 0.67626953125,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "odd_hdr_reset",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "odd_sdr_off",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "odd_sdr_on",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.06512469980288524,
+      "maximum_absolute_error": 0.7372549176216125,
+      "p99_absolute_error": 0.7333333492279053,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "odd_sdr_reset",
+      "samples": 235467,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "perspective_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "perspective_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.063765696088473,
+      "maximum_absolute_error": 0.867431640625,
+      "p99_absolute_error": 0.684326171875,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "perspective_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "box_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "box_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.06514491856098176,
+      "maximum_absolute_error": 0.8433837890625,
+      "p99_absolute_error": 0.682373046875,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "box_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "circle_off",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "circle_on",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.062256894906361895,
+      "maximum_absolute_error": 0.891357421875,
+      "p99_absolute_error": 0.66748046875,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "circle_reset",
+      "samples": 230400,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    }
+  ]
+}

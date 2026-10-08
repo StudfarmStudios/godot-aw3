@@ -4,11 +4,11 @@
 import argparse
 import hashlib
 import json
-from pathlib import Path
 import shutil
 import struct
 import subprocess
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).resolve().parent
@@ -37,7 +37,7 @@ def instructions(words):
     while pos < len(words):
         size = words[pos] >> 16
         assert size and pos + size <= len(words)
-        yield pos, words[pos] & 0xFFFF, words[pos:pos + size]
+        yield pos, words[pos] & 0xFFFF, words[pos : pos + size]
         pos += size
 
 
@@ -67,7 +67,9 @@ def assembly(producer="constant", length=2, integer_width=32, levels=1):
     capabilities = "OpCapability Shader\n"
     if integer_width == 64:
         capabilities += "OpCapability Int64\n"
-    lines = [capabilities, '''OpMemoryModel Logical GLSL450
+    lines = [
+        capabilities,
+        """OpMemoryModel Logical GLSL450
 OpEntryPoint GLCompute %main "main" %out
 OpExecutionMode %main LocalSize 1 1 1
 OpDecorate %out DescriptorSet 0
@@ -91,15 +93,19 @@ OpMemberDecorate %src_leaf 0 Offset 0
 %out = OpVariable %block_ptr StorageBuffer
 %src_leaf = OpTypeStruct %float
 %dst_leaf = OpTypeStruct %float
-''']
+""",
+    ]
     int_type = "%uint"
     if integer_width != 32:
         lines += [f"%length_type = OpTypeInt {integer_width} 0\n"]
         int_type = "%length_type"
-    lines += [f"%length = OpConstant {int_type} {length}\n",
-              "%src_array = OpTypeArray %src_leaf %length\n",
-              "%dst_array = OpTypeArray %dst_leaf %length\n",
-              "%src = OpTypeStruct %src_array\n", "%dst = OpTypeStruct %dst_array\n"]
+    lines += [
+        f"%length = OpConstant {int_type} {length}\n",
+        "%src_array = OpTypeArray %src_leaf %length\n",
+        "%dst_array = OpTypeArray %dst_leaf %length\n",
+        "%src = OpTypeStruct %src_array\n",
+        "%dst = OpTypeStruct %dst_array\n",
+    ]
     src_type, dst_type = "%src", "%dst"
     indices = "0 1 0" if length > 1 else "0 0 0"
     for level in range(1, levels):
@@ -108,20 +114,24 @@ OpMemberDecorate %src_leaf 0 Offset 0
         indices = "0 " + indices
     # Large-array guards use OpConstantNull to keep their input tiny.
     if producer == "constant" and length == 2 and levels == 1:
-        lines += ["%a = OpConstantComposite %src_leaf %one\n",
-                  "%b = OpConstantComposite %src_leaf %two\n",
-                  "%array = OpConstantComposite %src_array %a %b\n",
-                  f"%source = OpConstantComposite {src_type} %array\n"]
+        lines += [
+            "%a = OpConstantComposite %src_leaf %one\n",
+            "%b = OpConstantComposite %src_leaf %two\n",
+            "%array = OpConstantComposite %src_array %a %b\n",
+            f"%source = OpConstantComposite {src_type} %array\n",
+        ]
     elif producer == "undef":
         lines += [f"%source = OpUndef {src_type}\n"]
     else:
         lines += [f"%source = OpConstantNull {src_type}\n"]
-    lines += [f"%holder = OpTypeStruct {src_type}\n",
-              "%holder_value = OpConstantNull %holder\n",
-              f"%local_ptr = OpTypePointer Function {src_type}\n",
-              f"%call_type = OpTypeFunction {src_type}\n",
-              f"%parameter_type = OpTypeFunction {dst_type} {src_type}\n",
-              "%main = OpFunction %void None %fn\n%entry = OpLabel\n"]
+    lines += [
+        f"%holder = OpTypeStruct {src_type}\n",
+        "%holder_value = OpConstantNull %holder\n",
+        f"%local_ptr = OpTypePointer Function {src_type}\n",
+        f"%call_type = OpTypeFunction {src_type}\n",
+        f"%parameter_type = OpTypeFunction {dst_type} {src_type}\n",
+        "%main = OpFunction %void None %fn\n%entry = OpLabel\n",
+    ]
     operand = "%source"
     tail = ""
     if producer == "load":
@@ -134,8 +144,10 @@ OpMemberDecorate %src_leaf 0 Offset 0
         lines += [f"%copied = OpCopyObject {src_type} %source\n"]
         operand = "%copied"
     elif producer == "construct":
-        lines += ["%part = OpCompositeExtract %src_array %source 0\n",
-                  f"%made = OpCompositeConstruct {src_type} %part\n"]
+        lines += [
+            "%part = OpCompositeExtract %src_array %source 0\n",
+            f"%made = OpCompositeConstruct {src_type} %part\n",
+        ]
         operand = "%made"
     elif producer == "insert":
         lines += [f"%inserted = OpCompositeInsert {src_type} %two %source 0 1 0\n"]
@@ -144,9 +156,11 @@ OpMemberDecorate %src_leaf 0 Offset 0
         lines += [f"%selected = OpSelect {src_type} %yes %source %source\n"]
         operand = "%selected"
     elif producer == "phi":
-        lines += ["OpSelectionMerge %merge None\nOpBranchConditional %yes %left %right\n",
-                  "%left = OpLabel\nOpBranch %merge\n%right = OpLabel\nOpBranch %merge\n",
-                  f"%merge = OpLabel\n%merged = OpPhi {src_type} %source %left %source %right\n"]
+        lines += [
+            "OpSelectionMerge %merge None\nOpBranchConditional %yes %left %right\n",
+            "%left = OpLabel\nOpBranch %merge\n%right = OpLabel\nOpBranch %merge\n",
+            f"%merge = OpLabel\n%merged = OpPhi {src_type} %source %left %source %right\n",
+        ]
         operand = "%merged"
     elif producer == "call":
         lines += [f"%called = OpFunctionCall {src_type} %helper\n"]
@@ -154,17 +168,24 @@ OpMemberDecorate %src_leaf 0 Offset 0
         tail = f"%helper = OpFunction {src_type} None %call_type\n%helper_label = OpLabel\nOpReturnValue %source\nOpFunctionEnd\n"
     if producer == "parameter":
         lines += [f"%result = OpFunctionCall {dst_type} %helper %source\n"]
-        tail = (f"%helper = OpFunction {dst_type} None %parameter_type\n"
-                f"%parameter = OpFunctionParameter {src_type}\n%helper_label = OpLabel\n"
-                f"%helper_result = OpCopyLogical {dst_type} %parameter\nOpReturnValue %helper_result\nOpFunctionEnd\n")
+        tail = (
+            f"%helper = OpFunction {dst_type} None %parameter_type\n"
+            f"%parameter = OpFunctionParameter {src_type}\n%helper_label = OpLabel\n"
+            f"%helper_result = OpCopyLogical {dst_type} %parameter\nOpReturnValue %helper_result\nOpFunctionEnd\n"
+        )
     elif producer == "chain":
-        lines += [f"%first = OpCopyLogical {dst_type} %source\n",
-                  f"%second = OpCopyLogical {src_type} %first\n",
-                  f"%result = OpCopyLogical {dst_type} %second\n"]
+        lines += [
+            f"%first = OpCopyLogical {dst_type} %source\n",
+            f"%second = OpCopyLogical {src_type} %first\n",
+            f"%result = OpCopyLogical {dst_type} %second\n",
+        ]
     else:
         lines += [f"%result = OpCopyLogical {dst_type} {operand}\n"]
-    lines += [f"%value = OpCompositeExtract %float %result {indices}\n",
-              "%target = OpAccessChain %float_ptr %out %zero\nOpStore %target %value\nOpReturn\nOpFunctionEnd\n", tail]
+    lines += [
+        f"%value = OpCompositeExtract %float %result {indices}\n",
+        "%target = OpAccessChain %float_ptr %out %zero\nOpStore %target %value\nOpReturn\nOpFunctionEnd\n",
+        tail,
+    ]
     return "".join(lines)
 
 
@@ -189,9 +210,18 @@ def main():
         flags = ["-std=c++17", "-O1", "-g", "-fsanitize=address,undefined"]
         if sys.platform == "darwin":
             flags += ["-isysroot", run(["xcrun", "--show-sdk-path"]).stdout.strip()]
-        run(["clang++", *flags, "-I" + str(ROOT / "drivers/webgpu/tint_cli"), "-I" + str(ROOT),
-             "-I" + str(ROOT / "thirdparty/spirv-tools/include"), FIXTURES / "logical_copy_cli.cpp",
-             ROOT / "drivers/webgpu/spirv_preprocess.cpp", *objects, "-o", helper])
+        run([
+            "clang++",
+            *flags,
+            "-I" + str(ROOT / "drivers/webgpu/tint_cli"),
+            "-I" + str(ROOT),
+            "-I" + str(ROOT / "thirdparty/spirv-tools/include"),
+            FIXTURES / "logical_copy_cli.cpp",
+            ROOT / "drivers/webgpu/spirv_preprocess.cpp",
+            *objects,
+            "-o",
+            helper,
+        ])
     assert args.tint.is_file(), "Build tint_convert_cli first"
     results = []
 
@@ -236,10 +266,30 @@ def main():
             translated = run([args.tint.resolve(), portable])
             assert "@compute" in translated.stdout and "fn" in translated.stdout
             (out / f"{name}.wgsl").write_text(translated.stdout)
-        results.append({"name": name, "kind": "positive", "tint_13_fixture": tint,
-                        "input_words": len(original), "output_words": len(rewritten), "passed": True})
+        results.append({
+            "name": name,
+            "kind": "positive",
+            "tint_13_fixture": tint,
+            "input_words": len(original),
+            "output_words": len(rewritten),
+            "passed": True,
+        })
 
-    for producer in ("constant", "null", "undef", "load", "extract", "copy_object", "construct", "insert", "select", "phi", "call", "parameter", "chain"):
+    for producer in (
+        "constant",
+        "null",
+        "undef",
+        "load",
+        "extract",
+        "copy_object",
+        "construct",
+        "insert",
+        "select",
+        "phi",
+        "call",
+        "parameter",
+        "chain",
+    ):
         positive(producer, assembled(producer, assembly(producer)), tint=producer != "select")
     positive("uint64_length", assembled("uint64_length", assembly(integer_width=64)), tint=False)
     positive("maximum_constructor", assembled("maximum_constructor", assembly("null", length=65532)), tint=False)
@@ -292,7 +342,9 @@ def main():
     copy_inst = next(inst for _, op, inst in instructions(seed) if op == 400)
     duplicate += copy_inst
     unchanged("duplicate_result", duplicate)
-    unresolved = assembled("unresolved", assembly("null").replace("%length = OpConstant %uint 2", "%length = OpSpecConstant %uint 2"))
+    unresolved = assembled(
+        "unresolved", assembly("null").replace("%length = OpConstant %uint 2", "%length = OpSpecConstant %uint 2")
+    )
     unchanged("unresolved_specialization", unresolved.read_bytes())
     huge_length = assembled("huge_length", assembly("null", length=2**32 + 2, integer_width=64))
     unchanged("length_high_bits", huge_length.read_bytes(), diagnostic=False)
@@ -301,11 +353,15 @@ def main():
     too_wide = assembled("too_wide", assembly("null", length=65533))
     unchanged("instruction_word_count_budget", too_wide.read_bytes())
     # Nested 1024x1024 arrays have tiny input, but >1M source leaves to expand.
-    huge_text = assembly("null", length=1024).replace(
-        "%src = OpTypeStruct %src_array\n%dst = OpTypeStruct %dst_array\n",
-        "%src_outer = OpTypeArray %src_array %length\n%dst_outer = OpTypeArray %dst_array %length\n"
-        "%src = OpTypeStruct %src_outer\n%dst = OpTypeStruct %dst_outer\n").replace(
-        "%result 0 1 0", "%result 0 0 1 0")
+    huge_text = (
+        assembly("null", length=1024)
+        .replace(
+            "%src = OpTypeStruct %src_array\n%dst = OpTypeStruct %dst_array\n",
+            "%src_outer = OpTypeArray %src_array %length\n%dst_outer = OpTypeArray %dst_array %length\n"
+            "%src = OpTypeStruct %src_outer\n%dst = OpTypeStruct %dst_outer\n",
+        )
+        .replace("%result 0 1 0", "%result 0 0 1 0")
+    )
     huge = assembled("huge", huge_text)
     unchanged("expansion_budget", huge.read_bytes())
     # Same-type input is not valid OpCopyLogical, but can safely canonicalize
@@ -322,11 +378,15 @@ def main():
     run([validator, "--target-env", "vulkan1.2", target])
     assert read_words(target)[3] == identical[3]
     results.append({"name": "identical_type", "kind": "canonicalization", "passed": True})
-    report = {"checks": len(results), "passed": True, "results": results,
-              "helper_sha256": hashlib.sha256(helper.read_bytes()).hexdigest(),
-              "spirv_val_version": run([validator, "--version"]).stdout.splitlines()[0],
-              "tint_cli_sha256": hashlib.sha256(args.tint.read_bytes()).hexdigest(),
-              "tint_note": "WGSL translation validates an explicit test-only SPIR-V1.3/interface normalization; production normalization is unchanged."}
+    report = {
+        "checks": len(results),
+        "passed": True,
+        "results": results,
+        "helper_sha256": hashlib.sha256(helper.read_bytes()).hexdigest(),
+        "spirv_val_version": run([validator, "--version"]).stdout.splitlines()[0],
+        "tint_cli_sha256": hashlib.sha256(args.tint.read_bytes()).hexdigest(),
+        "tint_note": "WGSL translation validates an explicit test-only SPIR-V1.3/interface normalization; production normalization is unchanged.",
+    }
     (out / "results.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report))
 

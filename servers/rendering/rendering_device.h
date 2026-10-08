@@ -1148,6 +1148,8 @@ public:
 
 	typedef Uniform PipelineImmutableSampler;
 	RID shader_create_from_bytecode_with_samplers(const Vector<uint8_t> &p_shader_binary, RID p_placeholder = RID(), const Vector<PipelineImmutableSampler> &p_immutable_samplers = Vector<PipelineImmutableSampler>());
+	// Internal cache transaction: empty entries are skipped; failure leaves every placeholder unchanged.
+	Vector<RID> shader_create_from_bytecode_batch(const Vector<Vector<uint8_t>> &p_shader_binaries, const Vector<RID> &p_placeholders, const Vector<PipelineImmutableSampler> &p_immutable_samplers);
 
 private:
 	static const uint32_t MAX_UNIFORM_SETS = 16;

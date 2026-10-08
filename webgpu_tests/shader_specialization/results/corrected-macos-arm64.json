@@ -1,0 +1,314 @@
+{
+  "passed": true,
+  "runs": [
+    {
+      "mode": "native",
+      "passed": true,
+      "passed_checks": 320,
+      "failed_checks": 0,
+      "returncode": 0,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "d06206f6c8f66ecd6e8708d477c4ed07f2bb3227a835598c69122dfc7bf305ed",
+      "errors": [],
+      "failed_oracles": [],
+      "error_count": 0
+    },
+    {
+      "mode": "fallback",
+      "passed": true,
+      "passed_checks": 320,
+      "failed_checks": 0,
+      "returncode": 0,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "d06206f6c8f66ecd6e8708d477c4ed07f2bb3227a835598c69122dfc7bf305ed",
+      "errors": [],
+      "failed_oracles": [],
+      "error_count": 0
+    }
+  ],
+  "translation_checks": [
+    {
+      "case": "r32f_read_override_active_2D",
+      "passed": true,
+      "overrides": 2,
+      "source_binding_present": true,
+      "source_sha256": "70e773b76b6ad8e95c15e4665fe0cf164b6734b07fa618a80ebbd42e9e62a570"
+    },
+    {
+      "case": "r32f_read_override_pruned_2D",
+      "passed": true,
+      "overrides": 2,
+      "source_binding_present": true,
+      "source_sha256": "e742db85a4124b5ccb0954af9d1c1768f9e134fb092f82974b81ff7c451b3d23"
+    },
+    {
+      "case": "r32f_read_typed_active_2D",
+      "passed": true,
+      "overrides": 0,
+      "source_binding_present": true,
+      "source_sha256": "e0553f2158c84042a3d30c574f3efa0b3f03482008678f410933af7876a6361e"
+    },
+    {
+      "case": "r32f_read_typed_pruned_2D",
+      "passed": true,
+      "overrides": 0,
+      "source_binding_present": false,
+      "source_sha256": "168319f054ef672021dd67ea7c70cb3bb6780023b86e48192e24e3286bf50af2"
+    },
+    {
+      "case": "r32f_read_write_override_active_2D",
+      "passed": true,
+      "overrides": 2,
+      "source_binding_present": true,
+      "source_sha256": "012211a220a74468f37b5d88a60673dd7cc35bf3bfe8f943e736795abeb36318"
+    },
+    {
+      "case": "r32f_read_write_override_pruned_2D",
+      "passed": true,
+      "overrides": 2,
+      "source_binding_present": true,
+      "source_sha256": "d815caae0ffd044f0551045475454d0973038920d514d9024d1084eeb1367dee"
+    },
+    {
+      "case": "r32f_read_write_typed_active_2D",
+      "passed": true,
+      "overrides": 0,
+      "source_binding_present": true,
+      "source_sha256": "5de15312153579a8a74a6209f92f9da105f2a4795dcdd3c975259ac009fbc44d"
+    },
+    {
+      "case": "r32f_read_write_typed_pruned_2D",
+      "passed": true,
+      "overrides": 0,
+      "source_binding_present": false,
+      "source_sha256": "3449fe0bf56c88cf340aba34b3bad4473d335110d28c6d0968931a4355afae0c"
+    },
+    {
+      "case": "r32f_write_override_active_2D",
+      "passed": true,
+      "overrides": 2,
+      "source_binding_present": true,
+      "source_sha256": "012164f11a0187c90fbf8090b1e600ab0df3d259b9d75ae0f33560a38449b38d"
+    },
+    {
+      "case": "r32f_write_override_pruned_2D",
+      "passed": true,
+      "overrides": 2,
+      "source_binding_present": true,
+      "source_sha256": "475e374a7ea6d2d40962e02f8597aa06d5d9ba6206b3bbc221aadeae5cedfc99"
+    },
+    {
+      "case": "r32f_write_typed_active_2D",
+      "passed": true,
+      "overrides": 0,
+      "source_binding_present": true,
+      "source_sha256": "84a36900a026be5b0d1adacc27507cbe917febb041fbfad5ab2add7dd22bdf4b"
+    },
+    {
+      "case": "r32f_write_typed_pruned_2D",
+      "passed": true,
+      "overrides": 0,
+      "source_binding_present": false,
+      "source_sha256": "cbbc1e3e28ab7ecfa2777f88dceb6c76e0e9a1fa653e98c4ba6a3b8a57996f9e"
+    },
+    {
+      "case": "r32ui_read_override_active_2D",
+      "passed": true,
+      "overrides": 2,
+      "source_binding_present": true,
+      "source_sha256": "525a2d518c17409fa635ffa0d572551f11410c54f8b8cd2db5b8a9fa350d0cb1"
+    },
+    {
+      "case": "r32ui_read_override_pruned_2D",
+      "passed": true,
+      "overrides": 2,
+      "source_binding_present": true,
+      "source_sha256": "d5831575782f4602e1d0c421d8b675d856096ce902dd6bb9aff3017c1bfbddc8"
+    },
+    {
+      "case": "r32ui_read_typed_active_2D",
+      "passed": true,
+      "overrides": 0,
+      "source_binding_present": true,
+      "source_sha256": "c3236c05a6201b338c15179ab8a6ac0cf03a81452cfebe83b9fd0d4766beab62"
+    },
+    {
+      "case": "r32ui_read_typed_pruned_2D",
+      "passed": true,
+      "overrides": 0,
+      "source_binding_present": false,
+      "source_sha256": "260d434799750d46b6c377cb9875835a5afb5e10613bd83c2ae21c3823dcfb98"
+    },
+    {
+      "case": "r32ui_read_typed_pruned_2DArray",
+      "passed": true,
+      "overrides": 0,
+      "source_binding_present": false,
+      "source_sha256": "8c2d689029935116f1874804506e1311c326f71f62f0b0cf25b514a79498f5aa"
+    },
+    {
+      "case": "r32ui_read_typed_pruned_3D",
+      "passed": true,
+      "overrides": 0,
+      "source_binding_present": false,
+      "source_sha256": "e2c7d273c30923b8b1bb75e27e2985a54a6ff97d76426c24168d2478817cfcd1"
+    },
+    {
+      "case": "r32ui_read_write_override_active_2D",
+      "passed": true,
+      "overrides": 2,
+      "source_binding_present": true,
+      "source_sha256": "c50c050dc2bb24bfe1c5273cad811ed9f28fdf76683314b1cf8679ff0e5964cf"
+    },
+    {
+      "case": "r32ui_read_write_override_pruned_2D",
+      "passed": true,
+      "overrides": 2,
+      "source_binding_present": true,
+      "source_sha256": "4ed284fd87df526ba3a54aa33a7367224773b66612c5117160b6cac52d7a799b"
+    },
+    {
+      "case": "r32ui_read_write_typed_active_2D",
+      "passed": true,
+      "overrides": 0,
+      "source_binding_present": true,
+      "source_sha256": "fa5aa0f148cb01c91b839b8ef9d50b5dfd8c3bd94c4999c39205e28a4b395702"
+    },
+    {
+      "case": "r32ui_read_write_typed_pruned_2D",
+      "passed": true,
+      "overrides": 0,
+      "source_binding_present": false,
+      "source_sha256": "d9d794f0929d70e6e2b305c50dcfb1f56b687be9ab7d2cc71d98039010b464c8"
+    },
+    {
+      "case": "r32ui_write_override_active_2D",
+      "passed": true,
+      "overrides": 2,
+      "source_binding_present": true,
+      "source_sha256": "840330a3264e8463925b4dd4ca67eb3eff6e43a897846e5242de3f7f31642fa4"
+    },
+    {
+      "case": "r32ui_write_override_pruned_2D",
+      "passed": true,
+      "overrides": 2,
+      "source_binding_present": true,
+      "source_sha256": "c4d28d391d5c478c425c428b596bbb37a93257bb9f7333b9ea808c244fa5d51c"
+    },
+    {
+      "case": "r32ui_write_typed_active_2D",
+      "passed": true,
+      "overrides": 0,
+      "source_binding_present": true,
+      "source_sha256": "711b30e0f7ee726481e8904ef2fddd062db962e1f42ef6ea42a9cc74aebe98ed"
+    },
+    {
+      "case": "r32ui_write_typed_pruned_2D",
+      "passed": true,
+      "overrides": 0,
+      "source_binding_present": false,
+      "source_sha256": "8c6d7713232d7004d59671ca37003dc40be793fae7b47a3801c71bbd363a663b"
+    },
+    {
+      "case": "rg32f_read_override_active_2D",
+      "passed": true,
+      "overrides": 2,
+      "source_binding_present": true,
+      "source_sha256": "c9a9f92f5a0575e670f4c974240032b5834956fcbf6ae37a22b00118c55216d8"
+    },
+    {
+      "case": "rg32f_read_override_pruned_2D",
+      "passed": true,
+      "overrides": 2,
+      "source_binding_present": true,
+      "source_sha256": "e7d427cd0d7cf421524445f15b5f96ff407d0c86154c0ca917e71f97cda5308f"
+    },
+    {
+      "case": "rg32f_read_typed_active_2D",
+      "passed": true,
+      "overrides": 0,
+      "source_binding_present": true,
+      "source_sha256": "940e530b4cfef5f176aec24bd29dbc0b1c0f43cab4b170306a79e737f3be2937"
+    },
+    {
+      "case": "rg32f_read_typed_pruned_2D",
+      "passed": true,
+      "overrides": 0,
+      "source_binding_present": false,
+      "source_sha256": "052de2cf91dbc185576404d7efcc2f7fee6fc973d836b4038917ff264069153c"
+    },
+    {
+      "case": "rg32f_read_write_override_active_2D",
+      "passed": true,
+      "overrides": 2,
+      "source_binding_present": true,
+      "source_sha256": "8d090b36b8fd837f2f36b483873896c022462930f23984b37b4469c4d0a681a8"
+    },
+    {
+      "case": "rg32f_read_write_override_pruned_2D",
+      "passed": true,
+      "overrides": 2,
+      "source_binding_present": true,
+      "source_sha256": "304fdb152a5543e6064298e9bafed172c3cb86657e6acd140e5201d44a6af0df"
+    },
+    {
+      "case": "rg32f_read_write_typed_active_2D",
+      "passed": true,
+      "overrides": 0,
+      "source_binding_present": true,
+      "source_sha256": "dd934a34e6d40ab35d2ad108cf5f441b7a66f23b92a0057b130c78b94a7a13bf"
+    },
+    {
+      "case": "rg32f_read_write_typed_pruned_2D",
+      "passed": true,
+      "overrides": 0,
+      "source_binding_present": false,
+      "source_sha256": "5af637fa91da63684a462fa3f29f14a3c4a009e95807ed8cbc490253ef02b45e"
+    },
+    {
+      "case": "rg32f_read_write_typed_pruned_2DArray",
+      "passed": true,
+      "overrides": 0,
+      "source_binding_present": false,
+      "source_sha256": "02ad5d1e68679d45a029e4edfec031f125bece6fce09a0c6123c15662d2a81c1"
+    },
+    {
+      "case": "rg32f_read_write_typed_pruned_3D",
+      "passed": true,
+      "overrides": 0,
+      "source_binding_present": false,
+      "source_sha256": "4e07381ee6a4830d4ffbde21e1cb04e70242a36e9bc698ed36c29a2bc82ea3c2"
+    },
+    {
+      "case": "rg32f_write_override_active_2D",
+      "passed": true,
+      "overrides": 2,
+      "source_binding_present": true,
+      "source_sha256": "6c0661627620e209c0e97c53307222d70730b23a110fc17d8286de4722b5c1d6"
+    },
+    {
+      "case": "rg32f_write_override_pruned_2D",
+      "passed": true,
+      "overrides": 2,
+      "source_binding_present": true,
+      "source_sha256": "994a42a2a094391be6004b582505088fbf54441478f6f8b036e37ef9ee23af5a"
+    },
+    {
+      "case": "rg32f_write_typed_active_2D",
+      "passed": true,
+      "overrides": 0,
+      "source_binding_present": true,
+      "source_sha256": "f60917a12036ad32d6281fd782116ef581de106853f538f553d780eca940f7e5"
+    },
+    {
+      "case": "rg32f_write_typed_pruned_2D",
+      "passed": true,
+      "overrides": 0,
+      "source_binding_present": false,
+      "source_sha256": "f119db9715252d087141b7e3a33c47145900b041599a8198819684c77cee0258"
+    }
+  ],
+  "tint_cli_sha256": "09a7a60fa8a2bde1180505aafd41659b5a3accffd1cde4437ff5777bde5d0d2b"
+}

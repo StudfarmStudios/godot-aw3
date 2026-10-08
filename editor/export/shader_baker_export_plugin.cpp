@@ -40,6 +40,7 @@
 #include "scene/3d/sprite_3d.h"
 #include "servers/rendering/renderer_rd/renderer_scene_render_rd.h"
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
+#include "servers/rendering/rendering_server.h"
 #include "servers/rendering/rendering_shader_container.h"
 
 // Ensure that AlphaCut is the same between the two classes so we can share the code to detect transparency.
@@ -60,12 +61,22 @@ bool ShaderBakerExportPlugin::_is_active(const Vector<String> &p_features) const
 
 bool ShaderBakerExportPlugin::_initialize_container_format(const Ref<EditorExportPlatform> &p_platform, const Ref<EditorExportPreset> &p_preset) {
 	shader_container_driver = p_preset->get_project_setting("rendering/rendering_device/driver");
+	if (p_platform->get_os_name() == "Web") {
+		const String rendering_method = p_preset->get_project_setting("rendering/renderer/rendering_method.web");
+		if (rendering_method != "forward_plus" && rendering_method != "mobile") {
+			return false;
+		}
+		// The web renderer selects WebGPU independently of the editor's
+		// rendering/rendering_device/driver project setting.
+		shader_container_driver = "webgpu";
+	}
 	ERR_FAIL_COND_V_MSG(shader_container_driver.is_empty(), false, "Invalid `rendering/rendering_device/driver` setting, disabling shader baking.");
 
 	for (Ref<ShaderBakerExportPluginPlatform> platform : platforms) {
 		if (platform->matches_driver(shader_container_driver)) {
 			shader_container_format = platform->create_shader_container_format(p_platform, p_preset);
 			ERR_FAIL_NULL_V_MSG(shader_container_format, false, "Unable to create shader container format for the export platform.");
+			active_platform = platform;
 			return true;
 		}
 	}
@@ -74,6 +85,10 @@ bool ShaderBakerExportPlugin::_initialize_container_format(const Ref<EditorExpor
 }
 
 void ShaderBakerExportPlugin::_cleanup_container_format() {
+	if (active_platform.is_valid()) {
+		active_platform->clear_collected_data();
+	}
+	active_platform.unref();
 	if (shader_container_format != nullptr) {
 		memdelete(shader_container_format);
 		shader_container_format = nullptr;
@@ -165,6 +180,8 @@ bool ShaderBakerExportPlugin::_begin_customize_resources(const Ref<EditorExportP
 
 	material_storage->shader_embedded_set_unlock();
 
+	_customize_live_shader_versions();
+
 	return true;
 }
 
@@ -182,9 +199,13 @@ bool ShaderBakerExportPlugin::_begin_customize_scenes(const Ref<EditorExportPlat
 }
 
 void ShaderBakerExportPlugin::_end_customize_resources() {
-	if (!_initialize_cache_directory()) {
+	if (shader_container_format == nullptr) {
 		return;
 	}
+	// Scene loading can create material versions after the initial snapshot.
+	BaseMaterial3D::flush_changes();
+	_customize_live_shader_versions();
+	const bool cache_directory_ready = _initialize_cache_directory();
 
 	// Run a progress bar that waits for all shader baking tasks to finish.
 	bool progress_active = true;
@@ -226,6 +247,9 @@ void ShaderBakerExportPlugin::_end_customize_resources() {
 			PackedByteArray cache_file_bytes = ShaderRD::save_shader_cache_bytes(group_item.variants, work_result.variant_data);
 			add_file(shader_cache_user_dir.path_join(group_item.cache_path), cache_file_bytes, false);
 
+			if (!cache_directory_ready) {
+				continue; // Still pack fresh results and drain every worker task.
+			}
 			String cache_file_path = shader_cache_export_path.path_join(group_item.cache_path);
 			if (!DirAccess::exists(cache_file_path)) {
 				DirAccess::make_dir_recursive_absolute(cache_file_path.get_base_dir());
@@ -238,7 +262,7 @@ void ShaderBakerExportPlugin::_end_customize_resources() {
 		}
 	}
 
-	if (!tasks_cancelled) {
+	if (!tasks_cancelled && cache_directory_ready) {
 		String file_cache_path = shader_cache_export_path.path_join("file_cache");
 		Ref<FileAccess> cache_list_access = FileAccess::open(file_cache_path, FileAccess::READ_WRITE);
 		if (cache_list_access.is_null()) {
@@ -267,7 +291,16 @@ void ShaderBakerExportPlugin::_end_customize_resources() {
 		}
 	}
 
+	if (!tasks_cancelled && active_platform.is_valid()) {
+		for (const KeyValue<String, PackedByteArray> &file : active_platform->create_extra_files()) {
+			add_file(shader_cache_user_dir.path_join(file.key), file.value, false);
+		}
+	}
+
 	shader_paths_processed.clear();
+	shader_sources_seen.clear();
+	resources_visited.clear();
+	containers_in_progress.clear();
 	shader_work_results.clear();
 	shader_group_items.clear();
 
@@ -275,17 +308,26 @@ void ShaderBakerExportPlugin::_end_customize_resources() {
 }
 
 Ref<Resource> ShaderBakerExportPlugin::_customize_resource(const Ref<Resource> &p_resource, const String &p_path) {
+	if (p_resource.is_valid() && shader_container_driver == "webgpu" && !resources_visited.has(p_resource->get_instance_id())) {
+		_customize_nested_materials(p_resource);
+		return Ref<Resource>();
+	}
 	RendererRD::MaterialStorage *singleton = RendererRD::MaterialStorage::get_singleton();
 	DEV_ASSERT(singleton != nullptr);
 
 	Ref<Material> material = p_resource;
 	if (material.is_valid()) {
+		// BaseMaterial3D queues shader generation until an idle callback. Export
+		// has no guarantee that a frame ran since this resource was loaded.
+		BaseMaterial3D::flush_changes();
 		RID material_rid = material->get_rid();
+		RenderingServer::get_singleton()->sync();
 		if (material_rid.is_valid()) {
 			RendererRD::MaterialStorage::ShaderData *shader_data = singleton->material_get_shader_data(material_rid);
 			if (shader_data != nullptr) {
 				Pair<ShaderRD *, RID> shader_version_pair = shader_data->get_native_shader_and_version();
 				if (shader_version_pair.first != nullptr) {
+					print_verbose(vformat("Shader baker collected material \"%s\"", material->get_name()));
 					_customize_shader_version(shader_version_pair.first, shader_version_pair.second);
 				}
 			}
@@ -293,6 +335,81 @@ Ref<Resource> ShaderBakerExportPlugin::_customize_resource(const Ref<Resource> &
 	}
 
 	return Ref<Resource>();
+}
+
+void ShaderBakerExportPlugin::_customize_nested_materials(const Variant &p_value, int p_depth) {
+	// Bound stack use on deeply nested stored data. Resource identities remove
+	// repeated work; container identities below detect cyclic arrays/dictionaries.
+	if (p_depth > 64) {
+		return;
+	}
+	switch (p_value.get_type()) {
+		case Variant::OBJECT: {
+			Ref<Resource> resource = p_value;
+			if (resource.is_null() || resources_visited.has(resource->get_instance_id())) {
+				return;
+			}
+			resources_visited.insert(resource->get_instance_id());
+			if (Object::cast_to<Material>(resource.ptr()) != nullptr) {
+				_customize_resource(resource, resource->get_path());
+			}
+			List<PropertyInfo> properties;
+			resource->get_property_list(&properties);
+			for (PropertyInfo &property : properties) {
+				resource->validate_property(property);
+				if (property.usage & PROPERTY_USAGE_STORAGE) {
+					_customize_nested_materials(resource->get(property.name), p_depth + 1);
+				}
+			}
+		} break;
+		case Variant::ARRAY: {
+			Array values = p_value;
+			if (containers_in_progress.has(values.id())) {
+				return;
+			}
+			containers_in_progress.insert(values.id());
+			for (const Variant &value : values) {
+				_customize_nested_materials(value, p_depth + 1);
+			}
+			containers_in_progress.erase(values.id());
+		} break;
+		case Variant::DICTIONARY: {
+			Dictionary values = p_value;
+			if (containers_in_progress.has(values.id())) {
+				return;
+			}
+			containers_in_progress.insert(values.id());
+			for (const Variant &key : values.get_key_list()) {
+				_customize_nested_materials(key, p_depth + 1);
+				_customize_nested_materials(values[key], p_depth + 1);
+			}
+			containers_in_progress.erase(values.id());
+		} break;
+		default:
+			break;
+	}
+}
+
+void ShaderBakerExportPlugin::_customize_live_shader_versions() {
+	if (shader_container_driver != "webgpu") {
+		return;
+	}
+	RenderingServer::get_singleton()->sync();
+	// Renderer-owned ShaderRD families outlive resource customization. Individual
+	// versions may disappear; version_get_source_snapshot checks their lifetime
+	// and copies data before workers are scheduled.
+	// A material resource does not necessarily lead back to every built-in
+	// version already created for its ShaderRD family. Include those versions
+	// without enabling or compiling their runtime GPU pipelines.
+	LocalVector<ShaderRD *> sources;
+	for (ShaderRD *shader : shader_sources_seen) {
+		sources.push_back(shader);
+	}
+	for (ShaderRD *shader : sources) {
+		for (RID version : shader->get_all_versions()) {
+			_customize_shader_version(shader, version);
+		}
+	}
 }
 
 Node *ShaderBakerExportPlugin::_customize_scene(Node *p_root, const String &p_path) {
@@ -320,13 +437,13 @@ Node *ShaderBakerExportPlugin::_customize_scene(Node *p_root, const String &p_pa
 			properties["alpha_antialiasing_mode"] = StandardMaterial3D::ALPHA_ANTIALIASING_OFF;
 			properties["alpha_cut"] = SpriteBase3D::ALPHA_CUT_DISABLED;
 
-			List<PropertyInfo> property_list;
-			node->get_property_list(&property_list);
-			for (const PropertyInfo &info : property_list) {
+			// Exported scene instances are outside the tree. Only read the
+			// material inputs needed here; global transforms require a live tree.
+			for (KeyValue<StringName, Variant> &entry : properties) {
 				bool valid = false;
-				Variant property = node->get(info.name, &valid);
+				Variant property = node->get(entry.key, &valid);
 				if (valid) {
-					properties[info.name] = property;
+					entry.value = property;
 				}
 			}
 
@@ -356,6 +473,19 @@ Node *ShaderBakerExportPlugin::_customize_scene(Node *p_root, const String &p_pa
 			}
 		}
 
+		if (shader_container_driver == "webgpu") {
+			// This finds materials inside mesh surfaces, overrides, overlays,
+			// MultiMeshes, particle meshes, next passes and stored script properties.
+			List<PropertyInfo> properties;
+			node->get_property_list(&properties);
+			for (PropertyInfo &property : properties) {
+				node->validate_property(property);
+				if (property.usage & PROPERTY_USAGE_STORAGE) {
+					_customize_nested_materials(node->get(property.name));
+				}
+			}
+		}
+
 		// Visit children.
 		int child_count = node->get_child_count();
 		for (int i = 0; i < child_count; i++) {
@@ -371,54 +501,32 @@ uint64_t ShaderBakerExportPlugin::_get_customization_configuration_hash() const 
 }
 
 void ShaderBakerExportPlugin::_customize_shader_version(ShaderRD *p_shader, RID p_version) {
-	const int64_t variant_count = p_shader->get_variant_count();
-	const int64_t group_count = p_shader->get_group_count();
-	LocalVector<ShaderGroupItem> group_items;
-	group_items.resize(group_count);
-
-	RBSet<uint32_t> groups_to_compile;
-	for (int64_t i = 0; i < group_count; i++) {
-		if (!p_shader->is_group_enabled(i)) {
-			continue;
-		}
-
-		String cache_path = p_shader->version_get_cache_file_relative_path(p_version, i, shader_container_driver);
-		if (shader_paths_processed.has(cache_path)) {
-			continue;
-		}
-
-		shader_paths_processed.insert(cache_path);
-		groups_to_compile.insert(i);
-
-		group_items[i].cache_path = cache_path;
-		group_items[i].variants = p_shader->get_group_to_variants(i);
-
+	shader_sources_seen.insert(p_shader);
+	ShaderRD::VersionSourceSnapshot snapshot;
+	if (!p_shader->version_get_source_snapshot(p_version, shader_container_driver, shader_paths_processed, snapshot)) {
+		return;
+	}
+	for (const ShaderRD::VersionSourceSnapshot::Group &group : snapshot.groups) {
+		shader_paths_processed.insert(group.cache_path);
+		ShaderGroupItem group_item;
+		group_item.cache_path = group.cache_path;
+		group_item.variants = group.variants;
 		{
 			MutexLock lock(shader_work_results_mutex);
-			shader_work_results[cache_path].variant_data.resize(variant_count);
+			shader_work_results[group.cache_path].variant_data.resize(p_shader->get_variant_count());
 		}
-	}
-
-	for (int64_t i = 0; i < variant_count; i++) {
-		int group = p_shader->get_variant_to_group(i);
-		if (!p_shader->is_variant_enabled(i) || !groups_to_compile.has(group)) {
-			continue;
+		for (const ShaderRD::VersionSourceSnapshot::Variant &variant : group.enabled_variants) {
+			WorkItem work_item;
+			work_item.cache_path = group.cache_path;
+			work_item.shader_name = p_shader->get_name();
+			work_item.stage_sources = variant.stage_sources;
+			work_item.dynamic_buffers = p_shader->get_dynamic_buffers();
+			work_item.variant = variant.index;
+			WorkerThreadPool::TaskID task_id = WorkerThreadPool::get_singleton()->add_template_task(this, &ShaderBakerExportPlugin::_process_work_item, work_item);
+			group_item.variant_tasks.push_back(task_id);
+			tasks_total++;
 		}
-
-		WorkItem work_item;
-		work_item.cache_path = group_items[group].cache_path;
-		work_item.shader_name = p_shader->get_name();
-		work_item.stage_sources = p_shader->version_build_variant_stage_sources(p_version, i);
-		work_item.dynamic_buffers = p_shader->get_dynamic_buffers();
-		work_item.variant = i;
-
-		WorkerThreadPool::TaskID task_id = WorkerThreadPool::get_singleton()->add_template_task(this, &ShaderBakerExportPlugin::_process_work_item, work_item);
-		group_items[group].variant_tasks.push_back(task_id);
-		tasks_total++;
-	}
-
-	for (uint32_t i : groups_to_compile) {
-		shader_group_items.push_back(group_items[i]);
+		shader_group_items.push_back(group_item);
 	}
 }
 
@@ -437,6 +545,11 @@ void ShaderBakerExportPlugin::_process_work_item(WorkItem p_work_item) {
 				ERR_PRINT("Failed to compile code to native for SPIR-V.");
 			} else {
 				PackedByteArray shader_bytes = shader_container->to_bytes();
+				if (active_platform.is_valid()) {
+					for (const RD::ShaderStageSPIRVData &stage : spirv_data) {
+						active_platform->collect_spirv(stage.spirv);
+					}
+				}
 				{
 					MutexLock lock(shader_work_results_mutex);
 					shader_work_results[p_work_item.cache_path].variant_data.ptrw()[p_work_item.variant] = shader_bytes;

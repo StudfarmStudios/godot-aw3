@@ -3,13 +3,15 @@ on:
   workflow_call:
   workflow_dispatch:
   push:
-    branches: [webgpu-4.6.2]
+    branches: [aw-web-export]
     paths:
+      - '.github/workflows/webgpu_tests.yml'
       - 'drivers/webgpu/**'
       - 'webgpu_tests/**'
       - 'servers/rendering/**'
   pull_request:
     paths:
+      - '.github/workflows/webgpu_tests.yml'
       - 'drivers/webgpu/**'
       - 'webgpu_tests/**'
       - 'servers/rendering/**'
@@ -24,11 +26,12 @@ env:
 
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════════
-  # Shader Corpus: Standalone SPIR-V → WGSL validation (fast, no build needed)
+  # Shader Corpus: SPIR-V → WGSL validation with the candidate translator
   # ═══════════════════════════════════════════════════════════════════════════════
   shader-corpus:
     runs-on: ubuntu-24.04
-    name: Shader Corpus (SPIR-V → WGSL)
+    name: Candidate Tint Translation Corpus
+    needs: [build-webgpu]
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -44,22 +47,30 @@ jobs:
       - name: Install glslangValidator
         run: |
           sudo apt-get update
-          sudo apt-get install -y glslang-tools
+          sudo apt-get install -y glslang-tools spirv-tools
+          command -v glslang || sudo ln -s /usr/bin/glslangValidator /usr/local/bin/glslang
 
-      - name: Compile GLSL fixtures to SPIR-V
-        working-directory: webgpu_tests/shader_corpus
-        run: ./compile_fixtures.sh
+      - name: Download candidate Tint CLI
+        uses: actions/download-artifact@v4
+        with:
+          name: candidate-tint-cli
+          path: bin/
 
-      - name: Run SPIR-V → WGSL validation
-        working-directory: webgpu_tests/shader_corpus
-        run: node run_tests.mjs
+      - name: Validate candidate translator and semantic guards
+        run: |
+          chmod +x bin/tint_convert_cli
+          test -x bin/tint_convert_cli
+          python3 webgpu_tests/tint_translation/run_translation.py --tint bin/tint_convert_cli --output /tmp/tint-translation
+          python3 webgpu_tests/tint_translation/run_operand_guards.py --tint bin/tint_convert_cli --corpus /tmp/tint-translation --output /tmp/tint-operand-guards
 
       - name: Upload WGSL results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: shader-corpus-results
-          path: webgpu_tests/shader_corpus/results/
+          path: |
+            /tmp/tint-translation/
+            /tmp/tint-operand-guards/
           retention-days: 7
 
   # ═══════════════════════════════════════════════════════════════════════════════
@@ -83,11 +94,11 @@ jobs:
         run: node run_tests.mjs
 
   # ═══════════════════════════════════════════════════════════════════════════════
-  # Engine Build: Compile WebGPU export template + dump all SPIR-V
+  # Engine Build: Compile WebGPU export template + strict shader precompile
   # ═══════════════════════════════════════════════════════════════════════════════
   build-webgpu:
     runs-on: ubuntu-24.04
-    name: Build WebGPU Template + Dump SPIR-V
+    name: Build Candidate WebGPU Template + Strict Shader Bake
     timeout-minutes: 90
     steps:
       - name: Checkout
@@ -113,12 +124,17 @@ jobs:
       - name: Setup Python and SCons
         uses: ./.github/actions/godot-deps
 
+      - name: Install native shader build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang pkg-config glslang-tools spirv-tools
+
       - name: Build WebGPU export template
-        uses: ./.github/actions/godot-build
-        with:
-          scons-flags: ${{ env.SCONS_FLAGS }} threads=no dlink_enabled=yes webgpu=yes opengl3=no
-          platform: web
-          target: template_release
+        # The shared godot-build action deletes editor/ for template builds.
+        # This job still needs that source for the headless export editor below.
+        run: |
+          scons platform=web target=template_release $SCONS_FLAGS threads=no dlink_enabled=no webgpu=yes opengl3=no \
+            cache_path="${{ github.workspace }}/.scons_cache/" redirect_build_objects=no -j$(nproc)
 
       - name: Save Godot build cache
         uses: ./.github/actions/godot-cache-save
@@ -126,81 +142,40 @@ jobs:
           cache-name: web-webgpu-test
         continue-on-error: true
 
-      - name: Build Linux editor (for export + SPIR-V dump)
+      - name: Build headless Linux export editor
         run: |
-          scons platform=linuxbsd target=editor dev_mode=yes tests=no debug_symbols=no -j$(nproc)
+          scons platform=linuxbsd target=editor dev_mode=yes tests=no debug_symbols=no x11=no wayland=no vulkan=no opengl3=no webgpu=no -j$(nproc)
 
-      - name: Export test project with SPIR-V dump
+      - name: Export with the exact candidate template
         run: |
-          mkdir -p /tmp/spirv_dump
-          mkdir -p webgpu_tests/test_project/export
-
-          # Install WebGPU template (editor looks for web_nothreads_release.zip)
-          mkdir -p ~/.local/share/godot/export_templates/4.6.2.dev
-          cp bin/godot.web.template_release.wasm32.nothreads.dlink.zip \
-             ~/.local/share/godot/export_templates/4.6.2.dev/web_nothreads_release.zip || true
-
-          # Run editor headless to import project and compile all shaders
-          # GODOT_DUMP_SPIRV causes all compiled SPIR-V to be written to disk
-          GODOT_DUMP_SPIRV=/tmp/spirv_dump timeout 120 \
+          python3 webgpu_tests/browser_fork_ports/export_candidate.py \
             bin/godot.linuxbsd.editor.x86_64 \
-              --headless --path webgpu_tests/test_project \
-              --export-release "WebGPU" export/index.html || true
+            --template bin/godot.web.template_release.wasm32.nothreads.zip \
+            --project webgpu_tests/test_project \
+            --output /tmp/webgpu-candidate
 
-          echo "SPIR-V files dumped:"
-          ls -la /tmp/spirv_dump/ | head -50
-          echo "Total: $(ls /tmp/spirv_dump/*.spv 2>/dev/null | wc -l) files"
-
-      - name: Upload SPIR-V dump
+      - name: Upload candidate Tint CLI
         uses: actions/upload-artifact@v4
         with:
-          name: spirv-dump
-          path: /tmp/spirv_dump/
+          name: candidate-tint-cli
+          path: bin/tint_convert_cli
+          if-no-files-found: error
           retention-days: 7
 
       - name: Upload WebGPU export
         uses: actions/upload-artifact@v4
         with:
           name: webgpu-export
-          path: webgpu_tests/test_project/export/
+          path: /tmp/webgpu-candidate/export/
+          if-no-files-found: error
           retention-days: 7
-
-  # ═══════════════════════════════════════════════════════════════════════════════
-  # SPIR-V Validation: Validate ALL engine SPIR-V through Tint
-  # ═══════════════════════════════════════════════════════════════════════════════
-  validate-spirv:
-    runs-on: ubuntu-24.04
-    name: Validate Engine SPIR-V (Tint)
-    needs: [build-webgpu]
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Download SPIR-V dump
-        uses: actions/download-artifact@v4
-        with:
-          name: spirv-dump
-          path: /tmp/spirv_dump/
-
-      - name: Validate all SPIR-V through Tint
-        run: |
-          echo "Validating engine SPIR-V files through Tint..."
-          node webgpu_tests/shader_corpus/validate_spirv_dump.mjs /tmp/spirv_dump/
 
   # ═══════════════════════════════════════════════════════════════════════════════
   # Smoke Test: Run exported project in headless Chrome
   # ═══════════════════════════════════════════════════════════════════════════════
   smoke-test:
     runs-on: ubuntu-24.04
-    name: Headless Chrome Smoke Test
+    name: Candidate Chrome Smoke Test (Xvfb)
     needs: [build-webgpu]
     timeout-minutes: 15
     steps:
@@ -227,12 +202,14 @@ jobs:
 
       - name: Run smoke test
         working-directory: webgpu_tests/test_project
-        run: node smoke_test.mjs ./export/
+        run: xvfb-run -a node smoke_test.mjs ./export/
 
   # ═══════════════════════════════════════════════════════════════════════════════
   # Scene Smoketest: 18 demos/benchmarks across Chrome + Firefox
   # ═══════════════════════════════════════════════════════════════════════════════
   scene-smoketest:
+    # Existing external/prebuilt demos are manual diagnostics, not candidate proof.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     name: Scene Smoketest (Chrome + Firefox)
     timeout-minutes: 20
@@ -263,6 +240,8 @@ jobs:
   # Resource Lifecycle: Browser-based stress test
   # ═══════════════════════════════════════════════════════════════════════════════
   resource-lifecycle:
+    # Existing external/prebuilt demos are manual diagnostics, not candidate proof.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     name: Resource Lifecycle (Chrome WebGPU)
     timeout-minutes: 15
@@ -290,6 +269,8 @@ jobs:
   # Screenshot Comparison: Multi-browser visual regression
   # ═══════════════════════════════════════════════════════════════════════════════
   screenshot-comparison:
+    # Existing external/prebuilt demos are manual diagnostics, not candidate proof.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     name: Screenshot Comparison (Chrome + Firefox)
     timeout-minutes: 20
@@ -329,7 +310,7 @@ jobs:
   test-summary:
     runs-on: ubuntu-24.04
     name: Test Summary
-    needs: [shader-corpus, driver-unit-tests, validate-spirv, smoke-test, scene-smoketest, resource-lifecycle, screenshot-comparison]
+    needs: [build-webgpu, shader-corpus, driver-unit-tests, smoke-test, scene-smoketest, resource-lifecycle, screenshot-comparison]
     if: always()
     steps:
       - name: Check results
@@ -340,7 +321,7 @@ jobs:
           echo ""
           echo "  Shader Corpus:        ${{ needs.shader-corpus.result }}"
           echo "  Driver Unit Tests:    ${{ needs.driver-unit-tests.result }}"
-          echo "  SPIR-V Validation:    ${{ needs.validate-spirv.result }}"
+          echo "  Candidate Build:      ${{ needs.build-webgpu.result }}"
           echo "  Smoke Test:           ${{ needs.smoke-test.result }}"
           echo "  Scene Smoketest:      ${{ needs.scene-smoketest.result }}"
           echo "  Resource Lifecycle:   ${{ needs.resource-lifecycle.result }}"
@@ -349,19 +330,19 @@ jobs:
 
           FAILED=0
 
-          if [ "${{ needs.shader-corpus.result }}" = "failure" ]; then
+          if [ "${{ needs.shader-corpus.result }}" != "success" ]; then
             echo "::error::Shader corpus tests failed"
             FAILED=1
           fi
-          if [ "${{ needs.driver-unit-tests.result }}" = "failure" ]; then
+          if [ "${{ needs.driver-unit-tests.result }}" != "success" ]; then
             echo "::error::Driver unit tests failed"
             FAILED=1
           fi
-          if [ "${{ needs.validate-spirv.result }}" = "failure" ]; then
-            echo "::error::Engine SPIR-V validation failed — Tint cannot convert one or more shaders"
+          if [ "${{ needs.build-webgpu.result }}" != "success" ]; then
+            echo "::error::Candidate WebGPU build, strict shader bake, or export failed"
             FAILED=1
           fi
-          if [ "${{ needs.smoke-test.result }}" = "failure" ]; then
+          if [ "${{ needs.smoke-test.result }}" != "success" ]; then
             echo "::error::Headless smoke test failed — shader compilation or WebGPU errors in browser"
             FAILED=1
           fi

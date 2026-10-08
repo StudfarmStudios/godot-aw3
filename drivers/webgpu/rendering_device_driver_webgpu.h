@@ -32,10 +32,9 @@
 
 #ifdef WEBGPU_ENABLED
 
-#include "webgpu_objects.h"
-
-#include "servers/rendering/rendering_device_driver.h"
 #include "core/templates/hash_map.h"
+#include "drivers/webgpu/webgpu_objects.h"
+#include "servers/rendering/rendering_device_driver.h"
 
 #include <webgpu/webgpu.h>
 
@@ -253,6 +252,7 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 	WGPUTextureFormat _promote_storage_format(WGPUTextureFormat p_format) const;
 	bool _supports_rw_storage_format(WGPUTextureFormat p_format) const;
 	void _remap_unsupported_wgsl_storage_formats(char *&r_wgsl) const;
+	void _lower_storage_texture_access(char *&r_wgsl, const HashMap<uint32_t, WGPUStorageTextureAccess> &p_contract, HashMap<uint32_t, uint32_t> *r_splits, HashSet<uint32_t> *r_sampled_reads, HashMap<uint32_t, WGPUTextureFormat> *r_formats) const;
 	WGPUBufferUsage _buffer_usage_to_wgpu(BitField<BufferUsageBits> p_usage) const;
 	WGPUTextureUsage _texture_usage_to_wgpu(BitField<TextureUsageBits> p_usage) const;
 	WGPUTextureDimension _texture_type_to_dimension(TextureType p_type) const;
@@ -262,7 +262,7 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 	void _flush_push_constants(WGCommandBuffer *p_cmd_buf, WGShader *p_shader);
 	bool _ensure_shader_layout(WGShader *p_shader);
 	bool _ensure_shader_modules(WGShader *p_shader);
-	WGPUShaderModule _create_module_with_spec_constants(const PackedByteArray &p_spirv, VectorView<PipelineSpecializationConstant> p_constants, ShaderStage p_stage);
+	WGPUShaderModule _create_module_with_spec_constants(const PackedByteArray &p_spirv, VectorView<PipelineSpecializationConstant> p_constants, ShaderStage p_stage, const WGShader *p_shader);
 
 public:
 	RenderingDeviceDriverWebGPU(RenderingContextDriverWebGPU *p_context_driver);
@@ -326,14 +326,14 @@ public:
 	/// Heap-allocated so that pointers remain stable across HashMap rehashes
 	/// and can safely be passed to async WebGPU map callbacks.
 	struct ReadbackEntry {
-		WGPUBuffer staging = nullptr;   ///< Persistent staging buffer (CopyDst | MapRead).
-		uint8_t *shadow = nullptr;      ///< CPU-side shadow buffer.
-		uint64_t size = 0;              ///< Buffer size in bytes.
-		bool map_complete = false;      ///< Set by async map callback.
-		bool map_pending = false;       ///< True while mapAsync is in flight (not yet completed).
-		bool has_data = false;          ///< True after first successful readback.
-		bool cancelled = false;         ///< Source freed while map pending; callback will clean up.
-		WGPUFuture map_future = {};     ///< The pending map, for native Dawn to wait on.
+		WGPUBuffer staging = nullptr; ///< Persistent staging buffer (CopyDst | MapRead).
+		uint8_t *shadow = nullptr; ///< CPU-side shadow buffer.
+		uint64_t size = 0; ///< Buffer size in bytes.
+		bool map_complete = false; ///< Set by async map callback.
+		bool map_pending = false; ///< True while mapAsync is in flight (not yet completed).
+		bool has_data = false; ///< True after first successful readback.
+		bool cancelled = false; ///< Source freed while map pending; callback will clean up.
+		WGPUFuture map_future = {}; ///< The pending map, for native Dawn to wait on.
 	};
 	HashMap<uint64_t, ReadbackEntry *> _readback_cache; ///< Keyed by source buffer/texture pointer.
 	/// Async map callback — copies GPU data to shadow buffer.

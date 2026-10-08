@@ -102,6 +102,7 @@ CopyEffects::CopyEffects(BitField<RasterEffects> p_raster_effects) {
 		copy_modes.push_back("\n#define MODE_OCTMAP_ARRAY_TO_PANORAMA\n");
 		copy_modes.push_back("\n#define MODE_SIMPLE_COPY_DEPTH\n#define SOURCE_DEPTH\n");
 		copy_modes.push_back("\n#define MODE_LINEARIZE_DEPTH_COPY\n#define SOURCE_DEPTH\n");
+		copy_modes.push_back("\n#define MODE_SIMPLE_COPY\n#define DST_IMAGE_RG16F\n");
 
 		copy.shader.initialize(copy_modes);
 		memset(&copy.push_constant, 0, sizeof(CopyPushConstant));
@@ -451,6 +452,11 @@ void CopyEffects::copy_to_rect(RID p_source_rd_texture, RID p_dest_texture, cons
 	CopyMode mode = p_dest_is_depth ? COPY_MODE_SIMPLY_COPY_DEPTH : (p_8_bit_dst ? COPY_MODE_SIMPLY_COPY_8BIT : COPY_MODE_SIMPLY_COPY);
 	if (p_dest_is_depth && (RD::get_singleton()->texture_get_format(p_source_rd_texture).usage_bits & RD::TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
 		mode = COPY_MODE_SIMPLY_COPY_DEPTH_SOURCE;
+	} else if (!p_dest_is_depth && !p_8_bit_dst && RD::get_singleton()->texture_get_format(p_dest_texture).format == RD::DATA_FORMAT_R16G16_SFLOAT) {
+		// TAA velocity history is RG16F, not RGBA16F. Keep the compact
+		// destination and let the backend promote both resource and shader
+		// format together when native RG16F storage is unavailable.
+		mode = COPY_MODE_SIMPLY_COPY_RG16F;
 	}
 	RID shader = copy.shader.version_get_shader(copy.shader_version, mode);
 	ERR_FAIL_COND(shader.is_null());

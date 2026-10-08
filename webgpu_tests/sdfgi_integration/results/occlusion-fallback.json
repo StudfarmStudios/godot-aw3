@@ -1,0 +1,81 @@
+{
+  "passed": true,
+  "cases": [
+    {
+      "case": "empty",
+      "passed": true,
+      "voxels": 32768,
+      "mismatched_voxels": 0,
+      "max_error_unorm8": 0,
+      "scalar_tolerance_unorm8": 1,
+      "guards_intact": true
+    },
+    {
+      "case": "solid",
+      "passed": true,
+      "voxels": 32768,
+      "mismatched_voxels": 0,
+      "max_error_unorm8": 0,
+      "scalar_tolerance_unorm8": 1,
+      "guards_intact": true
+    },
+    {
+      "case": "walls",
+      "passed": true,
+      "voxels": 32768,
+      "mismatched_voxels": 0,
+      "max_error_unorm8": 1,
+      "scalar_tolerance_unorm8": 1,
+      "guards_intact": true
+    },
+    {
+      "case": "walls_shifted",
+      "passed": true,
+      "voxels": 32768,
+      "mismatched_voxels": 0,
+      "max_error_unorm8": 1,
+      "scalar_tolerance_unorm8": 1,
+      "guards_intact": true
+    },
+    {
+      "case": "sparse",
+      "passed": true,
+      "voxels": 32768,
+      "mismatched_voxels": 0,
+      "max_error_unorm8": 1,
+      "scalar_tolerance_unorm8": 1,
+      "guards_intact": true
+    },
+    {
+      "case": "sparse_shifted",
+      "passed": true,
+      "voxels": 32768,
+      "mismatched_voxels": 0,
+      "max_error_unorm8": 1,
+      "scalar_tolerance_unorm8": 1,
+      "guards_intact": true
+    }
+  ],
+  "returncode": 0,
+  "errors": [],
+  "seconds": 1.1299572080606595,
+  "engine_sha256": "e6d26dd46c9871a75b75e62b5cac42dd2bbc7b0fe727a67414cf7a56bc4fdfa9",
+  "shader_sha256": "5a25e48327fa8696289a145837230e5e482c657864685943c61e6431af9fb45a",
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "fallback": true,
+  "texture_reference": false,
+  "command": [
+    "/private/tmp/aw3-webgpu-retarget-normal",
+    "--path",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration",
+    "--rendering-method",
+    "forward_plus",
+    "--rendering-driver",
+    "webgpu",
+    "--script",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration/occlusion.gd",
+    "--",
+    "--fixture-dir=/private/tmp/aw3-sdfgi-e6-occlusion-fallback",
+    "--webgpu-force-fallbacks"
+  ]
+}

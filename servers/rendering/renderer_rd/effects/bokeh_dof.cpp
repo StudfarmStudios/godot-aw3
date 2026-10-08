@@ -50,12 +50,13 @@ BokehDOF::BokehDOF(bool p_prefer_raster_effects) {
 	bokeh_modes.push_back("\n#define MODE_BOKEH_HEXAGONAL\n");
 	bokeh_modes.push_back("\n#define MODE_BOKEH_CIRCULAR\n#define OUTPUT_WEIGHT\n");
 	bokeh_modes.push_back("\n#define MODE_COMPOSITE_BOKEH\n");
+	bokeh_modes.push_back("\n#define MODE_GEN_BLUR_SIZE\n#define SOURCE_DEPTH\n");
 	if (prefer_raster_effects) {
 		bokeh.raster_shader.initialize(bokeh_modes);
 
 		bokeh.shader_version = bokeh.raster_shader.version_create();
 
-		const int att_count[BOKEH_MAX] = { 1, 2, 1, 2, 1, 2, 1 };
+		const int att_count[BOKEH_MAX] = { 1, 2, 1, 2, 1, 2, 1, 1 };
 		for (int i = 0; i < BOKEH_MAX; i++) {
 			RD::PipelineColorBlendState blend_state = (i == BOKEH_COMPOSITE) ? RD::PipelineColorBlendState::create_blend(att_count[i]) : RD::PipelineColorBlendState::create_disabled(att_count[i]);
 			bokeh.raster_pipelines[i].setup(bokeh.raster_shader.version_get_shader(bokeh.shader_version, i), RD::RENDER_PRIMITIVE_TRIANGLES, RD::PipelineRasterizationState(), RD::PipelineMultisampleState(), RD::PipelineDepthStencilState(), blend_state, 0);
@@ -157,10 +158,14 @@ void BokehDOF::bokeh_dof_compute(const BokehBuffers &p_buffers, RID p_camera_att
 	// The alpha channel of the source color texture is filled with the expected circle size
 	// If used for DOF far, the size is positive, if used for near, its negative.
 
-	RID shader = bokeh.compute_shader.version_get_shader(bokeh.shader_version, BOKEH_GEN_BLUR_SIZE);
+	// Non-MSAA scene depth is a depth attachment; MSAA resolves it into R32F.
+	// WebGPU must keep these sample types distinct instead of binding a blank
+	// float fallback for the actual depth attachment.
+	const BokehMode blur_size_mode = (RD::get_singleton()->texture_get_format(p_buffers.depth_texture).usage_bits & RD::TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) ? BOKEH_GEN_BLUR_SIZE_DEPTH : BOKEH_GEN_BLUR_SIZE;
+	RID shader = bokeh.compute_shader.version_get_shader(bokeh.shader_version, blur_size_mode);
 	ERR_FAIL_COND(shader.is_null());
 
-	RD::get_singleton()->compute_list_bind_compute_pipeline(compute_list, bokeh.compute_pipelines[BOKEH_GEN_BLUR_SIZE].get_rid());
+	RD::get_singleton()->compute_list_bind_compute_pipeline(compute_list, bokeh.compute_pipelines[blur_size_mode].get_rid());
 
 	RD::get_singleton()->compute_list_bind_uniform_set(compute_list, uniform_set_cache->get_cache(shader, 0, u_base_image), 0);
 	RD::get_singleton()->compute_list_bind_uniform_set(compute_list, uniform_set_cache->get_cache(shader, 1, u_depth_texture), 1);
@@ -356,12 +361,13 @@ void BokehDOF::bokeh_dof_raster(const BokehBuffers &p_buffers, RID p_camera_attr
 
 		{
 			// generate our depth data
-			RID shader = bokeh.raster_shader.version_get_shader(bokeh.shader_version, BOKEH_GEN_BLUR_SIZE);
+			const BokehMode blur_size_mode = (RD::get_singleton()->texture_get_format(p_buffers.depth_texture).usage_bits & RD::TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) ? BOKEH_GEN_BLUR_SIZE_DEPTH : BOKEH_GEN_BLUR_SIZE;
+			RID shader = bokeh.raster_shader.version_get_shader(bokeh.shader_version, blur_size_mode);
 			ERR_FAIL_COND(shader.is_null());
 
 			RID framebuffer = p_buffers.base_weight_fb;
 			RD::DrawListID draw_list = RD::get_singleton()->draw_list_begin(framebuffer);
-			RD::get_singleton()->draw_list_bind_render_pipeline(draw_list, bokeh.raster_pipelines[BOKEH_GEN_BLUR_SIZE].get_render_pipeline(RD::INVALID_ID, RD::get_singleton()->framebuffer_get_format(framebuffer)));
+			RD::get_singleton()->draw_list_bind_render_pipeline(draw_list, bokeh.raster_pipelines[blur_size_mode].get_render_pipeline(RD::INVALID_ID, RD::get_singleton()->framebuffer_get_format(framebuffer)));
 			RD::get_singleton()->draw_list_bind_uniform_set(draw_list, uniform_set_cache->get_cache(shader, 0, u_depth_texture), 0);
 
 			RD::get_singleton()->draw_list_set_push_constant(draw_list, &bokeh.push_constant, sizeof(BokehPushConstant));

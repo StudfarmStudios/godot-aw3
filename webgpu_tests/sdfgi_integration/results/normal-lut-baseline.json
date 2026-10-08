@@ -1,0 +1,26 @@
+{
+  "passed": true,
+  "checks": 81,
+  "errors": [],
+  "returncode": 0,
+  "fallback": true,
+  "no_float32_filterable": true,
+  "source_sha256": "b83b3d58ad2313b6f83c9dae9fe44d280604f18f4098c3acb46bcc67166441be",
+  "engine_sha256": "0d7e35d8d83399eb8884a1f43b45d44d7d291e1f03895d636ba98d4dd8b5d904",
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "command": [
+    "/private/tmp/aw3-webgpu-ssr-fetch",
+    "--path",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration",
+    "--rendering-method",
+    "forward_plus",
+    "--rendering-driver",
+    "webgpu",
+    "--script",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration/normal_lut.gd",
+    "--",
+    "--fixture-dir=/private/tmp/aw3-sdfgi-normal-lut-baseline",
+    "--webgpu-no-float32-filterable",
+    "--webgpu-force-fallbacks"
+  ]
+}

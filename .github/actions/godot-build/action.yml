@@ -26,8 +26,15 @@ runs:
       run: |
         echo "Building with flags:" platform=${{ inputs.platform }} target=${{ inputs.target }} ${{ inputs.scons-flags }} "cache_path=${{ inputs.scons-cache }}" redirect_build_objects=no
 
-        if [ "${{ inputs.target }}" != "editor" ]; then
-          # Ensure we don't include editor code in export template builds.
+        # WebGPU hashes its native sidecar serializer as part of the shared
+        # translator/profile identity. Template SCons targets still exclude
+        # editor object code, but that source must remain available to hash.
+        case " ${{ inputs.scons-flags }} " in
+          *" webgpu=yes "*|*" webgpu=true "*|*" webgpu=1 "*) preserve_editor_source=true ;;
+          *) preserve_editor_source=false ;;
+        esac
+        if [ "${{ inputs.target }}" != "editor" ] && [ "$preserve_editor_source" = "false" ]; then
+          # Ensure we don't include editor code in other export template builds.
           rm -rf editor
         fi
 

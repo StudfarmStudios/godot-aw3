@@ -8,6 +8,8 @@
  * @module Engine
  * @header Web export JavaScript reference
  */
+/* global ___GODOT_PROXY_TO_PTHREAD_ENABLED */
+/* eslint no-console: ["error", { allow: ["error"] }] -- WebGPU startup diagnostics precede the engine print hooks. */
 const Engine = (function () {
 	const applicationWorkerEnabled = ___GODOT_PROXY_TO_PTHREAD_ENABLED;
 	const applicationWorkerWebGPUMarker = '--godot-application-worker-webgpu';
@@ -354,7 +356,7 @@ const Engine = (function () {
 				desc.requiredFeatures = (desc.requiredFeatures || []).concat(['timestamp-query']);
 			}
 			// Request optional texture format tiers used by Godot (r16snorm, rg16snorm, etc.).
-			var optionalFeatures = [
+			const optionalFeatures = [
 				'readonly-and-readwrite-storage-textures',
 				// The clustered renderer's depth buffer is D32S8; without this the
 				// first render pipeline using it fails to create.
@@ -378,22 +380,23 @@ const Engine = (function () {
 				'texture-compression-etc2',
 				'texture-compression-astc',
 			];
-			for (var i = 0; i < optionalFeatures.length; i++) {
+			for (let i = 0; i < optionalFeatures.length; i++) {
 				if (adapter.features.has(optionalFeatures[i])) {
 					desc.requiredFeatures = (desc.requiredFeatures || []).concat([optionalFeatures[i]]);
 				}
 			}
 			// Request higher limits that Godot's renderer needs.
 			// The adapter may support more than the default; request what it offers.
-			var adapterLimits = adapter.limits || {};
-			desc.requiredLimits = desc.requiredLimits || {};
-			var limitsToMax = [
+			const adapterLimits = adapter.limits || {};
+			desc.requiredLimits ||= {};
+			const limitsToMax = [
 				'maxStorageBuffersPerShaderStage',
 				'maxStorageBufferBindingSize',
 				'maxBufferSize',
 				'maxUniformBufferBindingSize',
 				'maxUniformBuffersPerShaderStage',
 				'maxSampledTexturesPerShaderStage',
+				'maxTextureDimension3D',
 				'maxSamplersPerShaderStage',
 				'maxStorageTexturesPerShaderStage',
 				'maxColorAttachments',
@@ -405,8 +408,8 @@ const Engine = (function () {
 				'maxStorageTexturesInFragmentStage',
 				'maxStorageTexturesInVertexStage',
 			];
-			for (var li = 0; li < limitsToMax.length; li++) {
-				var key = limitsToMax[li];
+			for (let li = 0; li < limitsToMax.length; li++) {
+				const key = limitsToMax[li];
 				if (adapterLimits[key] !== undefined) {
 					desc.requiredLimits[key] = adapterLimits[key];
 				}

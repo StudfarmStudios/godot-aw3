@@ -3212,7 +3212,22 @@ void RenderForwardClustered::_render_sdfgi(Ref<RenderSceneBuffersRD> p_render_bu
 
 		HashMap<Size2i, RID>::Iterator E = sdfgi_framebuffer_size_cache.find(fb_size);
 		if (!E) {
-			RID fb = RD::get_singleton()->framebuffer_create_empty(fb_size);
+			RID fb;
+			if (RD::get_singleton()->has_feature(RD::SUPPORTS_FRAGMENT_SHADER_WITH_ONLY_SIDE_EFFECTS)) {
+				fb = RD::get_singleton()->framebuffer_create_empty(fb_size);
+			} else {
+				// The voxelization fragment writes storage resources; WebGPU also
+				// requires a real attachment matching its dummy color output.
+				RD::TextureFormat tf;
+				tf.format = RD::DATA_FORMAT_R8G8B8A8_UNORM;
+				tf.width = MAX(1, fb_size.width);
+				tf.height = MAX(1, fb_size.height);
+				tf.texture_type = RD::TEXTURE_TYPE_2D;
+				tf.usage_bits = RD::TEXTURE_USAGE_COLOR_ATTACHMENT_BIT;
+				RID color = RD::get_singleton()->texture_create(tf, RD::TextureView());
+				sdfgi_framebuffer_color_cache.insert(fb_size, color);
+				fb = RD::get_singleton()->framebuffer_create({ color });
+			}
 			E = sdfgi_framebuffer_size_cache.insert(fb_size, fb);
 		}
 
@@ -4007,7 +4022,7 @@ RID RenderForwardClustered::_setup_sdfgi_render_pass_uniform_set(RID p_albedo_te
 	}
 	{
 		RD::Uniform u;
-		u.uniform_type = RD::UNIFORM_TYPE_IMAGE;
+		u.uniform_type = RD::get_singleton()->get_device_api_name() == "WebGPU" ? RD::UNIFORM_TYPE_STORAGE_BUFFER : RD::UNIFORM_TYPE_IMAGE;
 		u.binding = 27;
 		u.append_id(p_geom_facing_texture);
 		uniforms.push_back(u);
@@ -4016,7 +4031,7 @@ RID RenderForwardClustered::_setup_sdfgi_render_pass_uniform_set(RID p_albedo_te
 	if (scene_shader.default_shader_sdfgi_rd.is_null()) {
 		// The variant for SDF from the default material should only be retrieved when SDFGI is required.
 		ERR_FAIL_NULL_V(scene_shader.default_material_shader_ptr, RID());
-		scene_shader.enable_advanced_shader_group();
+		scene_shader.enable_sdfgi_shader_group();
 		scene_shader.default_shader_sdfgi_rd = scene_shader.default_material_shader_ptr->get_shader_variant(SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS_WITH_SDF, 0, true);
 		ERR_FAIL_COND_V(scene_shader.default_shader_sdfgi_rd.is_null(), RID());
 	}
@@ -4077,6 +4092,13 @@ void RenderForwardClustered::sdfgi_update(const Ref<RenderSceneBuffers> &p_rende
 	}
 
 	bool needs_sdfgi = p_environment.is_valid() && environment_get_sdfgi_enabled(p_environment);
+	if (needs_sdfgi) {
+		String unsupported_reason = gi.sdfgi_get_unsupported_reason(environment_get_sdfgi_cascades(p_environment));
+		if (!unsupported_reason.is_empty()) {
+			WARN_PRINT_ONCE(unsupported_reason + " SDFGI is unavailable; rendering continues with the environment's other lighting.");
+			needs_sdfgi = false;
+		}
+	}
 	bool needs_reset = sdfgi.is_valid() ? sdfgi->version != gi.sdfgi_current_version : false;
 
 	if (!needs_sdfgi || needs_reset) {
@@ -4093,7 +4115,7 @@ void RenderForwardClustered::sdfgi_update(const Ref<RenderSceneBuffers> &p_rende
 
 	// Ensure advanced shaders are available if SDFGI is used.
 	// Call here as this is the first entry point for SDFGI.
-	scene_shader.enable_advanced_shader_group();
+	scene_shader.enable_sdfgi_shader_group();
 
 	static const uint32_t history_frames_to_converge[RSE::ENV_SDFGI_CONVERGE_MAX] = { 5, 10, 15, 20, 25, 30 };
 	uint32_t requested_history_size = history_frames_to_converge[gi.sdfgi_frames_to_converge];
@@ -4812,13 +4834,15 @@ void RenderForwardClustered::_mesh_compile_pipelines_for_surface(const SurfacePi
 	}
 
 	if (p_global.use_sdfgi) {
-		// Depth pass with SDFGI support.
 		pipeline_key.version = SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS_WITH_SDF;
-		pipeline_key.framebuffer_format_id = _get_depth_framebuffer_format_for_pipeline(buffers_can_be_storage, RD::TextureSamples(p_global.texture_samples), false, false);
-		_mesh_compile_pipeline_for_surface(p_surface.shader, p_surface.mesh_surface, true, p_surface.instanced, p_source, pipeline_key, r_pipeline_pairs);
-
-		// Depth pass with SDFGI support for an empty framebuffer.
-		pipeline_key.framebuffer_format_id = RD::get_singleton()->framebuffer_format_create_empty();
+		if (RD::get_singleton()->has_feature(RD::SUPPORTS_FRAGMENT_SHADER_WITH_ONLY_SIDE_EFFECTS)) {
+			pipeline_key.framebuffer_format_id = RD::get_singleton()->framebuffer_format_create_empty();
+		} else {
+			RD::AttachmentFormat color;
+			color.format = RD::DATA_FORMAT_R8G8B8A8_UNORM;
+			color.usage_flags = RD::TEXTURE_USAGE_COLOR_ATTACHMENT_BIT;
+			pipeline_key.framebuffer_format_id = RD::get_singleton()->framebuffer_format_create({ color });
+		}
 		_mesh_compile_pipeline_for_surface(p_surface.shader, p_surface.mesh_surface, true, p_surface.instanced, p_source, pipeline_key, r_pipeline_pairs);
 	}
 
@@ -5372,5 +5396,9 @@ RenderForwardClustered::~RenderForwardClustered() {
 	while (sdfgi_framebuffer_size_cache.begin()) {
 		RD::get_singleton()->free_rid(sdfgi_framebuffer_size_cache.begin()->value);
 		sdfgi_framebuffer_size_cache.remove(sdfgi_framebuffer_size_cache.begin());
+	}
+	while (sdfgi_framebuffer_color_cache.begin()) {
+		RD::get_singleton()->free_rid(sdfgi_framebuffer_color_cache.begin()->value);
+		sdfgi_framebuffer_color_cache.remove(sdfgi_framebuffer_color_cache.begin());
 	}
 }

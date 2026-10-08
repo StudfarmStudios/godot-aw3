@@ -1,0 +1,961 @@
+{
+  "passed": true,
+  "runs": [
+    {
+      "mode": "metal",
+      "passed": true,
+      "passed_checks": 36,
+      "failed_checks": 0,
+      "returncode": 0,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "e6d26dd46c9871a75b75e62b5cac42dd2bbc7b0fe727a67414cf7a56bc4fdfa9",
+      "command": [
+        "/private/tmp/aw3-webgpu-retarget-normal",
+        "--path",
+        "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/canvas_sdf_integration",
+        "--rendering-method",
+        "forward_plus",
+        "--rendering-driver",
+        "metal",
+        "--disable-vsync",
+        "--",
+        "--sdf-output=/private/tmp/aw3-canvas-sdf-final/metal"
+      ],
+      "error_count": 0,
+      "errors": [],
+      "checks": [
+        "CANVAS_SDF PASS square_mask_extent ",
+        "CANVAS_SDF PASS square_mask_finite ",
+        "CANVAS_SDF PASS square_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS square_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS square_distance_extent ",
+        "CANVAS_SDF PASS square_distance_finite ",
+        "CANVAS_SDF PASS distance_inside 0.0999755859375",
+        "CANVAS_SDF PASS distance_outside 0.71240234375",
+        "CANVAS_SDF PASS square_normals_extent ",
+        "CANVAS_SDF PASS square_normals_finite ",
+        "CANVAS_SDF PASS normal_right (1.0, 0.5, 0.0, 1.0)",
+        "CANVAS_SDF PASS normal_left (0.0, 0.5, 0.0, 1.0)",
+        "CANVAS_SDF PASS moved_mask_extent ",
+        "CANVAS_SDF PASS moved_mask_finite ",
+        "CANVAS_SDF PASS moved_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS moved_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS concave_full_extent ",
+        "CANVAS_SDF PASS concave_full_finite ",
+        "CANVAS_SDF PASS concave_full_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS concave_full_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS concave_half_extent ",
+        "CANVAS_SDF PASS concave_half_finite ",
+        "CANVAS_SDF PASS concave_half_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS concave_half_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS concave_quarter_extent ",
+        "CANVAS_SDF PASS concave_quarter_finite ",
+        "CANVAS_SDF PASS concave_quarter_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS concave_quarter_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS odd_resize_extent ",
+        "CANVAS_SDF PASS odd_resize_finite ",
+        "CANVAS_SDF PASS odd_resize_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS odd_resize_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS oversize_clipped_extent ",
+        "CANVAS_SDF PASS oversize_clipped_finite ",
+        "CANVAS_SDF PASS oversize_clipped_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS oversize_clipped_outside (0.0, 0.0, 1.0, 1.0)"
+      ],
+      "captures": [
+        {
+          "height": 192,
+          "label": "square_mask",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "square_distance",
+          "mode": 1,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "square_normals",
+          "mode": 2,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "moved_mask",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "concave_full",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "concave_half",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "concave_quarter",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 131,
+          "label": "odd_resize",
+          "mode": 0,
+          "width": 193
+        },
+        {
+          "height": 131,
+          "label": "oversize_clipped",
+          "mode": 0,
+          "width": 193
+        }
+      ]
+    },
+    {
+      "mode": "native",
+      "passed": true,
+      "passed_checks": 36,
+      "failed_checks": 0,
+      "returncode": 0,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "e6d26dd46c9871a75b75e62b5cac42dd2bbc7b0fe727a67414cf7a56bc4fdfa9",
+      "command": [
+        "/private/tmp/aw3-webgpu-retarget-normal",
+        "--path",
+        "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/canvas_sdf_integration",
+        "--rendering-method",
+        "forward_plus",
+        "--rendering-driver",
+        "webgpu",
+        "--disable-vsync",
+        "--",
+        "--sdf-output=/private/tmp/aw3-canvas-sdf-final/native"
+      ],
+      "error_count": 0,
+      "errors": [],
+      "checks": [
+        "CANVAS_SDF PASS square_mask_extent ",
+        "CANVAS_SDF PASS square_mask_finite ",
+        "CANVAS_SDF PASS square_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS square_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS square_distance_extent ",
+        "CANVAS_SDF PASS square_distance_finite ",
+        "CANVAS_SDF PASS distance_inside 0.0999755859375",
+        "CANVAS_SDF PASS distance_outside 0.71240234375",
+        "CANVAS_SDF PASS square_normals_extent ",
+        "CANVAS_SDF PASS square_normals_finite ",
+        "CANVAS_SDF PASS normal_right (1.0, 0.5, 0.0, 1.0)",
+        "CANVAS_SDF PASS normal_left (-0.0, 0.5, 0.0, 1.0)",
+        "CANVAS_SDF PASS moved_mask_extent ",
+        "CANVAS_SDF PASS moved_mask_finite ",
+        "CANVAS_SDF PASS moved_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS moved_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS concave_full_extent ",
+        "CANVAS_SDF PASS concave_full_finite ",
+        "CANVAS_SDF PASS concave_full_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS concave_full_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS concave_half_extent ",
+        "CANVAS_SDF PASS concave_half_finite ",
+        "CANVAS_SDF PASS concave_half_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS concave_half_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS concave_quarter_extent ",
+        "CANVAS_SDF PASS concave_quarter_finite ",
+        "CANVAS_SDF PASS concave_quarter_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS concave_quarter_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS odd_resize_extent ",
+        "CANVAS_SDF PASS odd_resize_finite ",
+        "CANVAS_SDF PASS odd_resize_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS odd_resize_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS oversize_clipped_extent ",
+        "CANVAS_SDF PASS oversize_clipped_finite ",
+        "CANVAS_SDF PASS oversize_clipped_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS oversize_clipped_outside (0.0, 0.0, 1.0, 1.0)"
+      ],
+      "captures": [
+        {
+          "height": 192,
+          "label": "square_mask",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "square_distance",
+          "mode": 1,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "square_normals",
+          "mode": 2,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "moved_mask",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "concave_full",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "concave_half",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "concave_quarter",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 131,
+          "label": "odd_resize",
+          "mode": 0,
+          "width": 193
+        },
+        {
+          "height": 131,
+          "label": "oversize_clipped",
+          "mode": 0,
+          "width": 193
+        }
+      ]
+    },
+    {
+      "mode": "fallback",
+      "passed": true,
+      "passed_checks": 36,
+      "failed_checks": 0,
+      "returncode": 0,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "e6d26dd46c9871a75b75e62b5cac42dd2bbc7b0fe727a67414cf7a56bc4fdfa9",
+      "command": [
+        "/private/tmp/aw3-webgpu-retarget-normal",
+        "--path",
+        "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/canvas_sdf_integration",
+        "--rendering-method",
+        "forward_plus",
+        "--rendering-driver",
+        "webgpu",
+        "--disable-vsync",
+        "--",
+        "--sdf-output=/private/tmp/aw3-canvas-sdf-final/fallback",
+        "--webgpu-force-fallbacks"
+      ],
+      "error_count": 0,
+      "errors": [],
+      "checks": [
+        "CANVAS_SDF PASS square_mask_extent ",
+        "CANVAS_SDF PASS square_mask_finite ",
+        "CANVAS_SDF PASS square_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS square_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS square_distance_extent ",
+        "CANVAS_SDF PASS square_distance_finite ",
+        "CANVAS_SDF PASS distance_inside 0.0999755859375",
+        "CANVAS_SDF PASS distance_outside 0.71240234375",
+        "CANVAS_SDF PASS square_normals_extent ",
+        "CANVAS_SDF PASS square_normals_finite ",
+        "CANVAS_SDF PASS normal_right (1.0, 0.5, 0.0, 1.0)",
+        "CANVAS_SDF PASS normal_left (-0.0, 0.5, 0.0, 1.0)",
+        "CANVAS_SDF PASS moved_mask_extent ",
+        "CANVAS_SDF PASS moved_mask_finite ",
+        "CANVAS_SDF PASS moved_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS moved_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS concave_full_extent ",
+        "CANVAS_SDF PASS concave_full_finite ",
+        "CANVAS_SDF PASS concave_full_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS concave_full_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS concave_half_extent ",
+        "CANVAS_SDF PASS concave_half_finite ",
+        "CANVAS_SDF PASS concave_half_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS concave_half_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS concave_quarter_extent ",
+        "CANVAS_SDF PASS concave_quarter_finite ",
+        "CANVAS_SDF PASS concave_quarter_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS concave_quarter_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS odd_resize_extent ",
+        "CANVAS_SDF PASS odd_resize_finite ",
+        "CANVAS_SDF PASS odd_resize_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS odd_resize_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS oversize_clipped_extent ",
+        "CANVAS_SDF PASS oversize_clipped_finite ",
+        "CANVAS_SDF PASS oversize_clipped_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS oversize_clipped_outside (0.0, 0.0, 1.0, 1.0)"
+      ],
+      "captures": [
+        {
+          "height": 192,
+          "label": "square_mask",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "square_distance",
+          "mode": 1,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "square_normals",
+          "mode": 2,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "moved_mask",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "concave_full",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "concave_half",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "concave_quarter",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 131,
+          "label": "odd_resize",
+          "mode": 0,
+          "width": 193
+        },
+        {
+          "height": 131,
+          "label": "oversize_clipped",
+          "mode": 0,
+          "width": 193
+        }
+      ]
+    },
+    {
+      "mode": "nofilter",
+      "passed": true,
+      "passed_checks": 36,
+      "failed_checks": 0,
+      "returncode": 0,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "e6d26dd46c9871a75b75e62b5cac42dd2bbc7b0fe727a67414cf7a56bc4fdfa9",
+      "command": [
+        "/private/tmp/aw3-webgpu-retarget-normal",
+        "--path",
+        "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/canvas_sdf_integration",
+        "--rendering-method",
+        "forward_plus",
+        "--rendering-driver",
+        "webgpu",
+        "--disable-vsync",
+        "--",
+        "--sdf-output=/private/tmp/aw3-canvas-sdf-final/nofilter",
+        "--webgpu-no-float32-filterable"
+      ],
+      "error_count": 0,
+      "errors": [],
+      "checks": [
+        "CANVAS_SDF PASS square_mask_extent ",
+        "CANVAS_SDF PASS square_mask_finite ",
+        "CANVAS_SDF PASS square_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS square_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS square_distance_extent ",
+        "CANVAS_SDF PASS square_distance_finite ",
+        "CANVAS_SDF PASS distance_inside 0.0999755859375",
+        "CANVAS_SDF PASS distance_outside 0.71240234375",
+        "CANVAS_SDF PASS square_normals_extent ",
+        "CANVAS_SDF PASS square_normals_finite ",
+        "CANVAS_SDF PASS normal_right (1.0, 0.5, 0.0, 1.0)",
+        "CANVAS_SDF PASS normal_left (-0.0, 0.5, 0.0, 1.0)",
+        "CANVAS_SDF PASS moved_mask_extent ",
+        "CANVAS_SDF PASS moved_mask_finite ",
+        "CANVAS_SDF PASS moved_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS moved_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS concave_full_extent ",
+        "CANVAS_SDF PASS concave_full_finite ",
+        "CANVAS_SDF PASS concave_full_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS concave_full_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS concave_half_extent ",
+        "CANVAS_SDF PASS concave_half_finite ",
+        "CANVAS_SDF PASS concave_half_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS concave_half_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS concave_quarter_extent ",
+        "CANVAS_SDF PASS concave_quarter_finite ",
+        "CANVAS_SDF PASS concave_quarter_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS concave_quarter_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS odd_resize_extent ",
+        "CANVAS_SDF PASS odd_resize_finite ",
+        "CANVAS_SDF PASS odd_resize_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS odd_resize_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS oversize_clipped_extent ",
+        "CANVAS_SDF PASS oversize_clipped_finite ",
+        "CANVAS_SDF PASS oversize_clipped_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS oversize_clipped_outside (0.0, 0.0, 1.0, 1.0)"
+      ],
+      "captures": [
+        {
+          "height": 192,
+          "label": "square_mask",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "square_distance",
+          "mode": 1,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "square_normals",
+          "mode": 2,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "moved_mask",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "concave_full",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "concave_half",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "concave_quarter",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 131,
+          "label": "odd_resize",
+          "mode": 0,
+          "width": 193
+        },
+        {
+          "height": 131,
+          "label": "oversize_clipped",
+          "mode": 0,
+          "width": 193
+        }
+      ]
+    },
+    {
+      "mode": "combined",
+      "passed": true,
+      "passed_checks": 36,
+      "failed_checks": 0,
+      "returncode": 0,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "e6d26dd46c9871a75b75e62b5cac42dd2bbc7b0fe727a67414cf7a56bc4fdfa9",
+      "command": [
+        "/private/tmp/aw3-webgpu-retarget-normal",
+        "--path",
+        "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/canvas_sdf_integration",
+        "--rendering-method",
+        "forward_plus",
+        "--rendering-driver",
+        "webgpu",
+        "--disable-vsync",
+        "--",
+        "--sdf-output=/private/tmp/aw3-canvas-sdf-final/combined",
+        "--webgpu-force-fallbacks",
+        "--webgpu-no-float32-filterable"
+      ],
+      "error_count": 0,
+      "errors": [],
+      "checks": [
+        "CANVAS_SDF PASS square_mask_extent ",
+        "CANVAS_SDF PASS square_mask_finite ",
+        "CANVAS_SDF PASS square_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS square_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS square_distance_extent ",
+        "CANVAS_SDF PASS square_distance_finite ",
+        "CANVAS_SDF PASS distance_inside 0.0999755859375",
+        "CANVAS_SDF PASS distance_outside 0.71240234375",
+        "CANVAS_SDF PASS square_normals_extent ",
+        "CANVAS_SDF PASS square_normals_finite ",
+        "CANVAS_SDF PASS normal_right (1.0, 0.5, 0.0, 1.0)",
+        "CANVAS_SDF PASS normal_left (-0.0, 0.5, 0.0, 1.0)",
+        "CANVAS_SDF PASS moved_mask_extent ",
+        "CANVAS_SDF PASS moved_mask_finite ",
+        "CANVAS_SDF PASS moved_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS moved_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS concave_full_extent ",
+        "CANVAS_SDF PASS concave_full_finite ",
+        "CANVAS_SDF PASS concave_full_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS concave_full_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS concave_half_extent ",
+        "CANVAS_SDF PASS concave_half_finite ",
+        "CANVAS_SDF PASS concave_half_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS concave_half_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS concave_quarter_extent ",
+        "CANVAS_SDF PASS concave_quarter_finite ",
+        "CANVAS_SDF PASS concave_quarter_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS concave_quarter_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS odd_resize_extent ",
+        "CANVAS_SDF PASS odd_resize_finite ",
+        "CANVAS_SDF PASS odd_resize_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS odd_resize_outside (0.0, 0.0, 1.0, 1.0)",
+        "CANVAS_SDF PASS oversize_clipped_extent ",
+        "CANVAS_SDF PASS oversize_clipped_finite ",
+        "CANVAS_SDF PASS oversize_clipped_inside (1.0, 0.0, 0.0, 1.0)",
+        "CANVAS_SDF PASS oversize_clipped_outside (0.0, 0.0, 1.0, 1.0)"
+      ],
+      "captures": [
+        {
+          "height": 192,
+          "label": "square_mask",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "square_distance",
+          "mode": 1,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "square_normals",
+          "mode": 2,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "moved_mask",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "concave_full",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "concave_half",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 192,
+          "label": "concave_quarter",
+          "mode": 0,
+          "width": 256
+        },
+        {
+          "height": 131,
+          "label": "odd_resize",
+          "mode": 0,
+          "width": 193
+        },
+        {
+          "height": 131,
+          "label": "oversize_clipped",
+          "mode": 0,
+          "width": 193
+        }
+      ]
+    }
+  ],
+  "metal_comparisons": [
+    {
+      "mode": "native",
+      "capture": "square_mask",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "square_distance",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.00015276670455932617,
+      "maximum_absolute_error": 0.00341796875,
+      "p99_absolute_error": 0.0029296875,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "square_normals",
+      "samples": 4,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "two exterior normals"
+    },
+    {
+      "mode": "native",
+      "capture": "moved_mask",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "concave_full",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "concave_half",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "concave_quarter",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 5.425347222222222e-05,
+      "maximum_absolute_error": 1.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "odd_resize",
+      "samples": 75849,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 5.2736357763451064e-05,
+      "maximum_absolute_error": 1.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "native",
+      "capture": "oversize_clipped",
+      "samples": 75849,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "square_mask",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "square_distance",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.00015276670455932617,
+      "maximum_absolute_error": 0.00341796875,
+      "p99_absolute_error": 0.0029296875,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "square_normals",
+      "samples": 4,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "two exterior normals"
+    },
+    {
+      "mode": "fallback",
+      "capture": "moved_mask",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "concave_full",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "concave_half",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "concave_quarter",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 5.425347222222222e-05,
+      "maximum_absolute_error": 1.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "odd_resize",
+      "samples": 75849,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 5.2736357763451064e-05,
+      "maximum_absolute_error": 1.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "fallback",
+      "capture": "oversize_clipped",
+      "samples": 75849,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "square_mask",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "square_distance",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.00015189250310262045,
+      "maximum_absolute_error": 0.00341796875,
+      "p99_absolute_error": 0.0029296875,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "square_normals",
+      "samples": 4,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "two exterior normals"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "moved_mask",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "concave_full",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "concave_half",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "concave_quarter",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 5.425347222222222e-05,
+      "maximum_absolute_error": 1.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "odd_resize",
+      "samples": 75849,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 5.2736357763451064e-05,
+      "maximum_absolute_error": 1.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "nofilter",
+      "capture": "oversize_clipped",
+      "samples": 75849,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "square_mask",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "square_distance",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.00015189250310262045,
+      "maximum_absolute_error": 0.00341796875,
+      "p99_absolute_error": 0.0029296875,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "square_normals",
+      "samples": 4,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "two exterior normals"
+    },
+    {
+      "mode": "combined",
+      "capture": "moved_mask",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "concave_full",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "concave_half",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "concave_quarter",
+      "samples": 147456,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 5.425347222222222e-05,
+      "maximum_absolute_error": 1.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "odd_resize",
+      "samples": 75849,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 5.2736357763451064e-05,
+      "maximum_absolute_error": 1.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    },
+    {
+      "mode": "combined",
+      "capture": "oversize_clipped",
+      "samples": 75849,
+      "nonfinite_components": 0,
+      "mean_absolute_error": 0.0,
+      "maximum_absolute_error": 0.0,
+      "p99_absolute_error": 0.0,
+      "scope": "all RGB pixels"
+    }
+  ]
+}

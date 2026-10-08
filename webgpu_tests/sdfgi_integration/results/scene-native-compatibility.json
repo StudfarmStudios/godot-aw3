@@ -1,0 +1,34 @@
+{
+  "passed": true,
+  "reference_report": "/private/tmp/aw3-sdfgi-original-scene-4-metal/results.json",
+  "candidate_report": "/private/tmp/aw3-sdfgi-e6-subviewport-4-metal/results.json",
+  "reference_engine_sha256": "46dc9ae5ce79ead485786b146e960ed19ea5e6c240475836f3a8be773aa90b62",
+  "candidate_engine_sha256": "e6d26dd46c9871a75b75e62b5cac42dd2bbc7b0fe727a67414cf7a56bc4fdfa9",
+  "relative_bounce_energy_error": 0.0,
+  "max_enabled_mae_rgb255": 1.0,
+  "max_relative_bounce_energy_error": 0.05,
+  "images": {
+    "disabled": {
+      "mae_rgb255": 0.0,
+      "max_rgb255": 0,
+      "p95_rgb255": 0,
+      "reference_png_sha256": "b5f14b3362ea9628a4b4d5ff46d0cdfa01efb462b84c3532cc76a846b11f417f",
+      "candidate_png_sha256": "b5f14b3362ea9628a4b4d5ff46d0cdfa01efb462b84c3532cc76a846b11f417f"
+    },
+    "enabled": {
+      "mae_rgb255": 0.0,
+      "max_rgb255": 0,
+      "p95_rgb255": 0,
+      "reference_png_sha256": "71e198ba0bd66de45895b31a8fdd56b087e4cb62f6ed75527d0c2915c4e99afc",
+      "candidate_png_sha256": "71e198ba0bd66de45895b31a8fdd56b087e4cb62f6ed75527d0c2915c4e99afc"
+    },
+    "scrolled": {
+      "mae_rgb255": 0.0,
+      "max_rgb255": 0,
+      "p95_rgb255": 0,
+      "reference_png_sha256": "e509e7834297a05fb40a017858a4d2a4dde03ec512a2181316981c0b576b37fb",
+      "candidate_png_sha256": "e509e7834297a05fb40a017858a4d2a4dde03ec512a2181316981c0b576b37fb"
+    }
+  },
+  "note": "Scrolled image difference is reported but not gated; asynchronous pipeline completion can shift the probe sampling sequence after movement."
+}

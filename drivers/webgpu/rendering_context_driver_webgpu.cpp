@@ -33,7 +33,7 @@
 #include "rendering_context_driver_webgpu.h"
 
 #include "core/os/os.h"
-#include "rendering_device_driver_webgpu.h"
+#include "drivers/webgpu/rendering_device_driver_webgpu.h"
 
 #ifdef __EMSCRIPTEN__
 // html5_webgpu.h was removed in Emscripten 5.x when USE_WEBGPU was dropped.
@@ -148,7 +148,9 @@ Error RenderingContextDriverWebGPU::initialize() {
 
 	device = (WGPUDevice)(uintptr_t)EM_ASM_PTR({
 		var d = Module["preinitializedWebGPUDevice"];
-		if (!d) { return 0; }
+		if (!d) {
+			return 0;
+		}
 		return WebGPU["importJsDevice"](d);
 	});
 	ERR_FAIL_COND_V_MSG(device == nullptr, ERR_CANT_CREATE, "WebGPU: Failed to get pre-initialized device. Ensure JS shell calls navigator.gpu.requestDevice() before WASM.");
@@ -210,8 +212,12 @@ Error RenderingContextDriverWebGPU::initialize() {
 	wgpuAdapterGetFeatures(adapter, &supported_features);
 	Vector<WGPUFeatureName> required_features;
 	const bool force_fallbacks = (OS::get_singleton()->get_cmdline_user_args().find("--webgpu-force-fallbacks") != nullptr);
+	const bool disable_float32_filtering = (OS::get_singleton()->get_cmdline_user_args().find("--webgpu-no-float32-filterable") != nullptr);
 	for (WGPUFeatureName feature : optional_features) {
 		if (force_fallbacks && (feature == WGPUFeatureName_TextureFormatsTier1 || feature == WGPUFeatureName_TextureFormatsTier2)) {
+			continue;
+		}
+		if (disable_float32_filtering && feature == WGPUFeatureName_Float32Filterable) {
 			continue;
 		}
 		if (_adapter_has_feature(supported_features, feature)) {

@@ -1,0 +1,73 @@
+{
+  "passed": true,
+  "cases": [
+    {
+      "case": "scroll0-cascade0",
+      "passed": true,
+      "different_bytes": 0,
+      "bytes": 32832
+    },
+    {
+      "case": "scroll0-cascade1",
+      "passed": true,
+      "different_bytes": 0,
+      "bytes": 32832
+    },
+    {
+      "case": "scroll1-cascade0",
+      "passed": true,
+      "different_bytes": 0,
+      "bytes": 32832
+    },
+    {
+      "case": "scroll1-cascade1",
+      "passed": true,
+      "different_bytes": 0,
+      "bytes": 32832
+    },
+    {
+      "case": "scroll2-cascade0",
+      "passed": true,
+      "different_bytes": 0,
+      "bytes": 32832
+    },
+    {
+      "case": "scroll2-cascade1",
+      "passed": true,
+      "different_bytes": 0,
+      "bytes": 32832
+    },
+    {
+      "case": "scroll3-cascade0",
+      "passed": true,
+      "different_bytes": 0,
+      "bytes": 32832
+    },
+    {
+      "case": "scroll3-cascade1",
+      "passed": true,
+      "different_bytes": 0,
+      "bytes": 32832
+    }
+  ],
+  "errors": [],
+  "returncode": 0,
+  "seconds": 1.2677700840868056,
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "engine_sha256": "e6d26dd46c9871a75b75e62b5cac42dd2bbc7b0fe727a67414cf7a56bc4fdfa9",
+  "shader_sha256": "5a25e48327fa8696289a145837230e5e482c657864685943c61e6431af9fb45a",
+  "fallback": false,
+  "command": [
+    "/private/tmp/aw3-webgpu-retarget-normal",
+    "--path",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration",
+    "--rendering-method",
+    "forward_plus",
+    "--rendering-driver",
+    "webgpu",
+    "--script",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration/scroll.gd",
+    "--",
+    "--fixture-dir=/private/tmp/aw3-sdfgi-e6-scroll-normal"
+  ]
+}

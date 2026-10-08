@@ -1,0 +1,18 @@
+{
+  "passed": true,
+  "checked": 1095,
+  "captured_modules": 1095,
+  "anisotropic_alias_changes": 26,
+  "failures": [],
+  "fingerprint": "d375989c9e230ac4456d94d3da5b10bb7471c941585ac53e69f20695e1cd7aa0",
+  "engine_sha256": "413b6443bc377c8bf83f06c2344b36f1c4525d3b6b16bf387c70f7ea1e54562d",
+  "probe_sha256": "3d88ad1ec4c655f8bf46ec3aad21d3a40f5636270d6305d91a03ff58905220e1",
+  "material_routes": 11,
+  "export_wgsl": {
+    "entries": 1095,
+    "failed": 0,
+    "source_modules": 1095,
+    "fingerprint": "d375989c9e230ac4456d94d3da5b10bb7471c941585ac53e69f20695e1cd7aa0"
+  },
+  "source_result": "/private/tmp/aw3-sidecar-metadata-ssr-sampler/result.json"
+}

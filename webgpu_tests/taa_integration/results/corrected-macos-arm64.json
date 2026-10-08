@@ -1,0 +1,92 @@
+{
+  "passed": true,
+  "runs": [
+    {
+      "mode": "metal",
+      "passed": true,
+      "passed_checks": 16,
+      "failed_checks": 0,
+      "returncode": 0,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "d06206f6c8f66ecd6e8708d477c4ed07f2bb3227a835598c69122dfc7bf305ed",
+      "errors": [],
+      "checks": [
+        "TAA_INTEGRATION PASS native_pixels (1.0, 0.0, 0.0, 1.0)",
+        "TAA_INTEGRATION PASS native_history_format_extent { \"size\": (160, 120), \"taa\": true, \"format\": 82, \"history_size\": (160, 120), \"current\": RID(4501125726267), \"history\": RID(4634269712448) }",
+        "TAA_INTEGRATION PASS native_motion_present 0.04122924804688",
+        "TAA_INTEGRATION PASS native_exact_history_copy 0.0",
+        "TAA_INTEGRATION PASS half_pixels (1.0, 0.0, 0.0, 1.0)",
+        "TAA_INTEGRATION PASS half_history_format_extent { \"size\": (80, 60), \"taa\": true, \"format\": 82, \"history_size\": (80, 60), \"current\": RID(4831838208062), \"history\": RID(4874787881017) }",
+        "TAA_INTEGRATION PASS half_motion_present 0.04122924804688",
+        "TAA_INTEGRATION PASS half_exact_history_copy 0.0",
+        "TAA_INTEGRATION PASS supersample_pixels (1.0, 0.0, 0.0, 1.0)",
+        "TAA_INTEGRATION PASS supersample_history_format_extent { \"size\": (240, 180), \"taa\": true, \"format\": 82, \"history_size\": (240, 180), \"current\": RID(5046586572859), \"history\": RID(5089536245824) }",
+        "TAA_INTEGRATION PASS supersample_motion_present 0.04122924804688",
+        "TAA_INTEGRATION PASS supersample_exact_history_copy 0.0",
+        "TAA_INTEGRATION PASS odd_supersample_pixels (1.0, 0.0, 0.0, 1.0)",
+        "TAA_INTEGRATION PASS odd_supersample_history_format_extent { \"size\": (241, 163), \"taa\": true, \"format\": 82, \"history_size\": (241, 163), \"current\": RID(5403068858430), \"history\": RID(5446018531385) }",
+        "TAA_INTEGRATION PASS odd_supersample_motion_present 0.03717041015625",
+        "TAA_INTEGRATION PASS odd_supersample_exact_history_copy 0.0"
+      ]
+    },
+    {
+      "mode": "native",
+      "passed": true,
+      "passed_checks": 16,
+      "failed_checks": 0,
+      "returncode": 0,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "d06206f6c8f66ecd6e8708d477c4ed07f2bb3227a835598c69122dfc7bf305ed",
+      "errors": [],
+      "checks": [
+        "TAA_INTEGRATION PASS native_pixels (1.0, 0.0, 0.0, 1.0)",
+        "TAA_INTEGRATION PASS native_history_format_extent { \"size\": (160, 120), \"taa\": true, \"format\": 82, \"history_size\": (160, 120), \"current\": RID(4428111282235), \"history\": RID(4552665333824) }",
+        "TAA_INTEGRATION PASS native_motion_present 0.04124990105629",
+        "TAA_INTEGRATION PASS native_exact_history_copy 0.0",
+        "TAA_INTEGRATION PASS half_pixels (1.0, 0.0, 0.0, 1.0)",
+        "TAA_INTEGRATION PASS half_history_format_extent { \"size\": (80, 60), \"taa\": true, \"format\": 82, \"history_size\": (80, 60), \"current\": RID(4758823764030), \"history\": RID(4801773436985) }",
+        "TAA_INTEGRATION PASS half_motion_present 0.04124999046326",
+        "TAA_INTEGRATION PASS half_exact_history_copy 0.0",
+        "TAA_INTEGRATION PASS supersample_pixels (1.0, 0.0, 0.0, 1.0)",
+        "TAA_INTEGRATION PASS supersample_history_format_extent { \"size\": (240, 180), \"taa\": true, \"format\": 82, \"history_size\": (240, 180), \"current\": RID(4973572128827), \"history\": RID(5016521801792) }",
+        "TAA_INTEGRATION PASS supersample_motion_present 0.04125007987022",
+        "TAA_INTEGRATION PASS supersample_exact_history_copy 0.0",
+        "TAA_INTEGRATION PASS odd_supersample_pixels (1.0, 0.0, 0.0, 1.0)",
+        "TAA_INTEGRATION PASS odd_supersample_history_format_extent { \"size\": (241, 163), \"taa\": true, \"format\": 82, \"history_size\": (241, 163), \"current\": RID(5330054414398), \"history\": RID(5373004087353) }",
+        "TAA_INTEGRATION PASS odd_supersample_motion_present 0.03719928860664",
+        "TAA_INTEGRATION PASS odd_supersample_exact_history_copy 0.0"
+      ]
+    },
+    {
+      "mode": "fallback",
+      "passed": true,
+      "passed_checks": 16,
+      "failed_checks": 0,
+      "returncode": 0,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "d06206f6c8f66ecd6e8708d477c4ed07f2bb3227a835598c69122dfc7bf305ed",
+      "errors": [],
+      "checks": [
+        "TAA_INTEGRATION PASS native_pixels (1.0, 0.0, 0.0, 1.0)",
+        "TAA_INTEGRATION PASS native_history_format_extent { \"size\": (160, 120), \"taa\": true, \"format\": 82, \"history_size\": (160, 120), \"current\": RID(4737348927547), \"history\": RID(4861902979136) }",
+        "TAA_INTEGRATION PASS native_motion_present 0.04125019907951",
+        "TAA_INTEGRATION PASS native_exact_history_copy 0.0",
+        "TAA_INTEGRATION PASS half_pixels (1.0, 0.0, 0.0, 1.0)",
+        "TAA_INTEGRATION PASS half_history_format_extent { \"size\": (80, 60), \"taa\": true, \"format\": 82, \"history_size\": (80, 60), \"current\": RID(5068061409342), \"history\": RID(5111011082297) }",
+        "TAA_INTEGRATION PASS half_motion_present 0.04125002026558",
+        "TAA_INTEGRATION PASS half_exact_history_copy 0.0",
+        "TAA_INTEGRATION PASS supersample_pixels (1.0, 0.0, 0.0, 1.0)",
+        "TAA_INTEGRATION PASS supersample_history_format_extent { \"size\": (240, 180), \"taa\": true, \"format\": 82, \"history_size\": (240, 180), \"current\": RID(5282809774139), \"history\": RID(5325759447104) }",
+        "TAA_INTEGRATION PASS supersample_motion_present 0.04125019907951",
+        "TAA_INTEGRATION PASS supersample_exact_history_copy 0.0",
+        "TAA_INTEGRATION PASS odd_supersample_pixels (1.0, 0.0, 0.0, 1.0)",
+        "TAA_INTEGRATION PASS odd_supersample_history_format_extent { \"size\": (241, 163), \"taa\": true, \"format\": 82, \"history_size\": (241, 163), \"current\": RID(5639292059710), \"history\": RID(5682241732665) }",
+        "TAA_INTEGRATION PASS odd_supersample_motion_present 0.03719925880432",
+        "TAA_INTEGRATION PASS odd_supersample_exact_history_copy 0.0"
+      ]
+    }
+  ]
+}

@@ -50,11 +50,11 @@ struct WGBuffer {
 	WGPUBufferUsage usage = 0;
 	uint8_t *shadow_map = nullptr; // For CPU-side mapping emulation.
 	bool map_dirty = false;
-	bool is_readback = false;      // True for staging buffers that need GPU→CPU readback.
-	bool map_complete = false;     // Set by async map callback.
-	bool map_pending = false;      // True while wgpuBufferMapAsync callback is in flight.
-	WGPUFuture map_future = {};    // The pending map, for native Dawn to wait on (buffer_map).
-	bool freed = false;            // Source freed while map pending; callback will clean up.
+	bool is_readback = false; // True for staging buffers that need GPU→CPU readback.
+	bool map_complete = false; // Set by async map callback.
+	bool map_pending = false; // True while wgpuBufferMapAsync callback is in flight.
+	WGPUFuture map_future = {}; // The pending map, for native Dawn to wait on (buffer_map).
+	bool freed = false; // Source freed while map pending; callback will clean up.
 
 	// Dirty range tracking for shadow buffer flushes. On WebGPU, buffer_unmap()
 	// must copy shadow_map data to the GPU buffer via wgpuQueueWriteBuffer. Without
@@ -205,6 +205,9 @@ struct WGShader {
 	// Used by uniform_set_create to add extra bind group entries for split depth textures.
 	HashMap<uint32_t, uint32_t> depth_alias_bindings;
 
+	// Source access union for all specializations, in doubled WGSL binding numbers.
+	HashMap<uint32_t, WGPUStorageTextureAccess> storage_texture_access;
+
 	// Read-write storage texture splits: maps (set << 16 | write_binding) → read_shadow_binding.
 	// When readonly-and-readwrite-storage-textures is unavailable, read_write storage
 	// textures are split into separate write (original) + read (shadow) bindings.
@@ -272,7 +275,8 @@ struct WGPipelineWrapper {
 	// thread on native platforms. Protect readiness, handles, and orphaning so
 	// the rendering thread can poll/free a wrapper without racing that callback.
 	Mutex mutex;
-	enum Type { RENDER, COMPUTE };
+	enum Type { RENDER,
+		COMPUTE };
 	Type type = RENDER;
 	union {
 		WGPURenderPipeline render_handle;
@@ -340,6 +344,9 @@ struct WGUniformSet {
 	// Maps binding index → WGTexture* for texture entries, used during rebind
 	// to create compatible views when the target BGL has a different dimension.
 	HashMap<uint32_t, WGTexture *> bound_textures;
+	// Keep Godot's original sampler, not a non-filtering twin selected for the
+	// source layout. Another shader may legitimately require linear filtering.
+	HashMap<uint32_t, WGPUSampler> bound_samplers;
 
 	// Dynamic buffers in binding order (Task 7.5). Populated by uniform_set_create
 	// whenever a UNIFORM_TYPE_*_BUFFER_DYNAMIC binding resolves to a WGBuffer with
@@ -387,7 +394,9 @@ struct WGCommandBuffer {
 	WGPURenderPassEncoder render_encoder = nullptr;
 	WGPUComputePassEncoder compute_encoder = nullptr;
 
-	enum ActiveEncoder { NONE, RENDER, COMPUTE };
+	enum ActiveEncoder { NONE,
+		RENDER,
+		COMPUTE };
 	ActiveEncoder active_encoder = NONE;
 
 	// The bound compute pipeline's asynchronous creation has not landed yet: the
@@ -442,9 +451,13 @@ struct WGCommandBuffer {
 		uint32_t current_pass_attachment_count = 0;
 		void reset_current_pass_attachments() { current_pass_attachment_count = 0; }
 		void add_current_pass_attachment(WGPUTexture t) {
-			if (!t) return;
+			if (!t) {
+				return;
+			}
 			for (uint32_t i = 0; i < current_pass_attachment_count; i++) {
-				if (current_pass_attachments[i] == t) return;
+				if (current_pass_attachments[i] == t) {
+					return;
+				}
 			}
 			if (current_pass_attachment_count < MAX_ATTACHMENT_TEXTURES) {
 				current_pass_attachments[current_pass_attachment_count++] = t;
@@ -508,7 +521,7 @@ struct WGFence {
 	uint64_t submission_id = 0;
 	WGPUFuture completion_future = WGPU_FUTURE_INIT;
 	bool work_done_pending = false; // True while wgpuQueueOnSubmittedWorkDone callback is in flight.
-	bool freed = false;             // Freed while callback pending; callback will delete.
+	bool freed = false; // Freed while callback pending; callback will delete.
 };
 
 // =============================================================================
@@ -532,8 +545,8 @@ struct WGQueryPool {
 	// Shadow CPU buffer for async readback results.
 	uint64_t *cpu_results = nullptr;
 	bool readback_pending = false;
-	uint32_t map_generation = 0;    // Incremented each time mapAsync is issued; stale callbacks are ignored.
-	bool freed = false;             // Freed while readback pending; callback will clean up.
+	uint32_t map_generation = 0; // Incremented each time mapAsync is issued; stale callbacks are ignored.
+	bool freed = false; // Freed while readback pending; callback will clean up.
 };
 
 #endif // WEBGPU_ENABLED

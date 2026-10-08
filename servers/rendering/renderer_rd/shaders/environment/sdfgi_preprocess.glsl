@@ -4,8 +4,14 @@
 
 #VERSION_DEFINES
 
+#include "../sdfgi_cascade_inc.glsl"
+
 #ifdef MODE_JUMPFLOOD_OPTIMIZED
+#ifdef SDFGI_BUFFER_STORAGE
+#define GROUP_SIZE 4
+#else
 #define GROUP_SIZE 8
+#endif
 
 layout(local_size_x = GROUP_SIZE, local_size_y = GROUP_SIZE, local_size_z = GROUP_SIZE) in;
 
@@ -51,11 +57,31 @@ uvec4 group_load(ivec3 p_pos) {
 
 #endif
 
+#ifdef MODE_CLEAR_LIGHT
+layout(rgba16f, set = 0, binding = 1) uniform restrict writeonly image3D dst_light_atlas;
+layout(rgba8, set = 0, binding = 2) uniform restrict writeonly image3D dst_aniso0_atlas;
+layout(rgba8, set = 0, binding = 3) uniform restrict writeonly image3D dst_aniso1_atlas;
+#endif
+
 #ifdef MODE_OCCLUSION
 
 layout(r16ui, set = 0, binding = 1) uniform restrict readonly uimage3D src_color;
+#ifdef SDFGI_BUFFER_STORAGE
+layout(set = 0, binding = 2, std430) restrict buffer OcclusionData {
+	uint data[];
+}
+dst_occlusion_buffer;
+#else
 layout(r8, set = 0, binding = 2) uniform restrict image3D dst_occlusion[8];
+#endif
+#ifdef SDFGI_BUFFER_STORAGE
+layout(set = 0, binding = 3, std430) restrict readonly buffer FacingData {
+	uint data[];
+}
+src_facing_buffer;
+#else
 layout(r32ui, set = 0, binding = 3) uniform restrict readonly uimage3D src_facing;
+#endif
 
 const uvec2 group_size_offset[11] = uvec2[](uvec2(1, 0), uvec2(3, 1), uvec2(6, 4), uvec2(10, 10), uvec2(15, 20), uvec2(21, 35), uvec2(28, 56), uvec2(36, 84), uvec2(42, 120), uvec2(46, 162), uvec2(48, 208));
 const uint group_pos[256] = uint[](0,
@@ -71,6 +97,12 @@ const uint group_pos[256] = uint[](0,
 		459520, 394240, 328960, 263680, 198400, 459265, 393985, 328705, 263425, 198145, 132865, 459010, 393730, 328450, 263170, 197890, 132610, 67330, 458755, 393475, 328195, 262915, 197635, 132355, 67075, 1795, 393220, 327940, 262660, 197380, 132100, 66820, 1540, 327685, 262405, 197125, 131845, 66565, 1285, 262150, 196870, 131590, 66310, 1030, 196615, 131335, 66055, 775);
 
 shared uint occlusion_facing[((OCCLUSION_SIZE * 2) * (OCCLUSION_SIZE * 2) * (OCCLUSION_SIZE * 2)) / 4];
+#ifdef SDFGI_BUFFER_STORAGE
+// The propagation reads earlier wavefronts in this dispatch. A sampled copy of
+// a read/write storage texture cannot provide those writes. Keep quantized R8
+// values in 4 KiB of workgroup memory, then flush disjoint words to the buffer.
+shared uint occlusion_values[(OCCLUSION_SIZE * 2) * (OCCLUSION_SIZE * 2) * (OCCLUSION_SIZE * 2) / 4];
+#endif
 
 uint get_facing(ivec3 p_pos) {
 	uint ofs = uint(p_pos.z * OCCLUSION_SIZE * 2 * OCCLUSION_SIZE * 2 + p_pos.y * OCCLUSION_SIZE * 2 + p_pos.x);
@@ -84,13 +116,33 @@ uint get_facing(ivec3 p_pos) {
 
 layout(rgba8ui, set = 0, binding = 1) uniform restrict readonly uimage3D src_positions;
 layout(r16ui, set = 0, binding = 2) uniform restrict readonly uimage3D src_albedo;
+#ifdef SDFGI_BUFFER_STORAGE
+layout(set = 0, binding = 3, std430) restrict readonly buffer OcclusionData {
+	uint data[];
+}
+src_occlusion_buffer;
+#else
 layout(r8, set = 0, binding = 3) uniform restrict readonly image3D src_occlusion[8];
+#endif
 layout(r32ui, set = 0, binding = 4) uniform restrict readonly uimage3D src_light;
 layout(r32ui, set = 0, binding = 5) uniform restrict readonly uimage3D src_light_aniso;
+#ifdef SDFGI_BUFFER_STORAGE
+layout(set = 0, binding = 6, std430) restrict readonly buffer FacingData {
+	uint data[];
+}
+src_facing_buffer;
+#else
 layout(r32ui, set = 0, binding = 6) uniform restrict readonly uimage3D src_facing;
+#endif
 
+// WebGPU stores decoded channels because integer/float format aliasing is unavailable.
+#ifdef SDFGI_NATIVE_STORAGE_FORMAT
+layout(rgba8, set = 0, binding = 7) uniform restrict writeonly image3D dst_sdf;
+layout(rgba8, set = 0, binding = 8) uniform restrict writeonly image3D dst_occlusion;
+#else
 layout(r8, set = 0, binding = 7) uniform restrict writeonly image3D dst_sdf;
 layout(r16ui, set = 0, binding = 8) uniform restrict writeonly uimage3D dst_occlusion;
+#endif
 
 layout(set = 0, binding = 10, std430) restrict buffer DispatchData {
 	uint x;
@@ -121,7 +173,19 @@ shared uint store_from_index;
 #ifdef MODE_SCROLL
 
 layout(r16ui, set = 0, binding = 1) uniform restrict writeonly uimage3D dst_albedo;
+#ifdef SDFGI_BUFFER_STORAGE
+layout(set = 0, binding = 2, std430) restrict writeonly buffer FacingData {
+	uint data[];
+}
+dst_facing_buffer;
+#else
 layout(r32ui, set = 0, binding = 2) uniform restrict writeonly uimage3D dst_facing;
+#endif
+// NOTE: this dst_light/dst_light_aniso pair binds to render_emission/render_emission_aniso
+// (gi.cpp's scroll_uniform_set, PRE_PROCESS_SCROLL) -- plain always-uint SDF-voxelization
+// scratch buffers, never aliased/shareable-format textures -- NOT cascade.light_data/
+// light_tex (that one's rewritten by sdfgi_direct_light.glsl's dst_light instead). No
+// SDFGI_NATIVE_STORAGE_FORMAT branch needed here.
 layout(r32ui, set = 0, binding = 3) uniform restrict writeonly uimage3D dst_light;
 layout(r32ui, set = 0, binding = 4) uniform restrict writeonly uimage3D dst_light_aniso;
 
@@ -150,8 +214,20 @@ src_process_voxels;
 
 #ifdef MODE_SCROLL_OCCLUSION
 
+#ifdef SDFGI_BUFFER_STORAGE
+layout(set = 0, binding = 1, std430) restrict buffer OcclusionData {
+	uint data[];
+}
+dst_occlusion_buffer;
+#else
 layout(r8, set = 0, binding = 1) uniform restrict image3D dst_occlusion[8];
+#endif
+// WebGPU stores decoded channels because integer/float format aliasing is unavailable.
+#ifdef SDFGI_NATIVE_STORAGE_FORMAT
+layout(rgba8, set = 0, binding = 2) uniform restrict readonly image3D src_occlusion;
+#else
 layout(r16ui, set = 0, binding = 2) uniform restrict readonly uimage3D src_occlusion;
+#endif
 
 #endif
 
@@ -170,7 +246,92 @@ layout(push_constant, std430) uniform Params {
 }
 params;
 
+#ifdef SDFGI_BUFFER_STORAGE
+uint voxel_index(ivec3 p_pos) {
+	return uint((p_pos.z * params.grid_size + p_pos.y) * params.grid_size + p_pos.x);
+}
+uint occlusion_index(uint p_slice, ivec3 p_pos) {
+	return p_slice * uint(params.grid_size * params.grid_size * params.grid_size) + voxel_index(p_pos);
+}
+#if defined(MODE_OCCLUSION) || defined(MODE_STORE)
+uint load_facing(ivec3 p_pos) {
+	return src_facing_buffer.data[voxel_index(p_pos)];
+}
+#endif
+#ifdef MODE_SCROLL
+void store_facing(ivec3 p_pos, uint p_facing) {
+	dst_facing_buffer.data[voxel_index(p_pos)] = p_facing;
+}
+#endif
+#ifdef MODE_OCCLUSION
+uint local_occlusion_index(ivec3 p_pos) {
+	ivec3 region_offset = (ivec3(gl_WorkGroupID) * 2 + params.probe_offset - 1) * OCCLUSION_SIZE;
+	ivec3 local_pos = p_pos - region_offset;
+	return uint((local_pos.z * (OCCLUSION_SIZE * 2) + local_pos.y) * (OCCLUSION_SIZE * 2) + local_pos.x);
+}
+float load_occlusion(uint p_slice, ivec3 p_pos) {
+	uint index = local_occlusion_index(p_pos);
+	return float((atomicAdd(occlusion_values[index / 4], 0u) >> ((index % 4) * 8)) & 255u) / 255.0;
+}
+void store_occlusion(uint p_slice, ivec3 p_pos, float p_value) {
+	uint index = local_occlusion_index(p_pos);
+	uint shift = (index % 4) * 8;
+	uint value = packUnorm4x8(vec4(p_value, 0.0, 0.0, 0.0)) & 255u;
+	// Each invocation owns a byte; atomics preserve adjacent bytes written by peers.
+	atomicAnd(occlusion_values[index / 4], ~(255u << shift));
+	atomicOr(occlusion_values[index / 4], value << shift);
+}
+#elif defined(MODE_SCROLL_OCCLUSION)
+void store_occlusion(uint p_slice, ivec3 p_pos, float p_value) {
+	uint index = occlusion_index(p_slice, p_pos);
+	uint shift = (index % 4) * 8;
+	uint value = packUnorm4x8(vec4(p_value, 0.0, 0.0, 0.0)) & 255u;
+	atomicAnd(dst_occlusion_buffer.data[index / 4], ~(255u << shift));
+	atomicOr(dst_occlusion_buffer.data[index / 4], value << shift);
+}
+#elif defined(MODE_STORE)
+float load_occlusion(uint p_slice, ivec3 p_pos) {
+	uint index = occlusion_index(p_slice, p_pos);
+	return float((src_occlusion_buffer.data[index / 4] >> ((index % 4) * 8)) & 255u) / 255.0;
+}
+#endif
+#else
+#if defined(MODE_OCCLUSION) || defined(MODE_STORE)
+uint load_facing(ivec3 p_pos) {
+	return imageLoad(src_facing, p_pos).r;
+}
+#endif
+#ifdef MODE_SCROLL
+void store_facing(ivec3 p_pos, uint p_facing) {
+	imageStore(dst_facing, p_pos, uvec4(p_facing));
+}
+#endif
+#ifdef MODE_OCCLUSION
+float load_occlusion(uint p_slice, ivec3 p_pos) {
+	return imageLoad(dst_occlusion[p_slice], p_pos).r;
+}
+#elif defined(MODE_STORE)
+float load_occlusion(uint p_slice, ivec3 p_pos) {
+	return imageLoad(src_occlusion[p_slice], p_pos).r;
+}
+#endif
+#if defined(MODE_OCCLUSION) || defined(MODE_SCROLL_OCCLUSION)
+void store_occlusion(uint p_slice, ivec3 p_pos, float p_value) {
+	imageStore(dst_occlusion[p_slice], p_pos, vec4(p_value));
+}
+#endif
+#endif
+
 void main() {
+#ifdef MODE_CLEAR_LIGHT
+#ifdef SDFGI_CASCADE_ATLAS
+	ivec3 pos = ivec3(gl_GlobalInvocationID) + sdfgi_cascade_offset(uint(params.cascade), params.grid_size);
+	imageStore(dst_light_atlas, pos, vec4(0.0));
+	imageStore(dst_aniso0_atlas, pos, vec4(0.0));
+	imageStore(dst_aniso1_atlas, pos, vec4(0.0));
+#endif
+#endif
+
 #ifdef MODE_SCROLL
 
 	// Pixel being shaded
@@ -190,7 +351,7 @@ void main() {
 	imageStore(dst_albedo, write_pos, uvec4(albedo));
 
 	uint facing = (src_process_voxels.data[index].albedo >> 15) & 0x3F; //6 anisotropic facing bits
-	imageStore(dst_facing, write_pos, uvec4(facing));
+	store_facing(write_pos, facing);
 
 	uint light = src_process_voxels.data[index].light & 0x3fffffff; //30 bits of RGBE8985
 	imageStore(dst_light, write_pos, uvec4(light));
@@ -211,6 +372,16 @@ void main() {
 	ivec3 write_pos = pos + max(ivec3(0), params.scroll);
 
 	read_pos.z += params.cascade * params.grid_size;
+#ifdef SDFGI_NATIVE_STORAGE_FORMAT
+	vec4 occ_a = imageLoad(src_occlusion, read_pos);
+	read_pos.x += params.grid_size;
+	vec4 occ_b = imageLoad(src_occlusion, read_pos);
+	float occ_vals[8] = float[](occ_a.r, occ_a.g, occ_a.b, occ_a.a, occ_b.r, occ_b.g, occ_b.b, occ_b.a);
+
+	for (uint i = 0; i < 8; i++) {
+		store_occlusion(uint(i), write_pos, occ_vals[i]);
+	}
+#else
 	uint occlusion = imageLoad(src_occlusion, read_pos).r;
 	read_pos.x += params.grid_size;
 	occlusion |= imageLoad(src_occlusion, read_pos).r << 16;
@@ -219,8 +390,9 @@ void main() {
 
 	for (uint i = 0; i < 8; i++) {
 		float o = float((occlusion >> occlusion_shift[i]) & 0xF) / 15.0;
-		imageStore(dst_occlusion[i], write_pos, vec4(o));
+		store_occlusion(uint(i), write_pos, o);
 	}
+#endif
 
 #endif
 
@@ -517,7 +689,7 @@ void main() {
 			for (int j = 0; j < 4; j++) {
 				ivec3 foffset = region_offset + offset + ivec3(j, 0, 0);
 				if (all(greaterThanEqual(foffset, ivec3(0))) && all(lessThan(foffset, ivec3(params.grid_size)))) {
-					uint f = imageLoad(src_facing, foffset).r;
+					uint f = load_facing(foffset);
 					facing_pack |= f << (j * 8);
 				}
 			}
@@ -525,6 +697,12 @@ void main() {
 			occlusion_facing[(offset.z * (OCCLUSION_SIZE * 2 * OCCLUSION_SIZE * 2) + offset.y * (OCCLUSION_SIZE * 2) + offset.x) / 4] = facing_pack;
 		}
 	}
+
+#ifdef SDFGI_BUFFER_STORAGE
+	for (uint i = invocation_idx; i < uint(occlusion_values.length()); i += 64u) {
+		occlusion_values[i] = 0u;
+	}
+#endif
 
 	//sync occlusion saved
 	groupMemoryBarrier();
@@ -609,7 +787,7 @@ void main() {
 							uint facing_x = get_facing(read_x - region_offset);
 							if (facing_x == 0) {
 								if (all(greaterThanEqual(read_x, ivec3(0))) && all(lessThan(read_x, ivec3(params.grid_size)))) {
-									occ += imageLoad(dst_occlusion[params.occlusion_index], read_x).r;
+									occ += load_occlusion(uint(params.occlusion_index), read_x);
 									avg += 1.0;
 								}
 							} else {
@@ -621,7 +799,7 @@ void main() {
 							uint facing_y = get_facing(read_y - region_offset);
 							if (facing_y == 0) {
 								if (all(greaterThanEqual(read_y, ivec3(0))) && all(lessThan(read_y, ivec3(params.grid_size)))) {
-									occ += imageLoad(dst_occlusion[params.occlusion_index], read_y).r;
+									occ += load_occlusion(uint(params.occlusion_index), read_y);
 									avg += 1.0;
 								}
 							} else {
@@ -633,7 +811,7 @@ void main() {
 							uint facing_z = get_facing(read_z - region_offset);
 							if (facing_z == 0) {
 								if (all(greaterThanEqual(read_z, ivec3(0))) && all(lessThan(read_z, ivec3(params.grid_size)))) {
-									occ += imageLoad(dst_occlusion[params.occlusion_index], read_z).r;
+									occ += load_occlusion(uint(params.occlusion_index), read_z);
 									avg += 1.0;
 								}
 							} else {
@@ -647,7 +825,7 @@ void main() {
 							}
 						}
 
-						imageStore(dst_occlusion[params.occlusion_index], offset, vec4(occ));
+						store_occlusion(uint(params.occlusion_index), offset, occ);
 					}
 				}
 			}
@@ -700,7 +878,7 @@ void main() {
 						if (f == 0) {
 							read_offset += region_offset;
 							if (all(greaterThanEqual(read_offset, ivec3(0))) && all(lessThan(read_offset, ivec3(params.grid_size)))) {
-								occ += imageLoad(dst_occlusion[params.occlusion_index], read_offset).r;
+								occ += load_occlusion(uint(params.occlusion_index), read_offset);
 								avg += 1.0;
 							}
 						}
@@ -712,7 +890,7 @@ void main() {
 						if (f == 0) {
 							read_offset += region_offset;
 							if (all(greaterThanEqual(read_offset, ivec3(0))) && all(lessThan(read_offset, ivec3(params.grid_size)))) {
-								occ += imageLoad(dst_occlusion[params.occlusion_index], read_offset).r;
+								occ += load_occlusion(uint(params.occlusion_index), read_offset);
 								avg += 1.0;
 							}
 						}
@@ -724,7 +902,7 @@ void main() {
 						if (f == 0) {
 							read_offset += region_offset;
 							if (all(greaterThanEqual(read_offset, ivec3(0))) && all(lessThan(read_offset, ivec3(params.grid_size)))) {
-								occ += imageLoad(dst_occlusion[params.occlusion_index], read_offset).r;
+								occ += load_occlusion(uint(params.occlusion_index), read_offset);
 								avg += 1.0;
 							}
 						}
@@ -738,7 +916,7 @@ void main() {
 						if (f == 0) {
 							read_offset += region_offset;
 							if (all(greaterThanEqual(read_offset, ivec3(0))) && all(lessThan(read_offset, ivec3(params.grid_size)))) {
-								occ += imageLoad(dst_occlusion[params.occlusion_index], read_offset).r;
+								occ += load_occlusion(uint(params.occlusion_index), read_offset);
 								avg += 1.0;
 							}
 						}
@@ -750,7 +928,7 @@ void main() {
 						if (f == 0) {
 							read_offset += region_offset;
 							if (all(greaterThanEqual(read_offset, ivec3(0))) && all(lessThan(read_offset, ivec3(params.grid_size)))) {
-								occ += imageLoad(dst_occlusion[params.occlusion_index], read_offset).r;
+								occ += load_occlusion(uint(params.occlusion_index), read_offset);
 								avg += 1.0;
 							}
 						}
@@ -762,7 +940,7 @@ void main() {
 						if (f == 0) {
 							read_offset += region_offset;
 							if (all(greaterThanEqual(read_offset, ivec3(0))) && all(lessThan(read_offset, ivec3(params.grid_size)))) {
-								occ += imageLoad(dst_occlusion[params.occlusion_index], read_offset).r;
+								occ += load_occlusion(uint(params.occlusion_index), read_offset);
 								avg += 1.0;
 							}
 						}
@@ -776,7 +954,7 @@ void main() {
 						if (f == 0) {
 							read_offset += region_offset;
 							if (all(greaterThanEqual(read_offset, ivec3(0))) && all(lessThan(read_offset, ivec3(params.grid_size)))) {
-								occ += imageLoad(dst_occlusion[params.occlusion_index], read_offset).r;
+								occ += load_occlusion(uint(params.occlusion_index), read_offset);
 								avg += 1.0;
 							}
 						}
@@ -786,7 +964,7 @@ void main() {
 						occ /= avg;
 					}
 
-					imageStore(dst_occlusion[params.occlusion_index], offset, vec4(occ));
+					store_occlusion(uint(params.occlusion_index), offset, occ);
 				}
 			}
 		}
@@ -920,9 +1098,9 @@ void main() {
 				}
 
 				if (occlude_total > 0.0) {
-					float occ = imageLoad(dst_occlusion[params.occlusion_index], offset).r;
+					float occ = load_occlusion(uint(params.occlusion_index), offset);
 					occ *= visible / occlude_total;
-					imageStore(dst_occlusion[params.occlusion_index], offset, vec4(occ));
+					store_occlusion(uint(params.occlusion_index), offset, occ);
 				}
 			}
 		}
@@ -930,18 +1108,22 @@ void main() {
 
 #endif
 
-	/*
-	for(int i=0;i<8;i++) {
-		ivec3 local_offset = local_pos + ((ivec3(i) >> ivec3(2,1,0)) & ivec3(1,1,1)) * OCCLUSION_SIZE;
-		ivec3 offset = local_offset - ivec3(OCCLUSION_SIZE); //looking around probe, so starts negative
-		offset += region * OCCLUSION_SIZE * 2; //offset by region
-		offset += params.probe_offset * OCCLUSION_SIZE; // offset by probe offset
-		if (all(greaterThanEqual(offset,ivec3(0))) && all(lessThan(offset,ivec3(params.grid_size)))) {
-			imageStore(dst_occlusion[params.occlusion_index],offset,vec4( occlusion_data[ to_linear(local_offset) ]  ));
-			//imageStore(dst_occlusion[params.occlusion_index],offset,vec4( occlusion_solid[ to_linear(local_offset) ] ));
+#ifdef SDFGI_BUFFER_STORAGE
+	groupMemoryBarrier();
+	barrier();
+	// Four consecutive x values form one word. Regions and local blocks are
+	// multiples of four, so no two invocations or workgroups write the same word.
+	for (int z = 0; z < 4; z++) {
+		for (int y = 0; y < 4; y++) {
+			ivec3 offset = region_offset + local_ofs + ivec3(0, y, z);
+			if (all(greaterThanEqual(offset, ivec3(0))) && all(lessThan(offset, ivec3(params.grid_size)))) {
+				uint local_index = local_occlusion_index(offset);
+				uint index = occlusion_index(params.occlusion_index, offset);
+				dst_occlusion_buffer.data[index / 4] = atomicAdd(occlusion_values[local_index / 4], 0u);
+			}
 		}
 	}
-*/
+#endif
 
 #endif
 
@@ -965,22 +1147,37 @@ void main() {
 
 	d /= 255.0;
 
+#ifdef SDFGI_CASCADE_ATLAS
+	imageStore(dst_sdf, pos + sdfgi_cascade_offset(uint(params.cascade), params.grid_size), vec4(d));
+#else
 	imageStore(dst_sdf, pos, vec4(d));
+#endif
 
 	// STORE OCCLUSION
 
+	float occ_vals[8];
 	uint occlusion = 0;
 	const uint occlusion_shift[8] = uint[](12, 8, 4, 0, 28, 24, 20, 16);
 	for (int i = 0; i < 8; i++) {
-		float occ = imageLoad(src_occlusion[i], pos).r;
+		float occ = load_occlusion(uint(i), pos);
+		occ_vals[i] = occ;
 		occlusion |= uint(clamp(occ * 15.0, 0.0, 15.0)) << occlusion_shift[i];
 	}
 	{
 		ivec3 occ_pos = pos;
 		occ_pos.z += params.cascade * params.grid_size;
+#ifdef SDFGI_NATIVE_STORAGE_FORMAT
+		// Same (R,G,B,A) <- (occlusion index 0,1,2,3) / (4,5,6,7) channel order as the
+		// R4G4B4A4_UNORM_PACK16 bit layout below decodes to (see gi.glsl's occ_indexv/
+		// occ_mask read side), just stored directly instead of packed into 4-bit nibbles.
+		imageStore(dst_occlusion, occ_pos, vec4(occ_vals[0], occ_vals[1], occ_vals[2], occ_vals[3]));
+		occ_pos.x += params.grid_size;
+		imageStore(dst_occlusion, occ_pos, vec4(occ_vals[4], occ_vals[5], occ_vals[6], occ_vals[7]));
+#else
 		imageStore(dst_occlusion, occ_pos, uvec4(occlusion & 0xFFFF));
 		occ_pos.x += params.grid_size;
 		imageStore(dst_occlusion, occ_pos, uvec4(occlusion >> 16));
+#endif
 	}
 
 	// STORE POSITIONS
@@ -1019,7 +1216,7 @@ void main() {
 		}
 
 		uint rgb = imageLoad(src_albedo, pos).r;
-		uint facing = imageLoad(src_facing, pos).r;
+		uint facing = load_facing(pos);
 
 		store_positions[index].albedo = rgb >> 1; //store as it comes (555) to avoid precision loss (and move away the alpha bit)
 		store_positions[index].albedo |= (facing & 0x3F) << 15; // store facing in bits 15-21

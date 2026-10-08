@@ -20,12 +20,15 @@ layout(constant_id = 2) const bool sc_use_vrs = false;
 
 #define SDFGI_MAX_CASCADES 8
 
+#include "../sdfgi_cascade_inc.glsl"
+
 //set 0 for SDFGI and render buffers
 
-layout(set = 0, binding = 1) uniform texture3D sdf_cascades[SDFGI_MAX_CASCADES];
-layout(set = 0, binding = 2) uniform texture3D light_cascades[SDFGI_MAX_CASCADES];
-layout(set = 0, binding = 3) uniform texture3D aniso0_cascades[SDFGI_MAX_CASCADES];
-layout(set = 0, binding = 4) uniform texture3D aniso1_cascades[SDFGI_MAX_CASCADES];
+// Cascade arrays on native drivers; one tiled atlas per field on WebGPU.
+SDFGI_DECLARE_CASCADE_TEXTURES(sdf_cascades, 100)
+SDFGI_DECLARE_CASCADE_TEXTURES(light_cascades, 110)
+SDFGI_DECLARE_CASCADE_TEXTURES(aniso0_cascades, 130)
+SDFGI_DECLARE_CASCADE_TEXTURES(aniso1_cascades, 140)
 layout(set = 0, binding = 5) uniform texture3D occlusion_texture;
 
 layout(set = 0, binding = 6) uniform sampler linear_sampler;
@@ -45,7 +48,9 @@ layout(rgba16f, set = 0, binding = 10) uniform restrict writeonly image2D reflec
 
 layout(set = 0, binding = 11) uniform texture2DArray lightprobe_texture;
 
-layout(set = 0, binding = 12) uniform texture2D depth_buffer;
+// Preserve hardware-depth typing through the WebGPU SPIR-V preprocessing pass.
+layout(set = 0, binding = 12) uniform texture2D godot_depth_source;
+#define depth_buffer godot_depth_source
 layout(set = 0, binding = 13) uniform texture2D normal_roughness_buffer;
 layout(set = 0, binding = 14) uniform utexture2D voxel_gi_buffer;
 
@@ -412,11 +417,11 @@ void sdfgi_process(vec3 vertex, vec3 normal, vec3 reflection, float roughness, o
 					vec3 pos = ray_pos - sdfgi.cascades[i].position;
 					pos *= sdfgi.cascades[i].to_cell * pos_to_uvw;
 
-					float fdistance = textureLod(sampler3D(sdf_cascades[i], linear_sampler), pos, 0.0).r * 255.0 - 1.1;
+					float fdistance = sdf_cascades_sample(i, linear_sampler, pos, 0.0).r * 255.0 - 1.1;
 
 					vec4 hit_light = vec4(0.0);
 					if (fdistance < softness) {
-						hit_light.rgb = textureLod(sampler3D(light_cascades[i], linear_sampler), pos, 0.0).rgb;
+						hit_light.rgb = light_cascades_sample(i, linear_sampler, pos, 0.0).rgb;
 						hit_light.rgb *= 0.5; //approximation given value read is actually meant for anisotropy
 						hit_light.a = clamp(1.0 - (fdistance / softness), 0.0, 1.0);
 						hit_light.rgb *= hit_light.a;
@@ -428,11 +433,11 @@ void sdfgi_process(vec3 vertex, vec3 normal, vec3 reflection, float roughness, o
 						pos = ray_pos - sdfgi.cascades[next_i].position;
 						pos *= sdfgi.cascades[next_i].to_cell * pos_to_uvw;
 
-						float fdistance2 = textureLod(sampler3D(sdf_cascades[next_i], linear_sampler), pos, 0.0).r * 255.0 - 1.1;
+						float fdistance2 = sdf_cascades_sample(next_i, linear_sampler, pos, 0.0).r * 255.0 - 1.1;
 
 						vec4 hit_light2 = vec4(0.0);
 						if (fdistance2 < softness) {
-							hit_light2.rgb = textureLod(sampler3D(light_cascades[next_i], linear_sampler), pos, 0.0).rgb;
+							hit_light2.rgb = light_cascades_sample(next_i, linear_sampler, pos, 0.0).rgb;
 							hit_light2.rgb *= 0.5; //approximation given value read is actually meant for anisotropy
 							hit_light2.a = clamp(1.0 - (fdistance2 / softness), 0.0, 1.0);
 							hit_light2.rgb *= hit_light2.a;
