@@ -5,7 +5,10 @@
  * 1. WebGPU device initializes without errors
  * 2. No shader compilation failures (SPIR-V → WGSL conversion errors)
  * 3. No device-lost events
- * 4. Engine runs for the configured frame count and exits cleanly
+ * 4. Engine reports successful shader coverage completion
+ *
+ * Linux uses SwiftShader software Vulkan for CI; it does not validate hardware
+ * drivers. Other platforms retain their existing browser backend settings.
  *
  * Usage:
  *   node smoke_test.mjs [export-dir]
@@ -111,7 +114,10 @@ async function main() {
         process.exit(1);
     }
 
-    console.log('Launching Chrome with WebGPU...');
+    const linuxSoftwareBackend = process.platform === 'linux';
+    console.log(linuxSoftwareBackend
+        ? 'Launching Chrome with WebGPU on SwiftShader (software validation, not hardware coverage)...'
+        : 'Launching Chrome with WebGPU...');
     const browser = await chromium.launch({
         headless: false, // WebGPU requires headed mode on most systems
         args: [
@@ -119,10 +125,46 @@ async function main() {
             '--enable-features=Vulkan,UseSkiaRenderer',
             '--disable-gpu-sandbox',
             '--use-angle=vulkan',
+            // Select both Chromium's Vulkan implementation and Dawn's adapter.
+            // ANGLE's Vulkan flag alone can select unavailable runner hardware.
+            // https://chromium.googlesource.com/chromium/src/+/main/docs/gpu/swiftshader.md
+            ...(linuxSoftwareBackend ? [
+                '--use-vulkan=swiftshader',
+                '--use-webgpu-adapter=swiftshader',
+                '--disable-vulkan-surface',
+            ] : []),
         ],
     });
 
     const page = await browser.newPage();
+
+    // Report the adapter used by the engine's own request, without requesting
+    // a second adapter/device or changing the request's options or result.
+    await page.addInitScript(() => {
+        if (!navigator.gpu) return;
+        const requestAdapter = navigator.gpu.requestAdapter.bind(navigator.gpu);
+        navigator.gpu.requestAdapter = (...args) => requestAdapter(...args).then((adapter) => {
+            if (adapter) {
+                const info = adapter.info;
+                const limits = {};
+                for (const key in adapter.limits) {
+                    if (typeof adapter.limits[key] === 'number') limits[key] = adapter.limits[key];
+                }
+                console.log('[WebGPU adapter] ' + JSON.stringify({
+                    vendor: info?.vendor,
+                    architecture: info?.architecture,
+                    device: info?.device,
+                    description: info?.description,
+                    isFallbackAdapter: adapter.isFallbackAdapter,
+                    features: Array.from(adapter.features),
+                    limits,
+                }));
+            } else {
+                console.log('[WebGPU adapter] null');
+            }
+            return adapter;
+        });
+    });
 
     // Collect errors
     const consoleErrors = [];
@@ -134,6 +176,8 @@ async function main() {
 
     page.on('console', (msg) => {
         const text = msg.text();
+
+        if (text.startsWith('[WebGPU adapter]')) console.log(`  ${text}`);
 
         // Track shader errors
         if (text.includes('[SHADER]') || text.includes('Tint conversion') || text.includes('spirv error')) {

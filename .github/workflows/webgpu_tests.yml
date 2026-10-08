@@ -184,11 +184,11 @@ jobs:
           retention-days: 7
 
   # ═══════════════════════════════════════════════════════════════════════════════
-  # Smoke Test: Run exported project in headless Chrome
+  # Smoke Test: Candidate runtime on SwiftShader software Vulkan, not hardware validation
   # ═══════════════════════════════════════════════════════════════════════════════
   smoke-test:
     runs-on: ubuntu-24.04
-    name: Candidate Chrome Smoke Test (Xvfb)
+    name: Candidate Chrome Software Smoke Test (SwiftShader + Xvfb)
     needs: [build-webgpu]
     timeout-minutes: 15
     steps:
@@ -208,12 +208,14 @@ jobs:
 
       - name: Install Playwright
         run: |
+          sudo apt-get update
+          sudo apt-get install -y libvulkan1 mesa-vulkan-drivers
           cd webgpu_tests/test_project
           npm init -y
           npm install playwright
           npx playwright install chromium --with-deps
 
-      - name: Run smoke test
+      - name: Run candidate software WebGPU smoke test
         working-directory: webgpu_tests/test_project
         run: xvfb-run -a node smoke_test.mjs ./export/
 
