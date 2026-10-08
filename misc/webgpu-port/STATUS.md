@@ -9,7 +9,7 @@ Performance is an acceptance criterion: keep existing performance or improve it,
 allowing measured small costs for meaningful fidelity improvements. Avoid
 unnecessary texture copies, pass restarts, eager work, and hot-loop overhead.
 
-Reference report: [AW3 comparison](https://github.com/StudfarmStudios/aw3/blob/74a2f5c7f50d07562bba2026e93acbf7e328ee92/docs/gameclient/webgpu-fork-comparison-2026-10-08.md).
+Reference report: [AW3 comparison](https://github.com/StudfarmStudios/aw3/blob/37396a96c9adf38850fd6ad872b18c7858e93acc/docs/gameclient/webgpu-fork-comparison-2026-10-08.md).
 Source fork: `470f89e78eece1c7a73285345e2ca39b8f8706ad`.
 Starting AW3 engine: `c0d51825faad2c1a773f4e21c34e74b60c53da21`.
 
@@ -33,6 +33,7 @@ Starting AW3 engine: `c0d51825faad2c1a773f4e21c34e74b60c53da21`.
 | 45–49 | Feature fixtures, actual-driver regressions, browser/backend metadata, CI integration | Production C++ helpers, GPU regressions and browser fixtures added. All 16 corrected macOS Chrome/Firefox runs pass threaded/nonthreaded, normal/omitted-filtering and cold/warm checks, with clean shutdown and two nonzero-exit probes. Integrated platform/build checks are tracked on [PR #31](https://github.com/StudfarmStudios/godot-aw3/pull/31/checks); Windows/D3D12 unverified |
 | 61 | SSR storage format and hardware/resolved depth contract | Implemented; all 278 build-time modules compile/translate. 20 native renderer runs pass 300 checks and 80 strict Metal-reference comparisons across half/full resolution, odd dimensions, MSAA and four WebGPU capability profiles; no-float-filter HiZ/literal-ID and nearest mip-field contracts corrected. Threaded/nonthreaded Chrome/Firefox reflection checks pass both device-feature modes, cold and warm |
 | 62 | Protect public WebGPU API names and internal device-import calls under Advanced Closure | Implemented; six compiled-wrapper cases and two actual Closure import cases pass, with failing old-source controls. Two diagnostic 4.0.11 releases pass rendering but fail shutdown; WebGPU now requires the already-tested Emscripten 4.0.20 runtime. Final source-built optimized release checks remain tracked on PR #31 |
+| 64 | SSAO and SSIL storage declarations match actual allocations | Ported the five format declarations from the pinned reference: logical R8 SSAO output and RGBA16F SSIL gather, adaptive input, blur and interleave. Existing WebGPU capability promotion remains in the driver. Optimized Chrome broad scenes pass normal, forced-fallback and Ultra SSIL modes; final artifact and CI results are tracked on PR #31 |
 | 58 | Headless export teardown lifetime | Implemented on 4.7. Baseline import reproduces null-singleton error/crash; fixed import plus three Web pack exports pass with clean shutdown |
 
 ## Constraints and preserved behavior

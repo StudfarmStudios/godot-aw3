@@ -61,6 +61,8 @@ uint64_t RenderingDeviceDriver::api_trait_get(ApiTrait p_trait) {
 			return false;
 		case API_TRAIT_SUPPORTED_TEXTURE_SAMPLE_COUNTS:
 			return (1u << TEXTURE_SAMPLES_MAX) - 1u;
+		case API_TRAIT_UPLOAD_STAGING_FLUSH_WITH_UNMAP:
+			return 0;
 		case API_TRAIT_GPU_CALLS_MAIN_THREAD_ONLY:
 			// Only WebGPU is pinned to the thread that created the device. Answering
 			// here rather than in every driver keeps Metal/Vulkan/D3D12 off the error

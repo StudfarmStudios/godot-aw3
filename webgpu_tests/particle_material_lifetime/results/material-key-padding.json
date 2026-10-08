@@ -1,0 +1,27 @@
+{
+  "description": "Production MaterialKey and hash function extracted verbatim, ASan+UBSan at -O2; old control is expected to fail.",
+  "old": {
+    "checks": 340,
+    "failures": 170,
+    "padding_bits": 18,
+    "distinct_keys": 47,
+    "header_sha256": "405e353d43b6f38efc418e9f126cec01d2fc4769c9df6b46d9cb5faae66c49a2",
+    "field_count": 20,
+    "exit_code": 1,
+    "sanitizer_errors": false,
+    "expected_failure": true,
+    "pass": true
+  },
+  "fixed": {
+    "checks": 340,
+    "failures": 0,
+    "padding_bits": 18,
+    "distinct_keys": 47,
+    "header_sha256": "ed9b5025b6c6467e0d9844380acaf06545405bda15142995a3cb6fb8a132a5b3",
+    "field_count": 20,
+    "exit_code": 0,
+    "sanitizer_errors": false,
+    "expected_failure": false,
+    "pass": true
+  }
+}

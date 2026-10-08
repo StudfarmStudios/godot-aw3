@@ -1,0 +1,368 @@
+{
+  "passed": false,
+  "purpose": "SSAO/SSIL format corrections render cleanly; strict broad scene fails texture ownership cleanup.",
+  "host": {
+    "os": "macOS26.5.2",
+    "architecture": "arm64",
+    "gpu": "Apple M1 Ultra"
+  },
+  "profile": "66d0ce2dad65cdcf04a9863f8bdc562b3778ea37ee7e1c62f063400dc001873d",
+  "engine_sha256": "33ac811a11c23b0b07ec351f53c430f43d98a23a665778dd432ffbf2c046f1d5",
+  "tint_sha256": "70ae10584acc75e91132a39ece8bf7693d77a52e9e5e2d5f94ecb1822f8cb4c0",
+  "template_sha256": "c284149fdbb38072a170399b26c2d7eca1a7f67a38b962773f2cfeb2d924211f",
+  "wasm_sha256": "dc817a01fd90f0449b9b10b19445456d727000a4d7a5acbf0a77db7e93d4862d",
+  "runner": {
+    "source": "webgpu_tests/test_project/smoke_test.mjs",
+    "source_sha256": "aea1d967a9a4685658e545b65a79f8043d76f9ad0ef44a636e82fec556bead2f",
+    "runner_sha256": "eab9c9550b9bd34c72d2cae18cc44c881394502a9b395eda29a0d09c73bb101a",
+    "delta": "Select stock macOS Chrome without backend flags; resolve isolated installed Playwright; print version and optional engine user args; optional Godot config argument injection only. Error/coverage/timeout policy unchanged."
+  },
+  "runs": [
+    {
+      "mode": "normal",
+      "passed": false,
+      "browser": "154.0.8037.98",
+      "engine_user_args": [],
+      "adapter": {
+        "vendor": "apple",
+        "architecture": "metal-3",
+        "device": "",
+        "description": "",
+        "features": [
+          "depth32float-stencil8",
+          "rg11b10ufloat-renderable",
+          "bgra8unorm-storage",
+          "texture-formats-tier1",
+          "texture-compression-bc",
+          "dual-source-blending",
+          "core-features-and-limits",
+          "float32-filterable",
+          "indirect-first-instance",
+          "texture-compression-astc-sliced-3d",
+          "float32-blendable",
+          "subgroup-size-control",
+          "texture-compression-astc",
+          "texture-compression-etc2",
+          "depth-clip-control",
+          "texture-compression-bc-sliced-3d",
+          "texture-formats-tier2",
+          "clip-distances",
+          "timestamp-query",
+          "shader-f16",
+          "primitive-index",
+          "texture-component-swizzle",
+          "subgroups"
+        ],
+        "limits": {
+          "maxTextureDimension1D": 16384,
+          "maxTextureDimension2D": 16384,
+          "maxTextureDimension3D": 2048,
+          "maxTextureArrayLayers": 2048,
+          "maxBindGroups": 4,
+          "maxBindGroupsPlusVertexBuffers": 24,
+          "maxBindingsPerBindGroup": 1000,
+          "maxDynamicUniformBuffersPerPipelineLayout": 10,
+          "maxDynamicStorageBuffersPerPipelineLayout": 8,
+          "maxSampledTexturesPerShaderStage": 48,
+          "maxSamplersPerShaderStage": 16,
+          "maxStorageBuffersPerShaderStage": 10,
+          "maxStorageTexturesPerShaderStage": 8,
+          "maxUniformBuffersPerShaderStage": 12,
+          "maxUniformBufferBindingSize": 65536,
+          "maxStorageBufferBindingSize": 4294967292,
+          "minUniformBufferOffsetAlignment": 256,
+          "minStorageBufferOffsetAlignment": 256,
+          "maxVertexBuffers": 8,
+          "maxBufferSize": 4294967292,
+          "maxVertexAttributes": 30,
+          "maxVertexBufferArrayStride": 2048,
+          "maxInterStageShaderVariables": 28,
+          "maxColorAttachments": 8,
+          "maxColorAttachmentBytesPerSample": 128,
+          "maxComputeWorkgroupStorageSize": 32768,
+          "maxComputeInvocationsPerWorkgroup": 1024,
+          "maxComputeWorkgroupSizeX": 1024,
+          "maxComputeWorkgroupSizeY": 1024,
+          "maxComputeWorkgroupSizeZ": 64,
+          "maxComputeWorkgroupsPerDimension": 65535,
+          "maxImmediateSize": 64,
+          "maxStorageBuffersInFragmentStage": 10,
+          "maxStorageTexturesInFragmentStage": 8,
+          "maxStorageBuffersInVertexStage": 10,
+          "maxStorageTexturesInVertexStage": 8
+        }
+      },
+      "ssil_quality": 2,
+      "markers": {
+        "started": true,
+        "frame_sequence_complete": true,
+        "fsr2": true,
+        "taa": true,
+        "engine_pass": true,
+        "ultra_setting_confirmed": null
+      },
+      "console_errors": 2,
+      "shader_errors": 0,
+      "device_lost": false,
+      "errors": [
+        "WARNING: 14 RIDs of type \"Texture\" were leaked.",
+        "   at: finalize (servers/rendering/rendering_device.cpp:9559)"
+      ],
+      "log": "/private/tmp/aw3-final-formats-smoke/normal.log",
+      "log_sha256": "b7c8a660f43cbbdac443247c195cd59ef418ad7bda104f29c3bd68fe8c6629f3",
+      "export": {
+        "index.html": {
+          "bytes": 5779,
+          "sha256": "32d8ef1aaa01d5743bd47712572e6a00064580cb07b895b74aa0ae6858e23ecf"
+        },
+        "index.js": {
+          "bytes": 111790,
+          "sha256": "f4c5fc27424f097c9a41776ea55aa3f92c94e2f51390068a457f4e0fa2c70047"
+        },
+        "index.wasm": {
+          "bytes": 48803828,
+          "sha256": "dc817a01fd90f0449b9b10b19445456d727000a4d7a5acbf0a77db7e93d4862d"
+        },
+        "index.pck": {
+          "bytes": 22872,
+          "sha256": "a2ca304726faebda5534d6b2fd9c3b8a3efa92f6f510404b9096758708f9124f"
+        }
+      }
+    },
+    {
+      "mode": "fallback",
+      "passed": false,
+      "browser": "154.0.8037.98",
+      "engine_user_args": [
+        "--webgpu-force-fallbacks"
+      ],
+      "adapter": {
+        "vendor": "apple",
+        "architecture": "metal-3",
+        "device": "",
+        "description": "",
+        "features": [
+          "depth32float-stencil8",
+          "rg11b10ufloat-renderable",
+          "bgra8unorm-storage",
+          "texture-formats-tier1",
+          "texture-compression-bc",
+          "dual-source-blending",
+          "core-features-and-limits",
+          "float32-filterable",
+          "indirect-first-instance",
+          "texture-compression-astc-sliced-3d",
+          "float32-blendable",
+          "subgroup-size-control",
+          "texture-compression-astc",
+          "texture-compression-etc2",
+          "depth-clip-control",
+          "texture-compression-bc-sliced-3d",
+          "timestamp-query",
+          "clip-distances",
+          "texture-formats-tier2",
+          "shader-f16",
+          "primitive-index",
+          "texture-component-swizzle",
+          "subgroups"
+        ],
+        "limits": {
+          "maxTextureDimension1D": 16384,
+          "maxTextureDimension2D": 16384,
+          "maxTextureDimension3D": 2048,
+          "maxTextureArrayLayers": 2048,
+          "maxBindGroups": 4,
+          "maxBindGroupsPlusVertexBuffers": 24,
+          "maxBindingsPerBindGroup": 1000,
+          "maxDynamicUniformBuffersPerPipelineLayout": 10,
+          "maxDynamicStorageBuffersPerPipelineLayout": 8,
+          "maxSampledTexturesPerShaderStage": 48,
+          "maxSamplersPerShaderStage": 16,
+          "maxStorageBuffersPerShaderStage": 10,
+          "maxStorageTexturesPerShaderStage": 8,
+          "maxUniformBuffersPerShaderStage": 12,
+          "maxUniformBufferBindingSize": 65536,
+          "maxStorageBufferBindingSize": 4294967292,
+          "minUniformBufferOffsetAlignment": 256,
+          "minStorageBufferOffsetAlignment": 256,
+          "maxVertexBuffers": 8,
+          "maxBufferSize": 4294967292,
+          "maxVertexAttributes": 30,
+          "maxVertexBufferArrayStride": 2048,
+          "maxInterStageShaderVariables": 28,
+          "maxColorAttachments": 8,
+          "maxColorAttachmentBytesPerSample": 128,
+          "maxComputeWorkgroupStorageSize": 32768,
+          "maxComputeInvocationsPerWorkgroup": 1024,
+          "maxComputeWorkgroupSizeX": 1024,
+          "maxComputeWorkgroupSizeY": 1024,
+          "maxComputeWorkgroupSizeZ": 64,
+          "maxComputeWorkgroupsPerDimension": 65535,
+          "maxImmediateSize": 64,
+          "maxStorageBuffersInFragmentStage": 10,
+          "maxStorageTexturesInFragmentStage": 8,
+          "maxStorageBuffersInVertexStage": 10,
+          "maxStorageTexturesInVertexStage": 8
+        }
+      },
+      "ssil_quality": 2,
+      "markers": {
+        "started": true,
+        "frame_sequence_complete": true,
+        "fsr2": true,
+        "taa": true,
+        "engine_pass": true,
+        "ultra_setting_confirmed": null
+      },
+      "console_errors": 2,
+      "shader_errors": 0,
+      "device_lost": false,
+      "errors": [
+        "WARNING: 14 RIDs of type \"Texture\" were leaked.",
+        "   at: finalize (servers/rendering/rendering_device.cpp:9559)"
+      ],
+      "log": "/private/tmp/aw3-final-formats-smoke/fallback.log",
+      "log_sha256": "e4796e7bb8d824a8596e7977a09d0caf9a55a6c202da7d1a66231f2ee30f13f5",
+      "export": {
+        "index.html": {
+          "bytes": 5779,
+          "sha256": "32d8ef1aaa01d5743bd47712572e6a00064580cb07b895b74aa0ae6858e23ecf"
+        },
+        "index.js": {
+          "bytes": 111790,
+          "sha256": "f4c5fc27424f097c9a41776ea55aa3f92c94e2f51390068a457f4e0fa2c70047"
+        },
+        "index.wasm": {
+          "bytes": 48803828,
+          "sha256": "dc817a01fd90f0449b9b10b19445456d727000a4d7a5acbf0a77db7e93d4862d"
+        },
+        "index.pck": {
+          "bytes": 22872,
+          "sha256": "a2ca304726faebda5534d6b2fd9c3b8a3efa92f6f510404b9096758708f9124f"
+        }
+      }
+    },
+    {
+      "mode": "ultra",
+      "passed": false,
+      "browser": "154.0.8037.98",
+      "engine_user_args": [],
+      "adapter": {
+        "vendor": "apple",
+        "architecture": "metal-3",
+        "device": "",
+        "description": "",
+        "features": [
+          "depth32float-stencil8",
+          "rg11b10ufloat-renderable",
+          "bgra8unorm-storage",
+          "texture-formats-tier1",
+          "texture-compression-bc",
+          "dual-source-blending",
+          "core-features-and-limits",
+          "float32-filterable",
+          "indirect-first-instance",
+          "texture-compression-astc-sliced-3d",
+          "float32-blendable",
+          "subgroup-size-control",
+          "texture-compression-astc",
+          "texture-compression-etc2",
+          "depth-clip-control",
+          "texture-compression-bc-sliced-3d",
+          "timestamp-query",
+          "clip-distances",
+          "texture-formats-tier2",
+          "shader-f16",
+          "primitive-index",
+          "texture-component-swizzle",
+          "subgroups"
+        ],
+        "limits": {
+          "maxTextureDimension1D": 16384,
+          "maxTextureDimension2D": 16384,
+          "maxTextureDimension3D": 2048,
+          "maxTextureArrayLayers": 2048,
+          "maxBindGroups": 4,
+          "maxBindGroupsPlusVertexBuffers": 24,
+          "maxBindingsPerBindGroup": 1000,
+          "maxDynamicUniformBuffersPerPipelineLayout": 10,
+          "maxDynamicStorageBuffersPerPipelineLayout": 8,
+          "maxSampledTexturesPerShaderStage": 48,
+          "maxSamplersPerShaderStage": 16,
+          "maxStorageBuffersPerShaderStage": 10,
+          "maxStorageTexturesPerShaderStage": 8,
+          "maxUniformBuffersPerShaderStage": 12,
+          "maxUniformBufferBindingSize": 65536,
+          "maxStorageBufferBindingSize": 4294967292,
+          "minUniformBufferOffsetAlignment": 256,
+          "minStorageBufferOffsetAlignment": 256,
+          "maxVertexBuffers": 8,
+          "maxBufferSize": 4294967292,
+          "maxVertexAttributes": 30,
+          "maxVertexBufferArrayStride": 2048,
+          "maxInterStageShaderVariables": 28,
+          "maxColorAttachments": 8,
+          "maxColorAttachmentBytesPerSample": 128,
+          "maxComputeWorkgroupStorageSize": 32768,
+          "maxComputeInvocationsPerWorkgroup": 1024,
+          "maxComputeWorkgroupSizeX": 1024,
+          "maxComputeWorkgroupSizeY": 1024,
+          "maxComputeWorkgroupSizeZ": 64,
+          "maxComputeWorkgroupsPerDimension": 65535,
+          "maxImmediateSize": 64,
+          "maxStorageBuffersInFragmentStage": 10,
+          "maxStorageTexturesInFragmentStage": 8,
+          "maxStorageBuffersInVertexStage": 10,
+          "maxStorageTexturesInVertexStage": 8
+        }
+      },
+      "ssil_quality": 4,
+      "markers": {
+        "started": true,
+        "frame_sequence_complete": true,
+        "fsr2": true,
+        "taa": true,
+        "engine_pass": true,
+        "ultra_setting_confirmed": true
+      },
+      "console_errors": 2,
+      "shader_errors": 0,
+      "device_lost": false,
+      "errors": [
+        "WARNING: 14 RIDs of type \"Texture\" were leaked.",
+        "   at: finalize (servers/rendering/rendering_device.cpp:9559)"
+      ],
+      "log": "/private/tmp/aw3-final-formats-smoke/ultra.log",
+      "log_sha256": "b4c9d40102c214e0827dca9e17e3817fe6c7827819cd5523112d7dc966873a07",
+      "export": {
+        "index.html": {
+          "bytes": 5779,
+          "sha256": "23287a3a3600aa785f7ebda89f9dbe4dbb34f4494dc5d248f87d2ed163f38440"
+        },
+        "index.js": {
+          "bytes": 111790,
+          "sha256": "f4c5fc27424f097c9a41776ea55aa3f92c94e2f51390068a457f4e0fa2c70047"
+        },
+        "index.wasm": {
+          "bytes": 48803828,
+          "sha256": "dc817a01fd90f0449b9b10b19445456d727000a4d7a5acbf0a77db7e93d4862d"
+        },
+        "index.pck": {
+          "bytes": 23080,
+          "sha256": "eff7ddf0a3d9f315be90dea0d6cab39fa4fb5a39384aace8591982e1d7c45006"
+        }
+      }
+    }
+  ],
+  "predecessor": {
+    "path": "/private/tmp/aw3-final-candidate-smoke/result.json",
+    "sha256": "1b552ed69e65d980f2bfc492efd8499611dee7cf535d7c85cd18ecb7084b71a4",
+    "corrected_scene_errors": 42,
+    "cause": "SSAO expectedRGBA8Unorm with actualR8Unorm; later bind/submit errors cascade."
+  },
+  "limitations": [
+    "No performance claim.",
+    "macOSChrome only; Windows/D3D12 unverified.",
+    "Ten completed frames and engine PASS marker do not override strict console errors."
+  ]
+}

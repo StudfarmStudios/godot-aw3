@@ -8719,23 +8719,13 @@ void RenderingDevice::_end_frame() {
 		ERR_PRINT("Found open raytracing list at the end of the frame, this should never happen (further raytracing will likely not work).");
 	}
 
-	// Flush upload staging buffers to the GPU. On backends where buffer_map()
-	// returns a CPU shadow copy (e.g. WebGPU), the data written during
-	// texture_update() / buffer_update() lives only in the shadow until
-	// buffer_unmap() flushes it via wgpuQueueWriteBuffer. This must happen
-	// before the command buffer that references these staging buffers is submitted.
-	// On Vulkan/Metal this is a no-op since buffer_map() returns GPU-visible memory.
-	//
-	// Note: we do NOT re-map after unmapping. The shadow buffer persists and
-	// data_ptr remains valid. Re-mapping would unconditionally set map_dirty,
-	// causing the next frame to redundantly flush ALL staging blocks (69 × 256KB
-	// on a typical scene) via wgpuQueueWriteBuffer — even those not written to.
-	// Since command_copy_buffer/command_copy_buffer_to_texture already flush the
-	// specific dirty regions and clear map_dirty, the unmap here is typically a
-	// no-op. Only blocks that weren't handled by command_copy need flushing
-	// (e.g. persistent dynamic buffers).
-	for (int i = 0; i < upload_staging_buffers.blocks.size(); i++) {
-		driver->buffer_unmap(upload_staging_buffers.blocks[i].driver_id);
+	// Flush remaining dirty upload staging shadows before submission. WebGPU's
+	// unmap preserves the CPU pointer and skips ranges already flushed by copies.
+	// Other backends must keep their real memory mappings until destruction.
+	if (driver->api_trait_get(RDD::API_TRAIT_UPLOAD_STAGING_FLUSH_WITH_UNMAP)) {
+		for (int i = 0; i < upload_staging_buffers.blocks.size(); i++) {
+			driver->buffer_unmap(upload_staging_buffers.blocks[i].driver_id);
+		}
 	}
 
 	// The command buffer must be copied into a stack variable as the driver workarounds can change the command buffer in use.

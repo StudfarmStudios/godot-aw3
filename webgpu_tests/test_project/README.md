@@ -1,6 +1,10 @@
 # WebGPU Shader Coverage Test Project
 
-A Godot 4.6 project that programmatically creates a scene exercising **100% of RenderingDevice shader paths**. When exported with the WebGPU template and run in a browser, it forces compilation of all shader variants through the SPIR-V → WGSL pipeline.
+A Godot 4.7 scene exercising a broad set of RenderingDevice features through the
+SPIR-V → WGSL pipeline. This is a smoke test, not proof of every shader variant
+or feature's visual correctness. Feature availability, resources and deferred
+compilation affect the work actually submitted; separate shader corpora and
+targeted numerical/visual fixtures provide stronger checks.
 
 ## What it exercises
 
@@ -12,7 +16,7 @@ A Godot 4.6 project that programmatically creates a scene exercising **100% of R
 - `screen_space_reflection.glsl` + downsample/filter/resolve — SSR
 - `volumetric_fog.glsl` + `volumetric_fog_process.glsl` — Volumetric fog
 - `sdfgi_*.glsl` (5 shaders) — Signed distance field GI
-- `voxel_gi.glsl` + `voxel_gi_sdf.glsl` — Voxel-based GI
+- A VoxelGI node is created, but has no baked data and does not establish VoxelGI shader coverage
 - `bokeh_dof.glsl` — Depth of field
 - Glow/bloom blur shaders
 
@@ -65,7 +69,7 @@ A Godot 4.6 project that programmatically creates a scene exercising **100% of R
 - PointLight2D (canvas lighting path)
 
 ### Post-Processing & AA
-- `taa_resolve.glsl` — Temporal anti-aliasing
+- `taa_resolve.glsl` — Temporal anti-aliasing after switching off FSR2 halfway through the run
 - `motion_vectors.glsl` — Motion vector generation
 - FSR2 (temporal upscaling, 6+ compute shaders)
 - Luminance reduction (auto-exposure)
@@ -95,11 +99,11 @@ godot --headless --path . --export-release "WebGPU" export/index.html
 ### Run in headless Chrome
 ```bash
 # Serve the export and verify no shader errors in console
-npx playwright test smoke_test.mjs
+node smoke_test.mjs ./export/
 ```
 
 ## Pass criteria
 
-- All frames render without `[SHADER]` errors in console
+- The frame sequence completes without engine, browser or shader errors in console
 - No device-lost events
 - GDScript reports `PASS` in output

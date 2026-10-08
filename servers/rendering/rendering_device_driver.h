@@ -1074,6 +1074,10 @@ public:
 		// Defaults to all counts; per-format/device limits still apply. WebGPU
 		// supports 1 and 4, so a maximum alone cannot describe its missing 2x.
 		API_TRAIT_SUPPORTED_TEXTURE_SAMPLE_COUNTS,
+		// If non-zero, buffer_unmap() flushes dirty CPU shadow data without
+		// invalidating the mapped pointer. Flush upload staging blocks each frame
+		// only on these backends; real memory mappings remain until destruction.
+		API_TRAIT_UPLOAD_STAGING_FLUSH_WITH_UNMAP,
 	};
 
 	enum ShaderChangeInvalidation {

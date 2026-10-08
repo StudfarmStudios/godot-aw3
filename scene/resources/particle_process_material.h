@@ -138,14 +138,42 @@ private:
 			memset(this, 0, sizeof(MaterialKey));
 		}
 
+		uint64_t get_key() const {
+			static_assert(int(PARAM_MAX) + int(PARTICLE_FLAG_MAX) + 23 <= 64, "MaterialKey must fit in 64 bits.");
+			// Hash and compare named fields only. Struct copies and return values
+			// may change bitfield padding even though the constructor clears it.
+			uint64_t key = texture_mask;
+			key = (key << 1) | texture_color;
+			key = (key << PARTICLE_FLAG_MAX) | particle_flags;
+			key = (key << 3) | emission_shape;
+			key = (key << 1) | invalid_key;
+			key = (key << 1) | has_emission_color;
+			key = (key << 3) | sub_emitter;
+			key = (key << 1) | attractor_enabled;
+			key = (key << 2) | collision_mode;
+			key = (key << 1) | collision_scale;
+			key = (key << 1) | turbulence_enabled;
+			key = (key << 1) | limiter_curve;
+			key = (key << 1) | alpha_curve;
+			key = (key << 1) | emission_curve;
+			key = (key << 1) | has_initial_ramp;
+			key = (key << 1) | orbit_uses_curve_xyz;
+			key = (key << 1) | use_scale_3d;
+			key = (key << 1) | use_rotation_3d;
+			key = (key << 1) | use_rotation_velocity_3d;
+			key = (key << 1) | use_rotation_velocity_3d_curve;
+			return key;
+		}
+
 		static uint32_t hash(const MaterialKey &p_key) {
-			return hash_djb2_buffer((const uint8_t *)&p_key, sizeof(MaterialKey));
+			const uint64_t key = p_key.get_key();
+			return hash_djb2_buffer((const uint8_t *)&key, sizeof(key));
 		}
 		bool operator==(const MaterialKey &p_key) const {
-			return memcmp(this, &p_key, sizeof(MaterialKey)) == 0;
+			return get_key() == p_key.get_key();
 		}
 		bool operator<(const MaterialKey &p_key) const {
-			return memcmp(this, &p_key, sizeof(MaterialKey)) < 0;
+			return get_key() < p_key.get_key();
 		}
 	};
 

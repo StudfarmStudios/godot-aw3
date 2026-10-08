@@ -872,3 +872,140 @@ The final driver edits conservatively change the translator/profile to
 `c5e2cb8f7bf6d61014361758605237c5b88fd7c16a57edc9dad7902413a02021`.
 No frozen browser artifact is relabeled. Source-built optimized release checks
 for this final batch are tracked on PR #31. Windows/D3D12 remains unverified.
+
+### Native upload staging lifetime
+
+Revision `39c91e534`'s GCC double-precision sanitizer job
+[`113583338134`](https://github.com/StudfarmStudios/godot-aw3/actions/runs/37856861606/job/113583338134)
+passes all **1,386 tests / 420,619 assertions**, including the repaired process-group
+lifetime. Its later Vulkan project-editor check aborts in
+`VmaAllocation_T::BlockAllocUnmap()` with “Unmapping allocation not previously
+mapped.” `_insert_staging_block()` maps each upload block once, but the unchanged
+fork's `_end_frame()` unmaps every block on every frame without remapping;
+`finalize()` unmaps it again. Vulkan's unmap calls `vmaUnmapMemory`, contrary to
+the old shared-renderer comment. The entire faulty loop predates this PR in
+commit `2e27b248598`; the Vulkan driver has no changes from the PR base.
+
+The appended `API_TRAIT_UPLOAD_STAGING_FLUSH_WITH_UNMAP` defaults to zero.
+Vulkan, Metal and D3D12 all delegate this trait to the base implementation.
+Only WebGPU opts in, preserving its existing dirty-only shadow flush and ordering
+before submission. Native staging mappings now remain valid until their normal
+destruction. Scoped hooks and source review cover the repair; a new native Vulkan
+CI project run remains required. No post-repair runtime pass is claimed here.
+
+The earlier import phase's separate **288-byte / two-allocation** leak has only
+`libfontconfig` frames. The existing `check_ci_log.py` shallow-stack policy already
+accepts that external-library report; this repair adds no sanitizer suppression
+and does not weaken the failing Vulkan project check.
+
+### SSAO/SSIL storage contracts and broad scene
+
+The optimized `c5e2cb8f` snapshot passes the focused two-browser fixture, but the
+broader candidate scene reveals a separate SSAO storage mismatch: the interleave
+shader declares RGBA8 while the bound texture is R8. The corrected fixture reaches
+its ten-frame completion marker with **42 cascading validation errors**, retained
+as a failed run. This is not covered by the earlier focused visual acceptance.
+Source review also finds normalized RGBA16 declarations in SSIL gather, adaptive
+input, blur and interleave, whose actual allocations are RGBA16F.
+
+Five format tokens in four shaders are ported from the pinned reference fork.
+The logical R8 SSAO contract still uses existing driver promotion when storage
+tier1 is unavailable; SSIL retains floating-point HDR storage. No texture grows
+on devices with native narrow storage support. The broad fixture now positions
+its camera after tree insertion, uses current material property names and
+exercises FSR2 and TAA in separate frame phases. Its README no longer claims
+every shader variant ran, or that an unbaked VoxelGI node proves GI coverage.
+
+The staging trait changes the conservative translator/profile identity to
+`66d0ce2dad65cdcf04a9863f8bdc562b3778ea37ee7e1c62f063400dc001873d`.
+Prior browser evidence retains its original identities. Fresh source-built
+release runtime results and exact final CI are tracked on PR #31.
+
+### Reflection atlas color texture lifetime
+
+The source-built `66d0ce2d` broad Chrome scene reaches both FSR2 and TAA phases
+without GPU/shader validation errors, but the strict runner fails on **14 leaked
+Texture RIDs** at shutdown. Source review identifies an omitted owning texture
+release in `LightStorage::_reflection_atlas_clear()`: each atlas allocation creates
+one color cubemap and six shared face views, while cleanup frees only the separate
+reflection atlas and depth resources. This omission exists in both pinned A
+`c0d51825` and S `470f89e7`. Temporary native diagnostics confirm exactly two 256×256 cubemaps and twelve
+shared views, with all view-owner IDs matching those two cubemaps, on WebGPU and
+Metal. The mixed update-mode probes rebuild the atlas during rendering.
+
+Cleanup now frees the owning color cubemap and clears its cached handles.
+RenderingDevice's dependency graph recursively releases the six views and their
+framebuffers, so they are not explicitly freed twice. Source review and
+`git diff --check` pass. The [three strict browser negative controls](../../webgpu_tests/browser_fork_ports/results/broad-scene-format-controls-macos-arm64.json)
+retain normal, forced-fallback and Ultra SSIL failures, all with zero GPU/shader
+validation errors and the same fourteen leaked textures. Post-fix native/browser
+runs are tracked on PR #31; a scene completion marker alone is not a passing gate.
+
+The isolated [reflection-atlas lifecycle fixture](../../webgpu_tests/reflection_atlas_lifecycle/README.md)
+now confirms the ownership repair on Apple M1 Ultra, native Metal 4.0. Frozen
+diagnostic editor `ab2b1f0ba03b` leaks seven textures after `UPDATE_ONCE` teardown
+and fourteen after switching to `UPDATE_ALWAYS`. Fixed editor `862617c897f8`
+runs the byte-identical scene in both modes with clean exit, all render/teardown
+markers, and no warnings, errors or leaked RIDs. The compact four-run result
+preserves complete binary/fixture hashes and diagnostic owner IDs. The matching [optimized browser artifact](../../webgpu_tests/browser_fork_ports/results/broad-scene-format-atlas-macos-arm64.json)
+now passes **3/3** stock Chrome runs: normal capabilities, forced format fallbacks
+and Ultra SSIL quality 4. Each completes ten frames across FSR2 and TAA with zero
+console/shader errors, device loss or leaked-RID warnings. These results retain
+their atlas-build identities and precede the later particle-key repair. No native
+or browser performance claim is made.
+
+### Generated API documentation consistency
+
+The `39c91e5` Mono CI job passes clangd, the complete godot-cpp archive/extension
+build, **1,387 engine tests / 420,628 assertions**, and **40 .NET tests**. Its
+remaining failure is the doctool diff: three pre-existing physics query helpers,
+the WebGPU driver override, two shader-baker export options, and alphabetical
+ordering of `Window.multi_viewport_focus`. The four XML files now match their
+actual metadata and describe the existing behavior; no API implementation changes.
+The immutable `74727596` editor regenerates private copies byte-for-byte, and all
+XML/documentation hooks pass. Final Mono CI remains tracked on PR #31.
+
+### Particle material key padding and shader lifetime
+
+The broad scene leaked one `ParticlesShaderRD` version and one material shader
+RID on both native Metal and WebGPU. A temporary native trace disproved duplicate
+registration: there was one owner, but `current_key = mk` changed the raw-byte
+hash from `2075887138` to `2075886516`, so destruction could not find its cache
+entry. The existing `MaterialKey` bitfields use 46 of 64 bits; copies and returned
+values need not preserve the remaining padding despite constructor `memset`.
+This code predates the port batch.
+
+The repair hashes and compares a `uint64_t` assembled from all 20 named fields,
+including the invalid-key sentinel, preserving cache locks and owner counts.
+[The production-key regression](../../webgpu_tests/particle_material_lifetime/README.md)
+extracts the actual declarations and exercises changed padding, copies,
+assignment, returns, placement construction and hash-map lookup/erase under
+ASan+UBSan. The old header fails **170/340** checks; the final header passes
+**340/340**, including all 46 meaningful bits and 47 distinct keys.
+
+The exact same native fixture fails **4/4** cases on the old editor and passes
+**4/4** on final editor `8ef30015…`: Metal/WebGPU, explicit freeing/ordinary
+shutdown, four shared materials and repeated cache lookups. The full broad Metal
+scene also exits without errors or leaked RIDs. Complete stdout/stderr is checked
+because late leak reports may follow engine-log closure. Compact paired evidence
+is saved in `webgpu_tests/particle_material_lifetime/results/`. Earlier positive
+runs and the broad Metal result on `1a8dd0de…` remain separately identified; that
+binary precedes only behavior-neutral enum casts in the size assertion. Final
+`8ef30015…` includes those casts, and the final header has its own sanitizer proof.
+This header does not change the translator identity.
+No Windows/browser runtime or rendering-quality claim is inferred from these
+lifetime tests.
+
+### Final integrated source snapshot
+
+The final native editor `8ef30015ed8eca8b87c9285a680a7d814982ae3f795593aa2ee43968046556d4`
+and optimized Emscripten 4.0.20/Closure template
+`08419d1bb7e442cf0f70f02b1bd78681cb7d715c6991d03044141f1f54f634de`
+include the storage-format, staging, reflection-atlas and particle-key repairs.
+The template Wasm is `28ee76b58be2891bb8d818fdf2944e83ae047201483c66d889d405ccac82092f`;
+profile remains `66d0ce2d…` with matching Tint CLI `70ae1058…`.
+The exact optimized wrapper/import boundaries pass **6/6 + 2/2** checks, and the
+final broad stock Chrome scene completes FSR2/TAA with zero console/shader errors,
+device loss or leaked-RID warnings. Final targeted Chrome/Firefox cache/exit
+checks and exact-head CI are tracked on PR #31, avoiding any relabeling of
+previous immutable evidence. Windows/D3D12 remains unverified.

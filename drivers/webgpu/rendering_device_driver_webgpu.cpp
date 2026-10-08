@@ -11690,6 +11690,8 @@ uint64_t RenderingDeviceDriverWebGPU::api_trait_get(ApiTrait p_trait) {
 		// updates; overflow stalls briefly and reuses blocks.
 		case API_TRAIT_STAGING_BUFFER_MAX_SIZE_MB:
 			return 16;
+		case API_TRAIT_UPLOAD_STAGING_FLUSH_WITH_UNMAP:
+			return 1;
 		case API_TRAIT_SKELETON_BUFFER_DIRECT_WRITE:
 			return 1;
 		case API_TRAIT_GPU_CALLS_MAIN_THREAD_ONLY:
