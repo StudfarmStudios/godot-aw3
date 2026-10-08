@@ -1,0 +1,26 @@
+{
+  "mode": "native",
+  "passed": true,
+  "checks": 144,
+  "failed_checks": 0,
+  "returncode": 0,
+  "timed_out": false,
+  "seconds": 1.1988551249960437,
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "engine_sha256": "d1aee005456ccbeec67c0036247b5f898413382b4d675b7d7bfa86d66a958ab1",
+  "production_callback_sha256": "64a0bd0500e58a5699d24cf228b1074b4b0d52477f86f1d92c4d89d9d004e8ec",
+  "command": [
+    "/private/tmp/aw3-webgpu-parallel-ports-first",
+    "--path",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/fsr2_atomic_depth",
+    "--rendering-method",
+    "forward_plus",
+    "--rendering-driver",
+    "webgpu",
+    "--script",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/fsr2_atomic_depth/main.gd",
+    "--",
+    "--shader-dir=/private/tmp/aw3-fsr2-atomic-depth-gpu/shaders"
+  ],
+  "errors": []
+}

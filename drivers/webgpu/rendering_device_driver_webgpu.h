@@ -251,6 +251,7 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 	// storage texel formats). With texture-formats-tier1, these formats are valid
 	// storage formats natively and promotion is skipped.
 	WGPUTextureFormat _promote_storage_format(WGPUTextureFormat p_format) const;
+	bool _supports_rw_storage_format(WGPUTextureFormat p_format) const;
 	void _remap_unsupported_wgsl_storage_formats(char *&r_wgsl) const;
 	WGPUBufferUsage _buffer_usage_to_wgpu(BitField<BufferUsageBits> p_usage) const;
 	WGPUTextureUsage _texture_usage_to_wgpu(BitField<TextureUsageBits> p_usage) const;

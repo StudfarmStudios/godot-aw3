@@ -1241,6 +1241,56 @@ static WGPUTextureSampleType _resolve_storage_sampled_type(
 // fails pipeline creation with "the layout's binding format (X) doesn't match the
 // shader's binding format (Y)", and the poisoned pipeline then re-emits a
 // validation error on every frame that binds it.
+// Image-format fallback for declarations eliminated by constant folding. These
+// numeric values are the SPIR-V ImageFormat enumeration, not Godot DataFormat.
+static WGPUTextureFormat _spirv_storage_format(uint32_t p_format) {
+	switch (p_format) {
+		case 1: return WGPUTextureFormat_RGBA32Float;
+		case 2: return WGPUTextureFormat_RGBA16Float;
+		case 3: return WGPUTextureFormat_R32Float;
+		case 4: return WGPUTextureFormat_RGBA8Unorm;
+		case 5: return WGPUTextureFormat_RGBA8Snorm;
+		case 6: return WGPUTextureFormat_RG32Float;
+		case 7: return WGPUTextureFormat_RG16Float;
+		case 8: return WGPUTextureFormat_RG11B10Ufloat;
+		case 9: return WGPUTextureFormat_R16Float;
+		// Match the normalized-16 shader lowering. Resource allocation must use
+		// an actual floating-point fallback (as Canvas SDF does), never reinterpret
+		// normalized input bytes as floats.
+		case 10: return WGPUTextureFormat_RGBA16Float;
+		case 12: return WGPUTextureFormat_RG16Float;
+		case 14: return WGPUTextureFormat_R16Float;
+		case 16: return WGPUTextureFormat_RGBA16Float;
+		case 17: return WGPUTextureFormat_RG16Float;
+		case 19: return WGPUTextureFormat_R16Float;
+		case 11: return WGPUTextureFormat_RGB10A2Unorm;
+		case 13: return WGPUTextureFormat_RG8Unorm;
+		case 15: return WGPUTextureFormat_R8Unorm;
+		case 18: return WGPUTextureFormat_RG8Snorm;
+		case 20: return WGPUTextureFormat_R8Snorm;
+		case 21: return WGPUTextureFormat_RGBA32Sint;
+		case 22: return WGPUTextureFormat_RGBA16Sint;
+		case 23: return WGPUTextureFormat_RGBA8Sint;
+		case 24: return WGPUTextureFormat_R32Sint;
+		case 25: return WGPUTextureFormat_RG32Sint;
+		case 26: return WGPUTextureFormat_RG16Sint;
+		case 27: return WGPUTextureFormat_RG8Sint;
+		case 28: return WGPUTextureFormat_R16Sint;
+		case 29: return WGPUTextureFormat_R8Sint;
+		case 30: return WGPUTextureFormat_RGBA32Uint;
+		case 31: return WGPUTextureFormat_RGBA16Uint;
+		case 32: return WGPUTextureFormat_RGBA8Uint;
+		case 33: return WGPUTextureFormat_R32Uint;
+		case 34: return WGPUTextureFormat_RGB10A2Uint;
+		case 35: return WGPUTextureFormat_RG32Uint;
+		case 36: return WGPUTextureFormat_RG16Uint;
+		case 37: return WGPUTextureFormat_RG8Uint;
+		case 38: return WGPUTextureFormat_R16Uint;
+		case 39: return WGPUTextureFormat_R8Uint;
+		default: return WGPUTextureFormat_Undefined;
+	}
+}
+
 static WGPUTextureFormat _wgsl_storage_format_from_name(const char *p_name, const char *p_limit) {
 	const char *end = p_name;
 	while (end < p_limit && *end != ',' && *end != '>' && *end != ' ') {
@@ -2672,6 +2722,38 @@ static WGPUTextureFormat _get_srgb_view_format(WGPUTextureFormat p_format) {
 	}
 }
 
+bool RenderingDeviceDriverWebGPU::_supports_rw_storage_format(WGPUTextureFormat p_format) const {
+	if (!has_rw_storage_textures) {
+		return false;
+	}
+	// The WGSL language feature does not grant read-write access to every
+	// storage format. Core WebGPU has R32; tier 2 adds this specific subset.
+	switch (p_format) {
+		case WGPUTextureFormat_R32Float:
+		case WGPUTextureFormat_R32Uint:
+		case WGPUTextureFormat_R32Sint:
+			return true;
+		case WGPUTextureFormat_R8Unorm:
+		case WGPUTextureFormat_R8Uint:
+		case WGPUTextureFormat_R8Sint:
+		case WGPUTextureFormat_R16Float:
+		case WGPUTextureFormat_R16Uint:
+		case WGPUTextureFormat_R16Sint:
+		case WGPUTextureFormat_RGBA8Unorm:
+		case WGPUTextureFormat_RGBA8Uint:
+		case WGPUTextureFormat_RGBA8Sint:
+		case WGPUTextureFormat_RGBA16Float:
+		case WGPUTextureFormat_RGBA16Uint:
+		case WGPUTextureFormat_RGBA16Sint:
+		case WGPUTextureFormat_RGBA32Float:
+		case WGPUTextureFormat_RGBA32Uint:
+		case WGPUTextureFormat_RGBA32Sint:
+			return has_texture_formats_tier2;
+		default:
+			return false;
+	}
+}
+
 RDD::TextureID RenderingDeviceDriverWebGPU::texture_create(const TextureFormat &p_format, const TextureView &p_view) {
 	WGTexture *tex = new WGTexture();
 
@@ -2696,7 +2778,7 @@ RDD::TextureID RenderingDeviceDriverWebGPU::texture_create(const TextureFormat &
 		// shader. We need CopySrc (for read_write shadow copies) and
 		// TextureBinding (so the texture can be bound as a sampled texture
 		// for read-only storage textures converted to texture_2d).
-		if (!has_rw_storage_textures) {
+		if (!_supports_rw_storage_format(tex->format)) {
 			tex->usage |= WGPUTextureUsage_CopySrc | WGPUTextureUsage_TextureBinding;
 		}
 	}
@@ -4678,6 +4760,7 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 	// Image types per binding, also from the pre-specialization SPIR-V.
 	HashMap<uint32_t, spirv_preprocess::ImageBindingInfo> godot_binding_images;
 	bool any_stage_analyzed = false;
+	bool source_image_formats_loaded = false;
 
 	// Read-write storage texture splits: maps (set << 16 | write_binding) → shadow_read_binding.
 	// Populated when readonly-and-readwrite-storage-textures is unavailable.
@@ -4932,7 +5015,7 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 		// Safari rejects read_write storage texture access at BGL validation.
 		// The shadow read binding uses the odd slot (B+1) which is free for IMAGE
 		// types due to preprocessing's binding doubling (even=resource, odd=sampler for combined).
-		if (!has_rw_storage_textures && strstr(wgsl_str, "read_write>")) {
+		if (strstr(wgsl_str, "read_write>")) {
 			struct RWSplitInfo {
 				uint32_t grp, bnd;
 				String var_name, dim_type, fmt;
@@ -4975,6 +5058,11 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 					{ char buf[256]; int len = (int)(ne - vp); if (len > 255) len = 255; memcpy(buf, vp, len); buf[len] = '\0'; info.var_name = buf; }
 					{ char buf[256]; int len = (int)(lt - ts); if (len > 255) len = 255; memcpy(buf, ts, len); buf[len] = '\0'; info.dim_type = buf; }
 					{ char buf[64]; if (fmt_len > 63) fmt_len = 63; memcpy(buf, lt + 1, fmt_len); buf[fmt_len] = '\0'; info.fmt = String(buf).strip_edges(); }
+					const WGPUTextureFormat format = _wgsl_storage_format_from_name(lt + 1, comma);
+					if (_supports_rw_storage_format(format)) {
+						p = semi;
+						continue;
+					}
 					rw_infos.push_back(info);
 					p = semi;
 				}
@@ -5558,14 +5646,7 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 	}
 
 	shader->has_override_declarations = detected_override_declarations;
-	if (detected_override_declarations || shader_refl.specialization_constants.is_empty()) {
-		// Pipeline constants specialize WGSL directly. Only the fallback path
-		// needs raw SPIR-V; keeping it for every Forward+ variant retains a
-		// second, decompressed copy of the shader cache throughout gameplay.
-		for (PackedByteArray &spirv : shader->stage_spirv) {
-			spirv.clear();
-		}
-	}
+
 	if (detected_override_declarations) {
 		print_verbose(vformat("WebGPU: shader '%s' has override declarations — will use pipeline constants for specialization.", shader->name));
 	}
@@ -5666,6 +5747,24 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 					case 3: return info->arrayed ? WGPUTextureViewDimension_CubeArray : WGPUTextureViewDimension_Cube;
 					default: return p_fallback;
 				}
+			};
+
+			auto storage_format_for = [&](uint32_t p_key) -> WGPUTextureFormat {
+				if (const WGPUTextureFormat *format = wgsl_storage_tex_format.getptr(p_key)) {
+					return *format;
+				}
+				const uint32_t key = ((uint32_t)set << 16) | u.binding;
+				const spirv_preprocess::ImageBindingInfo *info = godot_binding_images.getptr(key);
+				if ((!info || info->format == 0) && !source_image_formats_loaded) {
+					// Version-3 cache seeds omit the image format. Keep accepting them
+					// and pay this scan only for a storage declaration Tint removed.
+					for (const Vector<uint8_t> &raw : shader->stage_spirv) {
+						spirv_preprocess::binding_image_info(raw, &godot_binding_images);
+					}
+					source_image_formats_loaded = true;
+					info = godot_binding_images.getptr(key);
+				}
+				return info ? _promote_storage_format(_spirv_storage_format(info->format)) : WGPUTextureFormat_Undefined;
 			};
 
 			WGPUShaderStage vis = vis_for(u.binding * 2);
@@ -5785,15 +5884,23 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 					if (wgsl_read_storage_to_sampled.has(k)) {
 						// Read-only storage texture was converted to sampled texture_2d.
 						// Create a sampled texture BGL entry instead of storage.
-						WGPUTextureFormat fmt = wgsl_storage_tex_format.has(k) ? wgsl_storage_tex_format[k] : WGPUTextureFormat_RGBA8Unorm;
+						WGPUTextureFormat fmt = storage_format_for(k);
+						if (fmt == WGPUTextureFormat_Undefined) {
+							error_text = vformat("WebGPU: missing storage format for set %d binding %d in %s.", set, u.binding, shader->name);
+							goto cleanup;
+						}
 						entry.texture.sampleType = _resolve_storage_sampled_type(wgsl_tex_sample_types, k, fmt);
 						entry.texture.viewDimension = wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D;
 						entry.texture.multisampled = false;
 					} else {
-						WGPUTextureFormat fmt = wgsl_storage_tex_format.has(k) ? wgsl_storage_tex_format[k] : WGPUTextureFormat_RGBA8Unorm;
+						WGPUTextureFormat fmt = storage_format_for(k);
+						if (fmt == WGPUTextureFormat_Undefined) {
+							error_text = vformat("WebGPU: missing storage format for set %d binding %d in %s.", set, u.binding, shader->name);
+							goto cleanup;
+						}
 						WGPUStorageTextureAccess access = wgsl_storage_tex_access.has(k)
 							? wgsl_storage_tex_access[k]
-							: (u.writable ? WGPUStorageTextureAccess_WriteOnly : WGPUStorageTextureAccess_ReadOnly);
+							: (u.writable || vis == WGPUShaderStage_None ? WGPUStorageTextureAccess_WriteOnly : WGPUStorageTextureAccess_ReadOnly);
 						entry.storageTexture.access = access;
 						entry.storageTexture.format = fmt;
 						entry.storageTexture.viewDimension = wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D;
@@ -6180,6 +6287,15 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 	if (shader->pipeline_layout == nullptr) {
 		error_text = "WebGPU: wgpuDeviceCreatePipelineLayout failed.";
 		goto cleanup;
+	}
+
+	if (detected_override_declarations || shader_refl.specialization_constants.is_empty()) {
+		// Pipeline constants specialize WGSL directly. Only the fallback path
+		// needs raw SPIR-V; keeping it for every Forward+ variant retains a
+		// second, decompressed copy of the shader cache throughout gameplay.
+		for (PackedByteArray &spirv : shader->stage_spirv) {
+			spirv.clear();
+		}
 	}
 
 	return true;

@@ -454,6 +454,21 @@ class TextServerFallback : public TextServerExtension {
 
 	// Common data.
 
+	// Uploads own immutable snapshots rather than pointers into font caches.
+	void _ensure_atlas_texture(FontForSizeFallback *p_ffsd, int32_t p_texture_index, bool p_fix_edge, bool p_mipmaps) const;
+#ifdef WEBGPU_ENABLED
+	struct PendingAtlasUpload {
+		Ref<ImageTexture> texture;
+		Ref<Image> image;
+		bool mipmaps = false;
+	};
+	mutable Mutex atlas_upload_mutex;
+	mutable bool atlas_flush_connected = false;
+	mutable HashMap<ObjectID, PendingAtlasUpload> pending_atlas_uploads;
+	bool _queue_atlas_upload(const Ref<ImageTexture> &p_texture, const Ref<Image> &p_image, bool p_mipmaps) const;
+	void _flush_pending_atlas_uploads();
+#endif
+
 	mutable RID_PtrOwner<FontFallbackLinkedVariation> font_var_owner;
 	mutable RID_PtrOwner<FontFallback> font_owner;
 	mutable RID_PtrOwner<ShapedTextDataFallback> shaped_owner{ 65536, 1048576 };

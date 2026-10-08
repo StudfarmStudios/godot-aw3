@@ -45,6 +45,7 @@ Patches:
 
 - `0001-build-fixes.patch` ([GH-81197](https://github.com/godotengine/godot/pull/81197))
 - `0002-godot-fsr2-options.patch` ([GH-81197](https://github.com/godotengine/godot/pull/81197))
+- `0003-webgpu-storage-and-atomic-fallbacks.patch`: matching Godot storage formats, buffer atomics for reconstructed depth/SPD, and a split SPD reduction for cross-dispatch visibility.
 
 
 ## angle

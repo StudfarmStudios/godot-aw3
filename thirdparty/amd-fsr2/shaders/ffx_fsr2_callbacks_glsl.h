@@ -182,7 +182,11 @@ layout (set = 0, binding = 1) uniform sampler s_LinearClamp;
 	layout (set = 1, binding = FSR2_BIND_SRV_TRANSPARENCY_AND_COMPOSITION_MASK)       uniform texture2D  r_transparency_and_composition_mask;
 #endif
 #if defined(FSR2_BIND_SRV_RECONSTRUCTED_PREV_NEAREST_DEPTH)
+#ifdef NO_IMAGE_ATOMICS
+	layout (set = 1, binding = FSR2_BIND_SRV_RECONSTRUCTED_PREV_NEAREST_DEPTH, std430) readonly buffer ReconstructedDepthRead { uint r_reconstructed_depth_values[]; };
+#else
 	layout (set = 1, binding = FSR2_BIND_SRV_RECONSTRUCTED_PREV_NEAREST_DEPTH)        uniform utexture2D r_reconstructed_previous_nearest_depth;
+#endif
 #endif
 #if defined(FSR2_BIND_SRV_DILATED_MOTION_VECTORS)
 	layout (set = 1, binding = FSR2_BIND_SRV_DILATED_MOTION_VECTORS)                  uniform texture2D  r_dilated_motion_vectors;
@@ -235,13 +239,17 @@ layout (set = 0, binding = 1) uniform sampler s_LinearClamp;
 
 // UAV
 #if defined FSR2_BIND_UAV_RECONSTRUCTED_PREV_NEAREST_DEPTH
+#ifdef NO_IMAGE_ATOMICS
+	layout (set = 1, binding = FSR2_BIND_UAV_RECONSTRUCTED_PREV_NEAREST_DEPTH, std430) buffer ReconstructedDepthWrite { uint rw_reconstructed_depth_values[]; };
+#else
 	layout (set = 1, binding = FSR2_BIND_UAV_RECONSTRUCTED_PREV_NEAREST_DEPTH, r32ui) uniform uimage2D   rw_reconstructed_previous_nearest_depth;
+#endif
 #endif
 #if defined FSR2_BIND_UAV_DILATED_MOTION_VECTORS
 	layout (set = 1, binding = FSR2_BIND_UAV_DILATED_MOTION_VECTORS, rg16f)           writeonly uniform image2D  rw_dilated_motion_vectors;
 #endif
 #if defined FSR2_BIND_UAV_DILATED_DEPTH
-	layout (set = 1, binding = FSR2_BIND_UAV_DILATED_DEPTH, r16f)                     writeonly uniform image2D  rw_dilatedDepth;
+	layout (set = 1, binding = FSR2_BIND_UAV_DILATED_DEPTH, r32f)                     writeonly uniform image2D  rw_dilatedDepth;
 #endif
 #if defined FSR2_BIND_UAV_INTERNAL_UPSCALED
 	layout (set = 1, binding = FSR2_BIND_UAV_INTERNAL_UPSCALED, rgba16f)              writeonly uniform image2D  rw_internal_upscaled_color;
@@ -256,13 +264,13 @@ layout (set = 0, binding = 1) uniform sampler s_LinearClamp;
 	layout(set = 1, binding = FSR2_BIND_UAV_NEW_LOCKS, r8)				 		      uniform image2D    rw_new_locks;
 #endif
 #if defined FSR2_BIND_UAV_PREPARED_INPUT_COLOR
-	layout (set = 1, binding = FSR2_BIND_UAV_PREPARED_INPUT_COLOR, rgba16)            writeonly uniform image2D  rw_prepared_input_color;
+	layout (set = 1, binding = FSR2_BIND_UAV_PREPARED_INPUT_COLOR, rgba16f)            writeonly uniform image2D  rw_prepared_input_color;
 #endif
 #if defined FSR2_BIND_UAV_LUMA_HISTORY
 	layout (set = 1, binding = FSR2_BIND_UAV_LUMA_HISTORY, rgba8)                     uniform image2D  rw_luma_history;
 #endif
 #if defined FSR2_BIND_UAV_UPSCALED_OUTPUT
-	layout (set = 1, binding = FSR2_BIND_UAV_UPSCALED_OUTPUT /* app controlled format */) writeonly uniform image2D  rw_upscaled_output;
+	layout (set = 1, binding = FSR2_BIND_UAV_UPSCALED_OUTPUT, rgba16f /* Godot Forward+ output format */) writeonly uniform image2D  rw_upscaled_output;
 #endif
 #if defined FSR2_BIND_UAV_EXPOSURE_MIP_LUMA_CHANGE
 	layout (set = 1, binding = FSR2_BIND_UAV_EXPOSURE_MIP_LUMA_CHANGE, r16f)              coherent uniform image2D  rw_img_mip_shading_change;
@@ -280,7 +288,11 @@ layout (set = 0, binding = 1) uniform sampler s_LinearClamp;
 	layout(set = 1, binding = FSR2_BIND_UAV_AUTO_EXPOSURE, rg32f)                         uniform image2D    rw_auto_exposure;
 #endif
 #if defined FSR2_BIND_UAV_SPD_GLOBAL_ATOMIC 
+#ifdef NO_IMAGE_ATOMICS
+	layout (set = 1, binding = FSR2_BIND_UAV_SPD_GLOBAL_ATOMIC, std430) buffer SpdCounter { uint rw_spd_global_atomic_values[]; };
+#else
 	layout (set = 1, binding = FSR2_BIND_UAV_SPD_GLOBAL_ATOMIC, r32ui)       coherent uniform uimage2D   rw_spd_global_atomic;
+#endif
 #endif
 
 #if defined FSR2_BIND_UAV_AUTOREACTIVE
@@ -506,7 +518,14 @@ FfxFloat32 LoadSceneDepth(FfxInt32x2 iPxInput)
 #if defined(FSR2_BIND_SRV_RECONSTRUCTED_PREV_NEAREST_DEPTH)
 FfxFloat32 LoadReconstructedPrevDepth(FfxInt32x2 iPxPos)
 {
+#ifdef NO_IMAGE_ATOMICS
+	if (any(lessThan(iPxPos, ivec2(0))) || any(greaterThanEqual(iPxPos, MaxRenderSize()))) {
+		return 0.0f;
+	}
+	return uintBitsToFloat(r_reconstructed_depth_values[iPxPos.y * MaxRenderSize().x + iPxPos.x]);
+#else
 	return uintBitsToFloat(texelFetch(r_reconstructed_previous_nearest_depth, iPxPos, 0).r);
+#endif
 }
 #endif
 
@@ -515,7 +534,17 @@ void StoreReconstructedDepth(FfxInt32x2 iPxSample, FfxFloat32 fDepth)
 {
 	FfxUInt32 uDepth = floatBitsToUint(fDepth);
 
-	#if FFX_FSR2_OPTION_INVERTED_DEPTH
+	#ifdef NO_IMAGE_ATOMICS
+		if (any(lessThan(iPxSample, ivec2(0))) || any(greaterThanEqual(iPxSample, MaxRenderSize()))) {
+			return;
+		}
+		uint index = uint(iPxSample.y * MaxRenderSize().x + iPxSample.x);
+		#if FFX_FSR2_OPTION_INVERTED_DEPTH
+			atomicMax(rw_reconstructed_depth_values[index], uDepth);
+		#else
+			atomicMin(rw_reconstructed_depth_values[index], uDepth);
+		#endif
+	#elif FFX_FSR2_OPTION_INVERTED_DEPTH
 		imageAtomicMax(rw_reconstructed_previous_nearest_depth, iPxSample, uDepth);
 	#else
 		imageAtomicMin(rw_reconstructed_previous_nearest_depth, iPxSample, uDepth); // min for standard, max for inverted depth
@@ -526,7 +555,13 @@ void StoreReconstructedDepth(FfxInt32x2 iPxSample, FfxFloat32 fDepth)
 #if defined(FSR2_BIND_UAV_RECONSTRUCTED_PREV_NEAREST_DEPTH)
 void SetReconstructedDepth(FfxInt32x2 iPxSample, FfxUInt32 uValue)
 {
+#ifdef NO_IMAGE_ATOMICS
+	if (all(greaterThanEqual(iPxSample, ivec2(0))) && all(lessThan(iPxSample, MaxRenderSize()))) {
+		rw_reconstructed_depth_values[iPxSample.y * MaxRenderSize().x + iPxSample.x] = uValue;
+	}
+#else
 	imageStore(rw_reconstructed_previous_nearest_depth, iPxSample, uvec4(uValue, 0, 0, 0));
+#endif
 }
 #endif
 

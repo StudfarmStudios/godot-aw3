@@ -1,0 +1,231 @@
+{
+  "checks": 34,
+  "passed": true,
+  "results": [
+    {
+      "name": "constant",
+      "kind": "positive",
+      "tint_13_fixture": true,
+      "input_words": 177,
+      "output_words": 215,
+      "passed": true
+    },
+    {
+      "name": "null",
+      "kind": "positive",
+      "tint_13_fixture": true,
+      "input_words": 163,
+      "output_words": 201,
+      "passed": true
+    },
+    {
+      "name": "undef",
+      "kind": "positive",
+      "tint_13_fixture": true,
+      "input_words": 163,
+      "output_words": 201,
+      "passed": true
+    },
+    {
+      "name": "load",
+      "kind": "positive",
+      "tint_13_fixture": true,
+      "input_words": 172,
+      "output_words": 210,
+      "passed": true
+    },
+    {
+      "name": "extract",
+      "kind": "positive",
+      "tint_13_fixture": true,
+      "input_words": 168,
+      "output_words": 206,
+      "passed": true
+    },
+    {
+      "name": "copy_object",
+      "kind": "positive",
+      "tint_13_fixture": true,
+      "input_words": 167,
+      "output_words": 205,
+      "passed": true
+    },
+    {
+      "name": "construct",
+      "kind": "positive",
+      "tint_13_fixture": true,
+      "input_words": 172,
+      "output_words": 210,
+      "passed": true
+    },
+    {
+      "name": "insert",
+      "kind": "positive",
+      "tint_13_fixture": true,
+      "input_words": 171,
+      "output_words": 209,
+      "passed": true
+    },
+    {
+      "name": "select",
+      "kind": "positive",
+      "tint_13_fixture": false,
+      "input_words": 169,
+      "output_words": 207,
+      "passed": true
+    },
+    {
+      "name": "phi",
+      "kind": "positive",
+      "tint_13_fixture": true,
+      "input_words": 187,
+      "output_words": 225,
+      "passed": true
+    },
+    {
+      "name": "call",
+      "kind": "positive",
+      "tint_13_fixture": true,
+      "input_words": 177,
+      "output_words": 215,
+      "passed": true
+    },
+    {
+      "name": "parameter",
+      "kind": "positive",
+      "tint_13_fixture": true,
+      "input_words": 181,
+      "output_words": 219,
+      "passed": true
+    },
+    {
+      "name": "chain",
+      "kind": "positive",
+      "tint_13_fixture": true,
+      "input_words": 171,
+      "output_words": 285,
+      "passed": true
+    },
+    {
+      "name": "uint64_length",
+      "kind": "positive",
+      "tint_13_fixture": false,
+      "input_words": 184,
+      "output_words": 222,
+      "passed": true
+    },
+    {
+      "name": "maximum_constructor",
+      "kind": "positive",
+      "tint_13_fixture": false,
+      "input_words": 163,
+      "output_words": 983151,
+      "passed": true
+    },
+    {
+      "name": "deep_nested",
+      "kind": "positive",
+      "tint_13_fixture": true,
+      "input_words": 380,
+      "output_words": 697,
+      "passed": true
+    },
+    {
+      "name": "nested_ubo",
+      "kind": "positive",
+      "tint_13_fixture": true,
+      "input_words": 503,
+      "output_words": 580,
+      "passed": true
+    },
+    {
+      "name": "truncated_header",
+      "kind": "guard",
+      "passed": true
+    },
+    {
+      "name": "unaligned",
+      "kind": "guard",
+      "passed": true
+    },
+    {
+      "name": "zero_word_count_suffix",
+      "kind": "guard",
+      "passed": true
+    },
+    {
+      "name": "truncated_suffix",
+      "kind": "guard",
+      "passed": true
+    },
+    {
+      "name": "invalid_bound",
+      "kind": "guard",
+      "passed": true
+    },
+    {
+      "name": "overflow_bound",
+      "kind": "guard",
+      "passed": true
+    },
+    {
+      "name": "bad_magic",
+      "kind": "guard",
+      "passed": true
+    },
+    {
+      "name": "no_free_ids",
+      "kind": "guard",
+      "passed": true
+    },
+    {
+      "name": "unknown_source",
+      "kind": "guard",
+      "passed": true
+    },
+    {
+      "name": "mismatched_leaf",
+      "kind": "guard",
+      "passed": true
+    },
+    {
+      "name": "duplicate_result",
+      "kind": "guard",
+      "passed": true
+    },
+    {
+      "name": "unresolved_specialization",
+      "kind": "guard",
+      "passed": true
+    },
+    {
+      "name": "length_high_bits",
+      "kind": "guard",
+      "passed": true
+    },
+    {
+      "name": "depth_budget",
+      "kind": "guard",
+      "passed": true
+    },
+    {
+      "name": "instruction_word_count_budget",
+      "kind": "guard",
+      "passed": true
+    },
+    {
+      "name": "expansion_budget",
+      "kind": "guard",
+      "passed": true
+    },
+    {
+      "name": "identical_type",
+      "kind": "canonicalization",
+      "passed": true
+    }
+  ],
+  "helper_sha256": "1b5a2ce16569cd03879ed684c5d95040c0e3001ea80148504bb357f011c53ee8",
+  "spirv_val_version": "SPIRV-Tools v2026.2 unknown hash, 2026-04-29T17:02:58+00:00",
+  "tint_cli_sha256": "ba31c4e5355c2884d739c1a419b43c513b54536d0af5cb955b9de9e9d7143d1c",
+  "tint_note": "WGSL translation validates an explicit test-only SPIR-V1.3/interface normalization; production normalization is unchanged."
+}

@@ -23,12 +23,12 @@ Starting AW3 engine: `c0d51825faad2c1a773f4e21c34e74b60c53da21`.
 | 9–10 | Effective MSAA count and format-converting resolve | Implemented; requested 2/4/8, native/promoted RG16F resolve and nonzero destination mip/layer pass in both native modes. Full renderer AA matrix/browser pending |
 | 11 | Block-aligned compressed texture copies; preserve array stride fix | Implemented; native compressed array/mip-tail GPU copy and readback checks pass; browser runtime pending |
 | 12 | Partial color/stencil clears; preserve depth-region clears and batched submissions | Implemented; mixed HDR/float/integer targets, sparse masks, depth/stencil probes, MSAA and ring exhaustion pass natively. Browser pending |
-| 14–16 | SDFGI formats, cascade bindings, typed defaults and correct atomic fallback | Pending |
-| 17 | FSR2 capability variants and atomic-buffer fallbacks without last-writer-wins depth reduction | Pending |
-| 18–19 | FSR1 destination fallback and Canvas SDF format fallback | Canvas SDF implemented and compiled. FSR1 pending |
-| 20–22, 24 | Logical-copy lowering, reviewed SPIR-V normalization/Tint fixes, structural vertex-access transform | Pending |
-| 27–31 | Export baking, target capabilities, coverage, subprocess conversion, combined cache metadata and cache preference | Pending |
-| 35–36 | Atlas upload coalescing and glyph classification, retaining immutable render-thread snapshots | Pending |
+| 14–16 | SDFGI formats, cascade bindings, typed defaults and correct atomic fallback | In progress; explicit cascade bindings and buffer-based atomic/occlusion bundle under implementation |
+| 17 | FSR2 capability variants and atomic-buffer fallbacks without last-writer-wins depth reduction | Implemented; 144 atomic-callback checks and 8 Forward+ smoke checks per native capability mode. Motion/disocclusion/reference quality testing in progress |
+| 18–19 | FSR1 destination fallback and Canvas SDF format fallback | Implemented; 30 FSR1 renderer checks per native mode cover SDR/HDR, resize and direct/conversion XR targets. Canvas SDF compiled; dedicated visual/browser coverage pending |
+| 20–22, 24 | Logical-copy lowering, reviewed SPIR-V normalization/Tint fixes, structural vertex-access transform | Logical-copy lowering passes 34 production-preprocessor sanitizer/validator checks. Normalization, structural transforms and Tint dependency bundle pending |
+| 27–31 | Export baking, target capabilities, coverage, subprocess conversion, combined cache metadata and cache preference | Coverage and valid packaged-cache preference in progress; target/sidecar/translator-identity work still pending |
+| 35–36 | Atlas upload coalescing and glyph classification, retaining immutable render-thread snapshots | WebGPU upload coalescing implemented; 35 checks across Advanced/Fallback text servers, including immutable snapshots, mipmaps, replacement/freeing and LA8/RGBA tint. Keep LA8 CPU atlas and current classification; direct RGBA would double memory without a demonstrated additional benefit. Browser/emoji/SVG/LCD/MSDF coverage pending |
 | 37–38 | CPU gradient regeneration and compressed-texture readback | Gradients implemented/tested. Finding 38 correction: disk-backed `CompressedTexture2D::get_image()` is already identical in our base; no additional port needed |
 | 45–49 | Feature fixtures, actual-driver regressions, browser/backend metadata, CI integration | Production C++ format tests and initial RenderingDevice GPU fixture added. Full matrix/CI pending |
 | 58 | Headless export teardown lifetime | Implemented on 4.7. Baseline import reproduces null-singleton error/crash; fixed import plus three Web pack exports pass with clean shutdown |
@@ -98,3 +98,20 @@ Native map callbacks are waited after the frame fence and before pool destructio
 readback remains disabled under the existing compatibility constraint. Profiling
 adds one tiny clear pass per marker; accepted clear benchmarks use local-device
 `submit()`/`sync()` instead, without that instrumentation.
+
+## Parallel feature batch
+
+Logical copies, FSR1, FSR2 buffer atomics/two-dispatch luminance reduction, and font
+upload coalescing are now implemented. New FSR2 coverage also exposed two driver
+bugs: read/write storage support is format-specific even when the WGSL language
+feature exists, and eliminated storage-image declarations still need their real
+format in the bind-group layout. Both fixes retain supported-format fast paths.
+The resource fixture now passes **58 checks in each native capability mode**.
+
+The native editor links, and threaded web objects compile for the driver,
+preprocessor, both upscalers, texture storage and both text servers. This is not a
+complete web-template build: the existing baker still reports 10 GLSL and 4 Tint
+failures. Detailed native evidence, negative controls and performance results are
+in VALIDATION.md. Remaining items discovered by these tests include shared-slice
+mip readback and applying storage lowering to SPIR-V-specialized shader modules;
+these are not covered by the passing ordinary shader-variant checks.

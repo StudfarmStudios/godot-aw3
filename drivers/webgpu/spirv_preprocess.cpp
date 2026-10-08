@@ -593,58 +593,222 @@ Vector<uint8_t> convert_push_constants_to_uniforms(const Vector<uint8_t> &p_byte
 
 // ---- rewrite_copy_logical ----
 
+// Interface-block members and local values can have different decorated struct
+// and array types. OpCopyObject requires identical types, so a logical copy must
+// extract source-typed members and reconstruct destination-typed composites.
+struct LogicalCopyState {
+	const uint32_t *words = nullptr;
+	uint32_t bound = 0;
+	HashMap<uint32_t, uint32_t> definitions;
+	HashMap<uint32_t, uint32_t> value_types;
+	std::vector<uint32_t> emitted;
+	uint32_t next_id = 0;
+
+	// Prevent hostile or accidentally enormous aggregate copies from exploding
+	// shader compilation time/memory. This budget is shared by every copy in the
+	// module, and counts words (4 MiB), not just the number of top-level members.
+	static constexpr size_t MAX_EMITTED_WORDS = 1u << 20;
+	static constexpr uint32_t MAX_DEPTH = 64;
+	static constexpr uint32_t OP_TYPE_STRUCT = 30;
+	static constexpr uint32_t OP_COMPOSITE_CONSTRUCT = 80;
+	static constexpr uint32_t OP_COMPOSITE_EXTRACT = 81;
+
+	const uint32_t *definition(uint32_t p_id) const {
+		const uint32_t *offset = definitions.getptr(p_id);
+		return offset ? words + *offset : nullptr;
+	}
+
+	bool array_length(uint32_t p_id, uint32_t &r_length) const {
+		const uint32_t *constant = definition(p_id);
+		if (!constant || (constant[0] & 0xFFFF) != OP_CONSTANT) {
+			// run_all freezes specialization constants used by types before this
+			// pass. Never assume an unresolved array length is its default value.
+			return false;
+		}
+		const uint32_t *type = definition(constant[1]);
+		if (!type || (type[0] & 0xFFFF) != OP_TYPE_INT || type[2] > 64 || type[2] == 0) {
+			return false;
+		}
+		uint64_t value = constant[3];
+		if (type[2] > 32) {
+			value |= uint64_t(constant[4]) << 32;
+		}
+		if (type[3] && (value & (uint64_t(1) << (type[2] - 1)))) {
+			return false;
+		}
+		// OpCompositeConstruct's 16-bit word count includes its three header
+		// words. Larger arrays cannot be constructed by this decomposition.
+		if (value == 0 || value > 0xFFFF - 3) {
+			return false;
+		}
+		r_length = uint32_t(value);
+		return true;
+	}
+
+	uint32_t allocate_id() {
+		// Keep the resulting module within the validator's universal ID limit.
+		if (next_id >= kDefaultMaxIdBound) {
+			return 0;
+		}
+		return next_id++;
+	}
+
+	uint32_t copy(uint32_t p_source, uint32_t p_source_type, uint32_t p_destination_type, uint32_t p_depth, uint32_t p_result = 0) {
+		if (p_source_type == p_destination_type) {
+			if (!definition(p_source_type)) {
+				return 0;
+			}
+			if (!p_result) {
+				return p_source;
+			}
+			if (emitted.size() + 4 > MAX_EMITTED_WORDS) {
+				return 0;
+			}
+			emitted.insert(emitted.end(), { (4u << 16) | OP_COPY_OBJECT, p_destination_type, p_result, p_source });
+			return p_result;
+		}
+		if (p_depth == 0) {
+			return 0;
+		}
+		const uint32_t *source_type = definition(p_source_type);
+		const uint32_t *destination_type = definition(p_destination_type);
+		if (!source_type || !destination_type || (source_type[0] & 0xFFFF) != (destination_type[0] & 0xFFFF)) {
+			return 0;
+		}
+
+		const bool is_struct = (source_type[0] & 0xFFFF) == OP_TYPE_STRUCT;
+		uint32_t count = 0;
+		if (is_struct) {
+			count = (source_type[0] >> 16) - 2;
+			if (count != (destination_type[0] >> 16) - 2 || count > 0xFFFF - 3) {
+				return 0;
+			}
+		} else if ((source_type[0] & 0xFFFF) == OP_TYPE_ARRAY) {
+			uint32_t destination_count = 0;
+			if (!array_length(source_type[3], count) || !array_length(destination_type[3], destination_count) || count != destination_count) {
+				return 0;
+			}
+		} else {
+			// Only structs/arrays can have distinct but logically matching type
+			// IDs. Identical vectors, matrices and scalar leaves were handled above.
+			return 0;
+		}
+
+		// At least one five-word extract per member and the final constructor.
+		// Check this minimum cost before recursing; nested copies check the same limit.
+		if (emitted.size() + size_t(count) * 6 + 3 > MAX_EMITTED_WORDS) {
+			return 0;
+		}
+		std::vector<uint32_t> components;
+		components.reserve(count);
+		for (uint32_t i = 0; i < count; i++) {
+			uint32_t member_source_type = source_type[is_struct ? i + 2 : 2];
+			uint32_t member_destination_type = destination_type[is_struct ? i + 2 : 2];
+			uint32_t extracted = allocate_id();
+			if (!extracted || emitted.size() + 5 > MAX_EMITTED_WORDS) {
+				return 0;
+			}
+			emitted.insert(emitted.end(), { (5u << 16) | OP_COMPOSITE_EXTRACT, member_source_type, extracted, p_source, i });
+			uint32_t component = copy(extracted, member_source_type, member_destination_type, p_depth - 1);
+			if (!component) {
+				return 0;
+			}
+			components.push_back(component);
+		}
+		uint32_t result = p_result ? p_result : allocate_id();
+		if (!result || emitted.size() + count + 3 > MAX_EMITTED_WORDS) {
+			return 0;
+		}
+		emitted.insert(emitted.end(), { ((count + 3) << 16) | OP_COMPOSITE_CONSTRUCT, p_destination_type, result });
+		emitted.insert(emitted.end(), components.begin(), components.end());
+		return result;
+	}
+};
+
 Vector<uint8_t> rewrite_copy_logical(const Vector<uint8_t> &p_bytes) {
 	const int64_t len = p_bytes.size();
-	const uint32_t total_words = (uint32_t)(len / 4);
-
-	if (total_words < 5) {
+	if (len < 20 || (len % 4) != 0 || uint64_t(len / 4) > UINT32_MAX) {
+		return p_bytes;
+	}
+	const uint32_t total_words = uint32_t(len / 4);
+	const uint8_t *data = p_bytes.ptr();
+	if (read_word(data, len, 0) != 0x07230203) {
 		return p_bytes;
 	}
 
-	const uint8_t *data = p_bytes.ptr();
-
-	// Quick scan: if no CopyLogical present, return as-is.
+	// Avoid building any maps for the usual module with no logical copies. Scan
+	// the entire stream first so a malformed suffix cannot be silently dropped.
 	bool found = false;
-	uint32_t pos = 5;
-	while (pos < total_words) {
-		uint32_t w0 = read_word(data, len, pos);
-		uint32_t wc = (w0 >> 16);
-		uint16_t op = (uint16_t)(w0 & 0xFFFF);
-		if (wc == 0 || pos + wc > total_words) {
-			break;
+	for (uint32_t pos = 5; pos < total_words;) {
+		uint32_t instruction = read_word(data, len, pos);
+		uint32_t count = instruction >> 16;
+		if (!count || count > total_words - pos) {
+			return p_bytes;
 		}
-		if (op == OP_COPY_LOGICAL) {
-			found = true;
-			break;
-		}
-		pos += wc;
+		found |= (instruction & 0xFFFF) == OP_COPY_LOGICAL;
+		pos += count;
 	}
-
 	if (!found) {
 		return p_bytes;
 	}
 
-	// Rewrite: replace OpCopyLogical with OpCopyObject (same word count and layout).
-	Vector<uint8_t> out = p_bytes;
-	uint8_t *out_data = out.ptrw();
-
-	pos = 5;
-	while (pos < total_words) {
-		uint32_t w0 = read_word(out_data, len, pos);
-		uint32_t wc = (w0 >> 16);
-		uint16_t op = (uint16_t)(w0 & 0xFFFF);
-		if (wc == 0 || pos + wc > total_words) {
-			break;
-		}
-		if (op == OP_COPY_LOGICAL) {
-			// Replace opcode in-place: keep word count, change opcode to CopyObject.
-			uint32_t new_w0 = (wc << 16) | (uint32_t)OP_COPY_OBJECT;
-			uint32_t off = pos * 4;
-			memcpy(out_data + off, &new_w0, 4);
-		}
-		pos += wc;
+	Vector<uint32_t> words;
+	words.resize(total_words);
+	memcpy(words.ptrw(), data, size_t(len));
+	LogicalCopyState state;
+	state.words = words.ptr();
+	state.bound = state.next_id = state.words[3];
+	if (state.bound == 0 || state.bound > kDefaultMaxIdBound) {
+		return p_bytes;
 	}
 
+	// Grammar-derived result types cover every producer (including constants,
+	// function calls/parameters, phi/select and previous logical copies), without
+	// mistaking an instruction's literal operands for result/type IDs.
+	auto collect = [](void *p_user, const spv_parsed_instruction_t *p_instruction) -> spv_result_t {
+		LogicalCopyState &st = *static_cast<LogicalCopyState *>(p_user);
+		if (p_instruction->result_id) {
+			if (p_instruction->result_id >= st.bound || st.definitions.has(p_instruction->result_id)) {
+				return SPV_ERROR_INVALID_ID;
+			}
+			st.definitions[p_instruction->result_id] = uint32_t(p_instruction->words - st.words);
+			if (p_instruction->type_id) {
+				st.value_types[p_instruction->result_id] = p_instruction->type_id;
+			}
+		}
+		return SPV_SUCCESS;
+	};
+	spv_context context = spvContextCreate(SPV_ENV_UNIVERSAL_1_6);
+	spv_diagnostic diagnostic = nullptr;
+	spv_result_t parsed = spvBinaryParse(context, &state, words.ptr(), size_t(total_words), nullptr, collect, &diagnostic);
+	spvDiagnosticDestroy(diagnostic);
+	spvContextDestroy(context);
+	if (parsed != SPV_SUCCESS) {
+		return p_bytes;
+	}
+
+	std::vector<uint32_t> output(state.words, state.words + 5);
+	for (uint32_t pos = 5; pos < total_words;) {
+		const uint32_t *instruction = state.words + pos;
+		uint32_t count = instruction[0] >> 16;
+		if ((instruction[0] & 0xFFFF) == OP_COPY_LOGICAL) {
+			const uint32_t *source_type = state.value_types.getptr(instruction[3]);
+			size_t start = state.emitted.size();
+			if (!source_type || !state.copy(instruction[3], *source_type, instruction[1], LogicalCopyState::MAX_DEPTH, instruction[2])) {
+				// Leave the entire original module for the explicit unsupported-
+				// construct diagnostic. An opcode-swap fallback is invalid SPIR-V.
+				return p_bytes;
+			}
+			output.insert(output.end(), state.emitted.begin() + start, state.emitted.end());
+		} else {
+			output.insert(output.end(), instruction, instruction + count);
+		}
+		pos += count;
+	}
+	output[3] = state.next_id;
+	Vector<uint8_t> out;
+	out.resize(int64_t(output.size()) * 4);
+	memcpy(out.ptrw(), output.data(), output.size() * 4);
 	return out;
 }
 
@@ -2376,6 +2540,7 @@ void binding_image_info(const Vector<uint8_t> &p_bytes, HashMap<uint32_t, ImageB
 					info.depth = read_word(data, len, pos + 4);
 					info.arrayed = read_word(data, len, pos + 5);
 					info.multisampled = read_word(data, len, pos + 6);
+					info.format = read_word(data, len, pos + 8);
 					image_types.insert(read_word(data, len, pos + 1), info);
 				}
 			} break;
@@ -2661,6 +2826,8 @@ std::string find_untranslatable_construct(const Vector<uint8_t> &p_bytes) {
 					return unsupported.reason;
 				}
 			}
+		} else if (op == OP_COPY_LOGICAL) {
+			return "an OpCopyLogical aggregate that could not be lowered safely";
 		} else if (op >= OP_IS_NAN && op <= OP_SIGN_BIT_SET) {
 			// OpIsNan .. OpSignBitSet. WGSL dropped all of these, and the reader
 			// has no lowering for them; `x != x` and a magnitude test against

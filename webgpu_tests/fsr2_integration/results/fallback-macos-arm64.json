@@ -1,0 +1,25 @@
+{
+  "mode": "fallback",
+  "passed": true,
+  "checks": 8,
+  "returncode": 0,
+  "failed_checks": 0,
+  "timed_out": false,
+  "seconds": 6.283441375009716,
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "engine_sha256": "46dc9ae5ce79ead485786b146e960ed19ea5e6c240475836f3a8be773aa90b62",
+  "command": [
+    "/private/tmp/aw3-webgpu-parallel-ports-fourth",
+    "--path",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/fsr2_integration",
+    "--rendering-method",
+    "forward_plus",
+    "--rendering-driver",
+    "webgpu",
+    "--disable-vsync",
+    "--",
+    "--fsr2-output=/private/tmp/aw3-fsr2-final-offscreen/fallback",
+    "--webgpu-force-fallbacks"
+  ],
+  "errors": []
+}

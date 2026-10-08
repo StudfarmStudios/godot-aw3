@@ -4784,11 +4784,21 @@ RID TextureStorage::render_target_get_rd_texture(RID p_render_target) {
 RID TextureStorage::render_target_get_rd_texture_slice(RID p_render_target, uint32_t p_layer) {
 	RenderTarget *rt = render_target_owner.get_or_null(p_render_target);
 	ERR_FAIL_NULL_V(rt, RID());
+	ERR_FAIL_UNSIGNED_INDEX_V(p_layer, rt->view_count, RID());
 
-	if (rt->view_count == 1) {
+	if (rt->overridden.color.is_valid()) {
+		if (rt->view_count == 1) {
+			return rt->overridden.color;
+		}
+
+		RenderTarget::RTOverridden::SliceKey key(rt->overridden.color, p_layer);
+		if (!rt->overridden.cached_slices.has(key)) {
+			rt->overridden.cached_slices[key] = RD::get_singleton()->texture_create_shared_from_slice(RD::TextureView(), rt->overridden.color, p_layer, 0);
+		}
+		return rt->overridden.cached_slices[key];
+	} else if (rt->view_count == 1) {
 		return rt->color;
 	} else {
-		ERR_FAIL_UNSIGNED_INDEX_V(p_layer, rt->view_count, RID());
 		if (rt->color_slices.is_empty()) {
 			for (uint32_t v = 0; v < rt->view_count; v++) {
 				RID slice = RD::get_singleton()->texture_create_shared_from_slice(RD::TextureView(), rt->color, v, 0);

@@ -1,0 +1,25 @@
+{
+  "passed": true,
+  "checks": 35,
+  "returncode": 0,
+  "timed_out": false,
+  "seconds": 21.55253400001675,
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "engine_sha256": "9f42747715d04c53775e222ec469b32ac5a407b21c0f70ffbab143c96da228bb",
+  "command": [
+    "/private/tmp/aw3-webgpu-parallel-ports-second",
+    "--path",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/font_atlas",
+    "--rendering-method",
+    "forward_plus",
+    "--rendering-driver",
+    "webgpu",
+    "--render-thread",
+    "separate",
+    "--",
+    "--font=/private/tmp/aw3-webgpu-fork-ports/thirdparty/fonts/Inter_Regular.woff2",
+    "--server=all"
+  ],
+  "errors": [],
+  "benchmarks": []
+}

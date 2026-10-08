@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "results": [
+    {
+      "mutation": "last-writer",
+      "passed": true,
+      "rejected_checks": 24,
+      "engine_sha256": "d1aee005456ccbeec67c0036247b5f898413382b4d675b7d7bfa86d66a958ab1",
+      "mutated_callback_sha256": "a496ac72cde80d621be16e284a0bef360f58bb00886cd8464dcedb1eadc4d3cb"
+    },
+    {
+      "mutation": "no-bounds",
+      "passed": true,
+      "rejected_checks": 118,
+      "engine_sha256": "d1aee005456ccbeec67c0036247b5f898413382b4d675b7d7bfa86d66a958ab1",
+      "mutated_callback_sha256": "51f8c5c0e32c8b7037a24052f3da236988590ed9453c6eedff2b6c57d44c3bcc"
+    }
+  ]
+}

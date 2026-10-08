@@ -215,3 +215,98 @@ python3 webgpu_tests/driver_integration/run_headless_exports.py \
 
 The timestamp fixture requires native TimestampQuery support. Reject engine errors
 in the log as well as a nonzero exit code or a failed `TIMESTAMP_TEST` record.
+
+## Logical copies, fonts and upscalers
+
+The completed parallel batch links a native editor and compiles the threaded web
+objects for the driver/preprocessor, FSR1, FSR2, texture storage and both text
+servers. Final frozen native binary SHA-256:
+`46dc9ae5ce79ead485786b146e960ed19ea5e6c240475836f3a8be773aa90b62`.
+Native tests use Dawn/Metal on Apple M1 Ultra/macOS 26.5.2. Full web-template and
+Firefox/Windows/D3D12 runs are still missing; successful object compilation is not
+browser validation. Build-time precompilation still reports 10 GLSL and 4 Tint
+failures, tracked under the remaining shader/export bundle.
+
+- **58/58 driver checks per mode**, zero errors and clean exit:
+  [normal](results/storage-access-native-macos-arm64.json),
+  [fallback](results/storage-access-fallback-macos-arm64.json).
+  Four additions exercise RG32F/RG16F/RGBA32F/RGBA16F read/write storage across
+  multiple dispatches, and an unused RGBA16F declaration eliminated by Tint.
+  The driver now checks read/write support per physical format and recovers the
+  storage format from SPIR-V when WGSL no longer contains the declaration.
+  Legacy cache metadata is still accepted with a lazy source scan when needed;
+  the cache format has not been changed by this fix.
+- **FSR1: 30/30 per mode**, zero errors and clean exit:
+  [normal](../../webgpu_tests/fsr1_integration/results/native-macos-arm64.json),
+  [fallback](../../webgpu_tests/fsr1_integration/results/fallback-macos-arm64.json).
+  Actual Forward+ SDR/HDR viewports, color changes and odd extents exercise
+  RGBA16F intermediates plus the raster conversion path. A one-view XR override
+  supplies a compatible RGBA16F storage target (no RCAS intermediate allocated)
+  and an RGBA8 storage target (conversion required). Texture slice routing now
+  honors the actual override. The old disabled shader variant produced an error
+  and left a compute list open; the new path validates resources before opening it.
+- **FSR2 smoke: 8/8 per mode**, zero errors and clean exit:
+  [normal](../../webgpu_tests/fsr2_integration/results/native-macos-arm64.json),
+  [fallback](../../webgpu_tests/fsr2_integration/results/fallback-macos-arm64.json).
+  Four Forward+ SDR/HDR color/resize phases use internal dimensions above 64,
+  exercising multiple SPD groups. FSR2 now uses real SSBO depth atomics and a
+  separate final luminance dispatch, with numeric SNORM16-table conversion only
+  when the backend cannot sample that format. This is not temporal-quality parity;
+  motion, disocclusion, exposure and native-reference comparisons remain in progress.
+- **FSR2 atomic callbacks: 144/144 per mode**:
+  [normal](../../webgpu_tests/fsr2_atomic_depth/results/native-macos-arm64.json),
+  [fallback](../../webgpu_tests/fsr2_atomic_depth/results/fallback-macos-arm64.json).
+  These use the unchanged production callback header from the first frozen binary
+  (`d1aee005456ccbeec67c0036247b5f898413382b4d675b7d7bfa86d66a958ab1`).
+  They cover 4,096 contending writes, both depth directions, six alternating resets,
+  differing maximum/render sizes and invalid coordinates that would alias valid
+  flattened indices. [Negative controls](../../webgpu_tests/fsr2_atomic_depth/results/mutation-controls-macos-arm64.json)
+  fail 24 checks when atomics become ordinary stores and 118 when bounds guards
+  are removed. These are numerical failures, not compiler errors or timeouts.
+- **Logical-copy lowering: 34 production-pass checks** under ASan/UBSan:
+  [results](../../webgpu_tests/spirv_preprocess/results/logical-copy-macos-arm64.json).
+  Seventeen valid aggregate cases fail the old opcode substitution; sixteen
+  rejection guards and identical-type canonicalization pass. SPIRV-Tools validates
+  preserved types/result IDs. Fourteen cases also pass Tint after explicitly
+  test-only 1.3 interface normalization. Production version downgrades remain
+  deferred to the reviewed Tint bundle because newer aggregate instructions have
+  different semantics. Expansion is bounded and failure preserves the original
+  module for an explicit unsupported-construct diagnostic.
+- **Font atlases: 35/35 checks**, covering both Advanced and Fallback text servers:
+  [results](../../webgpu_tests/font_atlas/results/native-macos-arm64.json).
+  Tested on the second frozen binary
+  (`9f42747715d04c53775e222ec469b32ac5a407b21c0f70ffbab143c96da228bb`);
+  the font sources are unchanged in the final binary. Checks cover the first
+  visible frame, concurrent producers, mipmaps, freeing a pending cache, replacing
+  its extent and LA8/RGBA tint behavior. Immutable snapshots are keyed by texture
+  object and drained outside the queue lock. Initial/restored-cache uploads also
+  duplicate their image, preserving render-thread ownership. Emoji/SVG/LCD/MSDF
+  and browser runs remain unverified.
+
+### Font performance
+
+[Three alternating pairs](../../webgpu_tests/font_atlas/results/benchmark-macos-arm64.json)
+measure the Advanced text server, using four warmup and twelve measured batches of
+94 glyphs with mipmaps and GPU mip readback. The baseline median was **39.136 ms**,
+the candidate median **17.832 ms**; the paired median ratio was **0.4575** (pair
+ratios 0.4317, 0.4575, 0.4678). This is a focused glyph-heavy native workload with
+exclusive measurement runs, not AW3 startup/frame or Firefox performance. Keeping
+LA8 CPU atlases preserves classification and avoids doubling their memory; the
+coalesced upload already removes repeated conversion of the whole growing atlas.
+
+### Rendering fixture readiness and limits
+
+FSR1 and FSR2 smoke fixtures explicitly draw offscreen frames, wait on the actual
+pipeline queue and require stable compilation counters before sampling. Occluded
+native windows can otherwise stall `frame_post_draw`. Expected image values never
+drive retries. Font mip validation copies a requested mip into a one-mip temporary
+because shared-slice native readback currently ignores base mip/layer; correcting
+that driver issue remains tracked. Actual shader specialization also needs the
+same storage-lowering transformations as ordinary shader creation; ordinary
+variant-binding checks do not establish that contract.
+
+Commands are in each fixture README. GPU test durations include startup/compilation
+and are not performance claims. FSR2 adds a tail dispatch for correct inter-group
+visibility, and FSR1 adds a copy only when the destination cannot receive its
+RGBA16F storage output directly. End-to-end quality/performance acceptance remains
+pending the feature and browser matrix.

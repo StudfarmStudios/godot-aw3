@@ -67,6 +67,7 @@ private:
 		int pad[2];
 	};
 
+	FSRShaderVariant shader_variant = FSR_SHADER_VARIANT_NORMAL;
 	FsrUpscaleShaderRD fsr_shader;
 	RID shader_version;
 	PipelineDeferredRD pipeline;

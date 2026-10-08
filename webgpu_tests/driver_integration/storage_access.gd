@@ -1,0 +1,52 @@
+extends RefCounted
+
+# Read/write eligibility depends on the physical format, not only the WGSL
+# language feature. The unused HDR image also checks pruned-declaration layouts.
+func run(host: Node) -> void:
+	var rd: RenderingDevice = host.rd
+	for entry: Array in [
+		["rg32f", RenderingDevice.DATA_FORMAT_R32G32_SFLOAT, 2, false],
+		["rg16f", RenderingDevice.DATA_FORMAT_R16G16_SFLOAT, 2, true],
+		["rgba32f", RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT, 4, false],
+		["rgba16f", RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT, 4, true],
+	]:
+		var texture: RID = host._own(rd.texture_create(host._format(entry[1], 5, 3), RDTextureView.new()))
+		var unused: RID = host._own(rd.texture_create(host._format(RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT, 5, 3), RDTextureView.new()))
+		for write_only: bool in [true, false, false]:
+			var source := RDShaderSource.new()
+			source.source_compute = """#version 450
+layout(local_size_x=1, local_size_y=1, local_size_z=1) in;
+layout(%s, set=0, binding=0) uniform %simage2D values;
+layout(rgba16f, set=0, binding=1) writeonly uniform image2D unused_hdr;
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    imageStore(values, p, %s);
+}
+""" % [entry[0], "writeonly " if write_only else "", "vec4(3.0)" if write_only else "imageLoad(values, p) + vec4(2.0)"]
+			var spirv := rd.shader_compile_spirv_from_source(source, false)
+			if not spirv.compile_error_compute.is_empty():
+				push_error(spirv.compile_error_compute)
+			var shader: RID = host._own(rd.shader_create_from_spirv(spirv))
+			var pipeline: RID = host._own(rd.compute_pipeline_create(shader))
+			var uniforms: Array[RDUniform] = []
+			for index in 2:
+				var uniform := RDUniform.new()
+				uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+				uniform.binding = index
+				uniform.add_id(texture if index == 0 else unused)
+				uniforms.append(uniform)
+			var set: RID = host._own(rd.uniform_set_create(uniforms, shader, 0))
+			var list := rd.compute_list_begin()
+			rd.compute_list_bind_compute_pipeline(list, pipeline)
+			rd.compute_list_bind_uniform_set(list, set, 0)
+			rd.compute_list_dispatch(list, 5, 3, 1)
+			rd.compute_list_end()
+		var expected := PackedByteArray()
+		var component_size := 2 if entry[3] else 4
+		expected.resize(15 * entry[2] * component_size)
+		for component in 15 * entry[2]:
+			if entry[3]:
+				expected.encode_half(component * component_size, 7.0)
+			else:
+				expected.encode_float(component * component_size, 7.0)
+		host._read("storage access " + entry[0], texture, 0, expected)

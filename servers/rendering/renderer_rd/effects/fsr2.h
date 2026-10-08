@@ -133,6 +133,8 @@ public:
 
 	struct Pipeline {
 		RID pipeline_rid;
+		RID tail_pipeline_rid;
+		RID tail_shader_rid;
 	};
 
 	struct Pass {

@@ -1,0 +1,34 @@
+# Font atlas upload regressions
+
+The two text servers now coalesce updates of an existing atlas until `RenderingServer.frame_pre_draw` when the active rendering driver is WebGPU. The first upload remains immediate so a new atlas has a valid RID. Each pending job owns its latest immutable `Image` snapshot and `ImageTexture`; it never holds a pointer into a font or size cache. A mutex protects the queue, and the flush releases that mutex before uploading. Producers take the font mutex before the queue mutex; flushing never acquires a font mutex. Mipmaps are generated once for the final snapshot rather than once per glyph.
+
+All initial and subsequent uploads use immutable snapshots, including `font_set_texture_image` when restoring a cache. Replacing an atlas creates a new `ImageTexture`, so a pending upload cannot overwrite the replacement or its dimensions. Pending references are released before rendering-server shutdown. Other active rendering drivers retain immediate uploads.
+
+CPU monochrome atlases deliberately remain LA8. Coalescing removes repeated full-atlas LA8-to-RGBA conversion before the frame, while retaining half the CPU atlas storage of direct RGBA rasterization. It also preserves the existing public font-cache format and its distinction between monochrome and self-colored glyphs. The other fork's internal per-glyph color flag is not represented in that cache API; importing its direct RGBA mask change without a cache-format design would lose color classification when restoring cached glyphs. This implementation does not add such a flag or change the baked cache format.
+
+Build with `module_text_server_fb_enabled=yes` as well as the native WebGPU/Dawn options to exercise both text servers. From the engine repository root:
+
+```sh
+python3 webgpu_tests/font_atlas/run_native.py bin/godot.macos.editor.arm64 \
+  --output /private/tmp/font-atlas-native
+```
+
+The runner uses the repository's Inter font, starts a separate rendering thread, rejects engine/validation/script errors and timeouts, and requires all 35 checks. These cover immediate first allocation, delayed subsequent updates, every GPU mip byte, concurrent producers, replacing and freeing pending caches, a new glyph visible in its first submitted frame, and monochrome/color glyph cache restoration and tint. Because a delivered `frame_post_draw` signal may refer to a previously submitted frame, first-frame assertions explicitly submit and synchronize the frame under test. GPU mip checks copy each level into a one-mip texture before reading, avoiding the earlier driver's incomplete/sliced synchronous readback behavior.
+
+`--server advanced` or `--server fallback` selects one server and requires 18 checks. `--baseline` checks the old immediate-update behavior. `--driver` can select another built RenderingDevice driver to check its immediate behavior; this has not been run against a non-WebGPU backend here.
+
+Run timing only with other GPU and compiler jobs stopped:
+
+```sh
+python3 webgpu_tests/font_atlas/benchmark_pair.py /path/to/baseline /path/to/candidate \
+  --trials 3 --output /private/tmp/font-atlas-benchmark
+```
+
+The benchmark alternates the two binaries, uses the Advanced server in both, and creates 16 fresh fonts per trial. Each font receives 94 individually requested glyphs with mipmaps enabled, followed by frame submission and readback of every GPU mip. Four warmup batches are discarded; 12 batch times are retained. This includes rasterization, upload, submission, and GPU readback overhead rather than measuring only `queue.writeTexture`.
+
+Recorded native Apple M1 Ultra / Dawn Metal results:
+
+- `results/native-macos-arm64.json`: 35/35 checks, no errors, exit 0; engine SHA-256 `9f42747715d04c53775e222ec469b32ac5a407b21c0f70ffbab143c96da228bb`.
+- `results/benchmark-macos-arm64.json`: median trial time 39.136 ms baseline versus 17.832 ms candidate; median paired candidate/baseline ratio 0.4575. All six trials exited successfully without errors. Each trial retains its command, binary hash, 12 measurements, and host metadata.
+
+These are native font-workload measurements, not browser, Firefox/Windows, or AW3 startup measurements. Actual emoji/SVG fonts, LCD antialiasing, MSDF, and browser builds still need their own visual coverage. Coalescing retains one source snapshot and texture reference per pending atlas until the next flush; snapshots are replaced as more glyphs arrive, and unused old textures may survive until that flush. CPU snapshot isolation remains necessary for separate rendering threads.

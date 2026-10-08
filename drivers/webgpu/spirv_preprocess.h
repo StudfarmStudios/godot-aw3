@@ -66,6 +66,7 @@ struct ImageBindingInfo {
 	uint32_t depth = 0;
 	uint32_t arrayed = 0;
 	uint32_t multisampled = 0;
+	uint32_t format = 0; // SPIR-V ImageFormat; recovered from source for legacy cache metadata.
 };
 
 void binding_image_info(const Vector<uint8_t> &p_bytes, HashMap<uint32_t, ImageBindingInfo> *r_info);
@@ -92,9 +93,10 @@ Vector<uint8_t> freeze_spec_constant_ops(const Vector<uint8_t> &p_bytes);
 // WebGPU backend).
 Vector<uint8_t> convert_push_constants_to_uniforms(const Vector<uint8_t> &p_bytes);
 
-// Rewrite OpCopyLogical (SPIR-V 1.4+) to OpCopyObject.
-// OpCopyLogical copies between logically equivalent struct types with
-// different decorations; OpCopyObject is the simpler equivalent.
+// Lower OpCopyLogical (SPIR-V 1.4+) by recursively extracting source struct/
+// array members and constructing the destination type. OpCopyObject is valid
+// only for identical types. Malformed or excessively large copies leave the
+// module unchanged; find_untranslatable_construct reports the remaining copy.
 Vector<uint8_t> rewrite_copy_logical(const Vector<uint8_t> &p_bytes);
 
 // Rewrite OpTerminateInvocation (SPV_KHR_terminate_invocation) to OpKill.
