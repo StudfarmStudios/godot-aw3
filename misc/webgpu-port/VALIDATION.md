@@ -25,7 +25,8 @@ Canvas SDF, SSR, depth of field, the 777-record packaged WGSL cache and persiste
 then exit zero with no errors during a one-second post-exit observation window.
 The separate [nonzero-exit probe](../../webgpu_tests/browser_fork_ports/results/nonthreaded-exit7-macos-arm64-3525.json)
 preserves exit code **7** in both browsers without late errors. Every threaded
-run also observes the expected application/render Worker configuration.
+run uses the known application-Worker template and observes eight Workers;
+this does not establish a distinct RenderingServer worker.
 
 The graceful exit bridge applies only to nonthreaded WebGPU. It preserves
 Emscripten's keepalive count until the cancelled loop and GPU callbacks drain.

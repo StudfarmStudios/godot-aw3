@@ -9,7 +9,7 @@ Performance is an acceptance criterion: keep existing performance or improve it,
 allowing measured small costs for meaningful fidelity improvements. Avoid
 unnecessary texture copies, pass restarts, eager work, and hot-loop overhead.
 
-Reference report: [AW3 comparison](https://github.com/StudfarmStudios/aw3/blob/6a8d774dd31e7fd74c94ec59d7cf47a23c94a5d3/docs/gameclient/webgpu-fork-comparison-2026-10-08.md).
+Reference report: [AW3 comparison](https://github.com/StudfarmStudios/aw3/blob/3efbae88867bda7db50ce321840cf61a31a64c3c/docs/gameclient/webgpu-fork-comparison-2026-10-08.md).
 Source fork: `470f89e78eece1c7a73285345e2ca39b8f8706ad`.
 Starting AW3 engine: `c0d51825faad2c1a773f4e21c34e74b60c53da21`.
 
@@ -71,7 +71,8 @@ tracked LFS files. The main engine checkout remains untouched.
 The earlier shader-baker failures below are resolved: the current strict bake
 converts **278/278 modules**, with zero GLSL/Tint failures. Earlier outstanding
 readback, specialization, cache, Canvas and glyph coverage is superseded by the
-status table and each fixture's saved results. Browser validation remains open.
+status table and each fixture's saved results. Windows/D3D12 and end-to-end
+browser performance validation remain open.
 
 See [VALIDATION.md](VALIDATION.md) for commands, measured performance and limits.
 Production CPU helpers pass ASan/UBSan; 25 actual GPU checks pass in each of the
