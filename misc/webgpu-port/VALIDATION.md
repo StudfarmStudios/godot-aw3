@@ -787,3 +787,26 @@ the corrected Linux Mono CI run.
 Actual temporary `--doctool` runs with both editors reproduce the current
 `draw_list_draw` XML exactly, including all parameter names, types, both zero
 defaults, and its description. No documentation metadata adjustment is needed.
+
+### godot-cpp archive command length
+
+Revision `e8ad329993` push Mono job `113556435422` reaches the complete godot-cpp
+4.5 build, then its archive command fails with `sh: Argument list too long`.
+The command contains **1,089 object paths** and expands to **131,192 bytes**
+after POSIX shell quoting, exceeding Linux's **131,072-byte** per-argument limit.
+The original test-root invocation makes the library's object paths absolute.
+
+The action now builds the complete library from its own root first, then builds
+the existing test extension with the same flags/API directory and supported
+`build_library=no`. A private dry-run of the exact godot-cpp revision
+`27d9dd23c83871e0619fca5dc2cddfbfd69e926a` against the accepted non-Mono editor API
+confirms identical sets of **1,088 objects**; the archive command shrinks from
+**136,518** to **76,623 bytes** at that private checkout path. The second phase
+still compiles all three test translation units and links the full archive.
+No binding or test coverage is removed, and no vendor source is changed.
+
+[Build evidence](../../webgpu_tests/browser_fork_ports/results/godot-cpp-archive-build.json)
+records an actual successful two-stage macOS universal build with at most eight
+jobs, using immutable editor `74727596`'s API. Scoped hooks pass. The corrected
+Linux CI build remains to be verified; this test does not relabel any browser
+evidence or modify shared engine/Tint build outputs.
