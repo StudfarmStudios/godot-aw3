@@ -22,14 +22,14 @@ Starting AW3 engine: `c0d51825faad2c1a773f4e21c34e74b60c53da21`.
 | 5–6 | GPU-written shadow refresh, variant adaptation, first-use ordering and mip/layer correctness | Implemented at dispatch, one restart for all active sets; no CPU shadow replay. Native 2D/array/3D/slice checks pass; browser runtime pending |
 | 9–10 | Effective MSAA count and format-converting resolve | Implemented; requested 2/4/8, native/promoted RG16F resolve and nonzero destination mip/layer pass in both native modes. Full renderer AA matrix/browser pending |
 | 11 | Block-aligned compressed texture copies; preserve array stride fix | Implemented; native compressed array/mip-tail GPU copy and readback checks pass; browser runtime pending |
-| 12 | Partial color/stencil clears; preserve depth-region clears and batched submissions | Pending |
+| 12 | Partial color/stencil clears; preserve depth-region clears and batched submissions | Implemented; mixed HDR/float/integer targets, sparse masks, depth/stencil probes, MSAA and ring exhaustion pass natively. Browser pending |
 | 14–16 | SDFGI formats, cascade bindings, typed defaults and correct atomic fallback | Pending |
 | 17 | FSR2 capability variants and atomic-buffer fallbacks without last-writer-wins depth reduction | Pending |
 | 18–19 | FSR1 destination fallback and Canvas SDF format fallback | Canvas SDF implemented and compiled. FSR1 pending |
 | 20–22, 24 | Logical-copy lowering, reviewed SPIR-V normalization/Tint fixes, structural vertex-access transform | Pending |
 | 27–31 | Export baking, target capabilities, coverage, subprocess conversion, combined cache metadata and cache preference | Pending |
 | 35–36 | Atlas upload coalescing and glyph classification, retaining immutable render-thread snapshots | Pending |
-| 37–38 | CPU gradient regeneration and scoped compressed-texture readback fallback | Gradient regeneration passes headless HDR/LDR/width-one tests; scoped readback pending |
+| 37–38 | CPU gradient regeneration and compressed-texture readback | Gradients implemented/tested. Finding 38 correction: disk-backed `CompressedTexture2D::get_image()` is already identical in our base; no additional port needed |
 | 45–49 | Feature fixtures, actual-driver regressions, browser/backend metadata, CI integration | Production C++ format tests and initial RenderingDevice GPU fixture added. Full matrix/CI pending |
 | 58 | Headless export teardown fix, adapted to 4.7 if applicable | Pending |
 
@@ -87,3 +87,12 @@ Additional issues found by the new fixture were fixed in this batch:
 
 No Firefox/Windows/D3D12 runtime result or end-to-end performance comparison is
 available yet. The remaining rows above still represent required work.
+
+### Additional validation findings
+
+Native GPU timestamp capture currently calls Dawn's restricted standalone
+`WriteTimestamp`, which rejects commands unless unsafe APIs are enabled. Found
+while preparing the clear benchmark; use standard pass timestamp writes and test
+this before claiming native GPU profiler support. Browser timestamp readback stays
+disabled under the existing compatibility constraint. The accepted clear timings
+use a local device with `submit()`/`sync()`, not invalid timestamp results.

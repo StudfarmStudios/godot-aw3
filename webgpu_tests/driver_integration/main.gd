@@ -152,6 +152,7 @@ func _run() -> void:
 		return
 	print("DRIVER_TEST engine=%s adapter=%s vendor=%s args=%s" % [Engine.get_version_info().hash,
 		rd.get_device_name(), rd.get_device_vendor_name(), OS.get_cmdline_user_args()])
+	preload("partial_clears.gd").new().run(self)
 	for samples in [RenderingDevice.TEXTURE_SAMPLES_2, RenderingDevice.TEXTURE_SAMPLES_4, RenderingDevice.TEXTURE_SAMPLES_8]:
 		for storage in [false, true]:
 			_test_resolve(samples, storage)

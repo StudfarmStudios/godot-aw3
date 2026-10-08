@@ -31,6 +31,9 @@ Current cases:
 - Compressed BC3 array copies/readback through 2×2 and 1×1 mip tails.
 - Requested 2×/4×/8× MSAA counts and native/promoted RG16F resolves.
 - MSAA resolve into mip 1/layer 1, preserving other mips and layers.
+- Partial clears of mixed integer/float/HDR targets and sparse attachment masks.
+- Neighboring atlas regions, depth-only clears, depth/stencil probes, and MSAA.
+- Shared upload-ring wraparound with more than 2048 partial clears.
 
 `test_gradients.gd` separately verifies procedural gradient readback with the
 headless renderer, including width one, HDR, LDR and immediate parameter changes.
@@ -38,3 +41,7 @@ headless renderer, including width one, HDR, LDR and immediate parameter changes
 CPU helper tests and the conversion microbenchmark live in
 `misc/webgpu-port/`. Browser export/runner integration and additional renderer
 fixtures are tracked in `misc/webgpu-port/STATUS.md`.
+
+`benchmark_clears.gd` and `run_clear_benchmark.py` measure submission plus GPU
+completion on a local device, with alternating baseline/candidate runs. See
+`misc/webgpu-port/VALIDATION.md` for measured results and limitations.

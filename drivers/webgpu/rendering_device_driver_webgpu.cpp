@@ -1313,6 +1313,9 @@ RenderingDeviceDriverWebGPU::RenderingDeviceDriverWebGPU(RenderingContextDriverW
 }
 
 RenderingDeviceDriverWebGPU::~RenderingDeviceDriverWebGPU() {
+	for (const KeyValue<String, WGPURenderPipeline> &entry : region_clear_pipelines) {
+		wgpuRenderPipelineRelease(entry.value);
+	}
 	for (const KeyValue<WGPUTextureFormat, ResolveComputePipeline> &entry : resolve_compute_pipelines) {
 		wgpuComputePipelineRelease(entry.value.pipeline);
 		wgpuBindGroupLayoutRelease(entry.value.bind_group_layout);
@@ -8061,23 +8064,8 @@ void RenderingDeviceDriverWebGPU::command_bind_push_constants(CommandBufferID p_
 	cmd->push_constants_dirty = true;
 }
 
-void RenderingDeviceDriverWebGPU::_flush_push_constants(WGCommandBuffer *p_cmd_buf, WGShader *p_shader) {
-	if (!p_cmd_buf->push_constants_dirty || p_cmd_buf->push_constant_data_len == 0 || !p_shader) {
-		perf.push_constant_skipped++;
-		return;
-	}
-	if (p_shader->push_constant_bind_group == UINT32_MAX || !push_constant_bind_group) {
-		p_cmd_buf->push_constants_dirty = false;
-		perf.push_constant_skipped++;
-		return; // Shader has no push constants.
-	}
-
-	perf.push_constant_writes++;
-
-	// Write push constant data to CPU shadow buffer (batched GPU write at submit time).
-	uint32_t aligned_size = (p_cmd_buf->push_constant_data_len + PUSH_CONSTANT_SLOT_ALIGNMENT - 1) & ~(PUSH_CONSTANT_SLOT_ALIGNMENT - 1);
-
-	if (push_constant_ring_offset + aligned_size > PUSH_CONSTANT_RING_SIZE) {
+void RenderingDeviceDriverWebGPU::_ensure_push_constant_space(WGCommandBuffer *p_cmd_buf, uint32_t p_aligned_size) {
+	if (push_constant_ring_offset + p_aligned_size > PUSH_CONSTANT_RING_SIZE) {
 		// Ring overflow: flush + submit to freeze all prior dispatches/draws' data, then reset.
 		// This guarantees earlier work in the submitted command buffer sees correct push
 		// constant values (wgpuQueueWriteBuffer is ordered-before submit).
@@ -8294,6 +8282,27 @@ void RenderingDeviceDriverWebGPU::_flush_push_constants(WGCommandBuffer *p_cmd_b
 			}
 		}
 	}
+}
+
+void RenderingDeviceDriverWebGPU::_flush_push_constants(WGCommandBuffer *p_cmd_buf, WGShader *p_shader) {
+	if (!p_cmd_buf->push_constants_dirty || p_cmd_buf->push_constant_data_len == 0 || !p_shader) {
+		perf.push_constant_skipped++;
+		return;
+	}
+	if (p_shader->push_constant_bind_group == UINT32_MAX || !push_constant_bind_group) {
+		p_cmd_buf->push_constants_dirty = false;
+		perf.push_constant_skipped++;
+		return; // Shader has no push constants.
+	}
+
+	perf.push_constant_writes++;
+
+	// Write push constant data to CPU shadow buffer (batched GPU write at submit time).
+	uint32_t aligned_size = (p_cmd_buf->push_constant_data_len + PUSH_CONSTANT_SLOT_ALIGNMENT - 1) & ~(PUSH_CONSTANT_SLOT_ALIGNMENT - 1);
+
+	if (push_constant_ring_offset + aligned_size > PUSH_CONSTANT_RING_SIZE) {
+		_ensure_push_constant_space(p_cmd_buf, aligned_size);
+	}
 
 	memcpy(push_constant_shadow + push_constant_ring_offset, p_cmd_buf->push_constant_data, p_cmd_buf->push_constant_data_len);
 
@@ -8486,6 +8495,99 @@ WGPURenderPipeline RenderingDeviceDriverWebGPU::_get_depth_rect_clear_pipeline(W
 	return pipeline;
 }
 
+WGPURenderPipeline RenderingDeviceDriverWebGPU::_get_region_clear_pipeline(const LocalVector<WGPUTextureFormat> &p_color_formats, uint32_t p_color_mask, WGPUTextureFormat p_depth_format, bool p_clear_depth, bool p_clear_stencil, uint32_t p_samples) {
+	String key = vformat("%d|%d|%d|%d|%d", p_color_mask, int(p_depth_format), int(p_clear_depth), int(p_clear_stencil), p_samples);
+	for (WGPUTextureFormat format : p_color_formats) {
+		key += "|" + itos(int(format));
+	}
+	if (const WGPURenderPipeline *cached = region_clear_pipelines.getptr(key)) {
+		return *cached;
+	}
+
+	String source =
+			"@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {\n"
+			"  let p = vec2f(f32((i << 1u) & 2u), f32(i & 2u));\n"
+			"  return vec4f(p * 2.0 - 1.0, 0.0, 1.0);\n"
+			"}\n";
+	if (p_color_mask) {
+		// Use the existing upload ring: one draw clears all selected attachments,
+		// including integer/unblendable formats and HDR values. No blend constant
+		// restrictions, per-clear buffer allocation or extra queue submission.
+		source += vformat("@group(0) @binding(%d) var<storage, read> colors: array<vec4f, 8>;\n", PUSH_CONSTANT_RING_BINDING);
+		source += "struct Output {\n";
+		String body;
+		for (uint32_t i = 0; i < p_color_formats.size(); i++) {
+			if (!(p_color_mask & (1u << i))) {
+				continue;
+			}
+			WGPUTextureSampleType sample_type = _texture_sample_type_for_format(p_color_formats[i]);
+			const char *type = sample_type == WGPUTextureSampleType_Uint ? "vec4u" : (sample_type == WGPUTextureSampleType_Sint ? "vec4i" : "vec4f");
+			source += vformat("  @location(%d) color%d: %s,\n", i, i, type);
+			body += vformat("  result.color%d = %s(colors[%d]);\n", i, type, i);
+		}
+		source += "};\n@fragment fn fs() -> Output {\n  var result: Output;\n" + body + "  return result;\n}\n";
+	} else {
+		source += "@fragment fn fs() {}\n";
+	}
+	CharString utf8 = source.utf8();
+	WGPUShaderSourceWGSL wgsl = {};
+	wgsl.chain.sType = WGPUSType_ShaderSourceWGSL;
+	wgsl.code = { utf8.get_data(), WGPU_STRLEN };
+	WGPUShaderModuleDescriptor module_desc = {};
+	module_desc.nextInChain = &wgsl.chain;
+	WGPUShaderModule module = wgpuDeviceCreateShaderModule(device, &module_desc);
+	ERR_FAIL_NULL_V(module, nullptr);
+
+	LocalVector<WGPUColorTargetState> targets;
+	for (uint32_t i = 0; i < p_color_formats.size(); i++) {
+		WGPUColorTargetState target = {};
+		target.format = p_color_formats[i];
+		target.writeMask = (p_color_mask & (1u << i)) ? WGPUColorWriteMask_All : WGPUColorWriteMask_None;
+		targets.push_back(target);
+	}
+	WGPUFragmentState fragment = {};
+	fragment.module = module;
+	fragment.entryPoint = { "fs", WGPU_STRLEN };
+	fragment.targetCount = targets.size();
+	fragment.targets = targets.ptr();
+
+	WGPUDepthStencilState ds = {};
+	if (p_depth_format != WGPUTextureFormat_Undefined) {
+		ds.format = p_depth_format;
+		ds.depthWriteEnabled = p_clear_depth ? WGPUOptionalBool_True : WGPUOptionalBool_False;
+		ds.depthCompare = WGPUCompareFunction_Always;
+		ds.stencilFront = { WGPUCompareFunction_Always, WGPUStencilOperation_Keep, WGPUStencilOperation_Keep,
+			p_clear_stencil ? WGPUStencilOperation_Replace : WGPUStencilOperation_Keep };
+		ds.stencilBack = ds.stencilFront;
+		ds.stencilReadMask = 0xff;
+		ds.stencilWriteMask = p_clear_stencil ? 0xff : 0;
+	}
+	WGPUPipelineLayoutDescriptor layout_desc = {};
+	layout_desc.bindGroupLayoutCount = p_color_mask ? 1 : 0;
+	layout_desc.bindGroupLayouts = p_color_mask ? &push_constant_bind_group_layout : nullptr;
+	WGPUPipelineLayout layout = wgpuDeviceCreatePipelineLayout(device, &layout_desc);
+	if (!layout) {
+		wgpuShaderModuleRelease(module);
+		ERR_FAIL_V(nullptr);
+	}
+	WGPURenderPipelineDescriptor desc = {};
+	desc.label = { "partial attachment clear", WGPU_STRLEN };
+	desc.layout = layout;
+	desc.vertex.module = module;
+	desc.vertex.entryPoint = { "vs", WGPU_STRLEN };
+	desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+	desc.depthStencil = p_depth_format != WGPUTextureFormat_Undefined ? &ds : nullptr;
+	desc.multisample.count = p_samples;
+	desc.multisample.mask = 0xffffffff;
+	desc.fragment = &fragment;
+	WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(device, &desc);
+	wgpuPipelineLayoutRelease(layout);
+	wgpuShaderModuleRelease(module);
+	ERR_FAIL_NULL_V(pipeline, nullptr);
+	region_clear_pipelines.insert(key, pipeline);
+	return pipeline;
+}
+
 void RenderingDeviceDriverWebGPU::command_begin_render_pass(CommandBufferID p_cmd_buffer, RenderPassID p_render_pass, FramebufferID p_framebuffer, CommandBufferType p_cmd_buffer_type, const Rect2i &p_rect, VectorView<RenderPassClearValue> p_clear_values) {
 	WGCommandBuffer *cmd = (WGCommandBuffer *)(p_cmd_buffer.id);
 	WGRenderPass *rp = (WGRenderPass *)(p_render_pass.id);
@@ -8618,8 +8720,6 @@ void RenderingDeviceDriverWebGPU::command_begin_render_pass(CommandBufferID p_cm
 	// --- Build depth/stencil attachment ---
 	WGPURenderPassDepthStencilAttachment ds_att = {};
 	WGPURenderPassDepthStencilAttachment *ds_att_ptr = nullptr;
-	WGPURenderPipeline depth_rect_clear_pipeline = nullptr;
-	float depth_rect_clear_value = 0.0f;
 
 	const RDD::AttachmentReference &ds_ref = subpass.depth_stencil_reference;
 	if (ds_ref.attachment != RDD::AttachmentReference::UNUSED &&
@@ -8645,14 +8745,7 @@ void RenderingDeviceDriverWebGPU::command_begin_render_pass(CommandBufferID p_cm
 				} else {
 					ds_att.depthClearValue = 1.0f;
 				}
-				if (ds_att.depthLoadOp == WGPULoadOp_Clear && color_attachments.is_empty() &&
-						p_rect != Rect2i(0, 0, fb->width, fb->height)) {
-					depth_rect_clear_pipeline = _get_depth_rect_clear_pipeline(wgpu_fmt, fb->attachments[ds_ref.attachment]->sample_count);
-					depth_rect_clear_value = ds_att.depthClearValue;
-					ds_att.depthLoadOp = WGPULoadOp_Load;
-					// A partial pass must preserve the rest of the atlas as well.
-					ds_att.depthStoreOp = WGPUStoreOp_Store;
-				}
+
 			} else {
 				ds_att.depthLoadOp = WGPULoadOp_Undefined;
 				ds_att.depthStoreOp = WGPUStoreOp_Undefined;
@@ -8684,6 +8777,78 @@ void RenderingDeviceDriverWebGPU::command_begin_render_pass(CommandBufferID p_cm
 			ds_att.stencilStoreOp = WGPUStoreOp_Store;
 		}
 		ds_att_ptr = &ds_att;
+	}
+
+	// Vulkan limits attachment clears/discards to the render area; WebGPU load
+	// and store ops affect the whole texture. Preserve neighbors and clear the
+	// requested rectangle with one draw in this pass. The depth-atlas fast path
+	// retains its uniform-free draw.
+	WGPURenderPipeline region_clear_pipeline = nullptr;
+	uint32_t region_color_mask = 0;
+	uint32_t region_color_offset = 0;
+	float region_depth = 0.0f;
+	uint32_t region_stencil = 0;
+	Rect2i region = p_rect.intersection(Rect2i(0, 0, fb->width, fb->height));
+	if (!rp->is_swap_chain_pass && region.has_area() && region != Rect2i(0, 0, fb->width, fb->height)) {
+		ERR_FAIL_COND(color_attachments.size() > 8);
+		LocalVector<WGPUTextureFormat> formats;
+		float colors[8][4] = {};
+		uint32_t samples = 1;
+		for (uint32_t i = 0; i < color_attachments.size(); i++) {
+			WGPURenderPassColorAttachment &att = color_attachments[i];
+			WGPUTextureFormat format = WGPUTextureFormat_Undefined;
+			uint32_t index = subpass.color_references[i].attachment;
+			if (att.view && index < fb->attachments.size() && fb->attachments[index]) {
+				format = fb->attachments[index]->format;
+				samples = fb->attachments[index]->sample_count;
+				att.storeOp = WGPUStoreOp_Store;
+				if (att.loadOp == WGPULoadOp_Clear) {
+					region_color_mask |= 1u << i;
+					colors[i][0] = att.clearValue.r;
+					colors[i][1] = att.clearValue.g;
+					colors[i][2] = att.clearValue.b;
+					colors[i][3] = att.clearValue.a;
+					att.loadOp = WGPULoadOp_Load;
+				}
+			}
+			formats.push_back(format);
+		}
+		bool clear_depth = false;
+		bool clear_stencil = false;
+		WGPUTextureFormat depth_format = WGPUTextureFormat_Undefined;
+		if (ds_att_ptr && ds_ref.attachment < fb->attachments.size() && fb->attachments[ds_ref.attachment]) {
+			depth_format = fb->attachments[ds_ref.attachment]->format;
+			samples = fb->attachments[ds_ref.attachment]->sample_count;
+			if (is_depth_format_wgpu(depth_format)) {
+				clear_depth = ds_att.depthLoadOp == WGPULoadOp_Clear;
+				region_depth = ds_att.depthClearValue;
+				ds_att.depthLoadOp = WGPULoadOp_Load;
+				ds_att.depthStoreOp = WGPUStoreOp_Store;
+			}
+			if (has_stencil_wgpu(depth_format)) {
+				clear_stencil = ds_att.stencilLoadOp == WGPULoadOp_Clear;
+				region_stencil = ds_att.stencilClearValue;
+				ds_att.stencilLoadOp = WGPULoadOp_Load;
+				ds_att.stencilStoreOp = WGPUStoreOp_Store;
+			}
+		}
+		if (clear_depth && !clear_stencil && formats.is_empty()) {
+			region_clear_pipeline = _get_depth_rect_clear_pipeline(depth_format, samples);
+		} else if (region_color_mask || clear_depth || clear_stencil) {
+			region_clear_pipeline = _get_region_clear_pipeline(formats, region_color_mask, depth_format, clear_depth, clear_stencil, samples);
+		}
+		if (region_color_mask) {
+			// Reserve before beginning the pass, so ring exhaustion never restarts
+			// a just-started clear pass. Ordinary writes stay batched at submit.
+			if (push_constant_ring_offset + PUSH_CONSTANT_SLOT_ALIGNMENT > PUSH_CONSTANT_RING_SIZE) {
+				_ensure_push_constant_space(cmd, PUSH_CONSTANT_SLOT_ALIGNMENT);
+			}
+			region_color_offset = push_constant_ring_offset;
+			memcpy(push_constant_shadow + region_color_offset, colors, sizeof(colors));
+			push_constant_shadow_dirty_start = MIN(push_constant_shadow_dirty_start, region_color_offset);
+			push_constant_ring_offset += PUSH_CONSTANT_SLOT_ALIGNMENT;
+			push_constant_shadow_dirty_end = MAX(push_constant_shadow_dirty_end, push_constant_ring_offset);
+		}
 	}
 
 	// --- Begin render pass ---
@@ -8748,11 +8913,16 @@ void RenderingDeviceDriverWebGPU::command_begin_render_pass(CommandBufferID p_cm
 	cmd->render_encoder = wgpuCommandEncoderBeginRenderPass(cmd->encoder, &pass_desc);
 	cmd->active_encoder = WGCommandBuffer::RENDER;
 
-	if (depth_rect_clear_pipeline) {
-		wgpuRenderPassEncoderSetPipeline(cmd->render_encoder, depth_rect_clear_pipeline);
-		wgpuRenderPassEncoderSetViewport(cmd->render_encoder, (float)p_rect.position.x, (float)p_rect.position.y,
-				(float)p_rect.size.x, (float)p_rect.size.y, depth_rect_clear_value, depth_rect_clear_value);
-		wgpuRenderPassEncoderSetScissorRect(cmd->render_encoder, p_rect.position.x, p_rect.position.y, p_rect.size.x, p_rect.size.y);
+	if (region_clear_pipeline) {
+		wgpuRenderPassEncoderSetPipeline(cmd->render_encoder, region_clear_pipeline);
+		wgpuRenderPassEncoderSetViewport(cmd->render_encoder, (float)region.position.x, (float)region.position.y,
+				(float)region.size.x, (float)region.size.y, region_depth, region_depth);
+		wgpuRenderPassEncoderSetScissorRect(cmd->render_encoder, region.position.x, region.position.y, region.size.x, region.size.y);
+		wgpuRenderPassEncoderSetStencilReference(cmd->render_encoder, region_stencil);
+		if (region_color_mask) {
+			wgpuRenderPassEncoderSetBindGroup(cmd->render_encoder, 0, push_constant_bind_group, 1, &region_color_offset);
+			perf.set_bind_group_calls++;
+		}
 		wgpuRenderPassEncoderDraw(cmd->render_encoder, 3, 1, 0, 0);
 		perf.draw_calls++;
 		perf.set_pipeline_calls++;

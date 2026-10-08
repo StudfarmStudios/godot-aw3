@@ -209,6 +209,9 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 	HashMap<uint64_t, WGPURenderPipeline> depth_rect_clear_pipelines;
 	WGPURenderPipeline _get_depth_rect_clear_pipeline(WGPUTextureFormat p_format, uint32_t p_samples);
 
+	HashMap<String, WGPURenderPipeline> region_clear_pipelines;
+	WGPURenderPipeline _get_region_clear_pipeline(const LocalVector<WGPUTextureFormat> &p_color_formats, uint32_t p_color_mask, WGPUTextureFormat p_depth_format, bool p_clear_depth, bool p_clear_stencil, uint32_t p_samples);
+
 	// Cached by storage format; equal-format resolves keep the native fast path.
 	struct ResolveComputePipeline {
 		WGPUBindGroupLayout bind_group_layout = nullptr;
@@ -254,6 +257,7 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 	WGPUTextureDimension _texture_type_to_dimension(TextureType p_type) const;
 	WGPUTextureViewDimension _texture_type_to_view_dimension(TextureType p_type) const;
 
+	void _ensure_push_constant_space(WGCommandBuffer *p_cmd_buf, uint32_t p_aligned_size);
 	void _flush_push_constants(WGCommandBuffer *p_cmd_buf, WGShader *p_shader);
 	bool _ensure_shader_layout(WGShader *p_shader);
 	bool _ensure_shader_modules(WGShader *p_shader);
