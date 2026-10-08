@@ -34,7 +34,6 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
-#include <limits>
 
 // Numerical conversions used when a WebGPU allocation has a different texel
 // representation from the RenderingDevice format. Kept independent of the GPU

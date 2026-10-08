@@ -449,7 +449,7 @@ public:
 		uint32_t mipmaps = 0;
 		RDD::DataFormat format = RDD::DATA_FORMAT_MAX;
 		uint32_t gpu_pixel_size = 0; // Non-zero when driver promotes format (e.g. R8→R32Float).
-		RDD::TextureID driver_texture_id = {}; // For readback conversion.
+		RDD::TextureID driver_texture_id; // For readback conversion.
 	};
 
 public:
@@ -1037,6 +1037,8 @@ private:
 	RID _vertex_buffer_create_bind_compat_101561(uint32_t p_size_bytes, const Vector<uint8_t> &p_data, bool p_use_as_storage);
 	RID _index_buffer_create_bind_compat_101561(uint32_t p_size_indices, IndexBufferFormat p_format, const Vector<uint8_t> &p_data, bool p_use_restart_indices);
 	RID _storage_buffer_create_bind_compat_101561(uint32_t p_size, const Vector<uint8_t> &p_data, BitField<StorageBufferUsage> p_usage);
+
+	void _draw_list_draw_bind_compat_4_6(DrawListID p_list, bool p_use_indices, uint32_t p_instances, uint32_t p_procedural_vertices);
 #endif
 
 public:

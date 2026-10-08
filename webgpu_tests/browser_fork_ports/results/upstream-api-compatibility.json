@@ -1,0 +1,299 @@
+{
+  "negative_control": {
+    "editor_sha256": "d32389ec7575ff0b0cef96589f087352366da194a851fc4428744fe1076be2af",
+    "references": [
+      {
+        "tag": "4.0-stable",
+        "exit_code": 0,
+        "unexpected": [
+          "Validate extension JSON: Error: Field 'classes/RenderingDevice/methods/draw_list_draw/arguments': size changed value in new API, from 4 to 5.",
+          "Validate extension JSON: Error: Hash changed for 'classes/RenderingDevice/methods/draw_list_draw', from DD2F7383 to 98695E9E. This means that the function has changed and no compatibility function was provided."
+        ],
+        "draw_list_errors": [
+          "Validate extension JSON: Error: Field 'classes/RenderingDevice/methods/draw_list_draw/arguments': size changed value in new API, from 4 to 5.",
+          "Validate extension JSON: Error: Hash changed for 'classes/RenderingDevice/methods/draw_list_draw', from DD2F7383 to 98695E9E. This means that the function has changed and no compatibility function was provided."
+        ],
+        "reference_sha256": "75ddb89d29527e64e3a2708e90e06f6db9f952ff02176b4804ef3425461f0ad9"
+      },
+      {
+        "tag": "4.1-stable",
+        "exit_code": 0,
+        "unexpected": [
+          "Validate extension JSON: Error: Field 'classes/RenderingDevice/methods/draw_list_draw/arguments': size changed value in new API, from 4 to 5.",
+          "Validate extension JSON: Error: Hash changed for 'classes/RenderingDevice/methods/draw_list_draw', from DD2F7383 to 98695E9E. This means that the function has changed and no compatibility function was provided."
+        ],
+        "draw_list_errors": [
+          "Validate extension JSON: Error: Field 'classes/RenderingDevice/methods/draw_list_draw/arguments': size changed value in new API, from 4 to 5.",
+          "Validate extension JSON: Error: Hash changed for 'classes/RenderingDevice/methods/draw_list_draw', from DD2F7383 to 98695E9E. This means that the function has changed and no compatibility function was provided."
+        ],
+        "reference_sha256": "1eeeef3bc1fa94e2a868f8a3eac65ec1e1eed7c7c76559d69f94f62424cbc06b"
+      },
+      {
+        "tag": "4.2-stable",
+        "exit_code": 0,
+        "unexpected": [
+          "Validate extension JSON: Error: Field 'classes/RenderingDevice/methods/draw_list_draw/arguments': size changed value in new API, from 4 to 5.",
+          "Validate extension JSON: Error: Hash changed for 'classes/RenderingDevice/methods/draw_list_draw', from FC21B705 to 98695E9E. This means that the function has changed and no compatibility function was provided."
+        ],
+        "draw_list_errors": [
+          "Validate extension JSON: Error: Field 'classes/RenderingDevice/methods/draw_list_draw/arguments': size changed value in new API, from 4 to 5.",
+          "Validate extension JSON: Error: Hash changed for 'classes/RenderingDevice/methods/draw_list_draw', from FC21B705 to 98695E9E. This means that the function has changed and no compatibility function was provided."
+        ],
+        "reference_sha256": "e3587b705ce010a83269779c4eaa855bd6545396bf3990ba6e3b8d28433a0309"
+      },
+      {
+        "tag": "4.3-stable",
+        "exit_code": 0,
+        "unexpected": [
+          "Validate extension JSON: Error: Field 'classes/RenderingDevice/methods/draw_list_draw/arguments': size changed value in new API, from 4 to 5.",
+          "Validate extension JSON: Error: Hash changed for 'classes/RenderingDevice/methods/draw_list_draw', from FC21B705 to 98695E9E. This means that the function has changed and no compatibility function was provided."
+        ],
+        "draw_list_errors": [
+          "Validate extension JSON: Error: Field 'classes/RenderingDevice/methods/draw_list_draw/arguments': size changed value in new API, from 4 to 5.",
+          "Validate extension JSON: Error: Hash changed for 'classes/RenderingDevice/methods/draw_list_draw', from FC21B705 to 98695E9E. This means that the function has changed and no compatibility function was provided."
+        ],
+        "reference_sha256": "dfd54f071d53ef63d9c1be51150b38f5c55abdd68eb8b2caa357abeab4086a0f"
+      },
+      {
+        "tag": "4.4-stable",
+        "exit_code": 0,
+        "unexpected": [
+          "Validate extension JSON: Error: Field 'classes/RenderingDevice/methods/draw_list_draw/arguments': size changed value in new API, from 4 to 5.",
+          "Validate extension JSON: Error: Hash changed for 'classes/RenderingDevice/methods/draw_list_draw', from FC21B705 to 98695E9E. This means that the function has changed and no compatibility function was provided."
+        ],
+        "draw_list_errors": [
+          "Validate extension JSON: Error: Field 'classes/RenderingDevice/methods/draw_list_draw/arguments': size changed value in new API, from 4 to 5.",
+          "Validate extension JSON: Error: Hash changed for 'classes/RenderingDevice/methods/draw_list_draw', from FC21B705 to 98695E9E. This means that the function has changed and no compatibility function was provided."
+        ],
+        "reference_sha256": "8a8386e3597083cf4357b3dbf501ede3d38a4e3f7ff75da86dfef0d1d9c3e3a8"
+      },
+      {
+        "tag": "4.5-stable",
+        "exit_code": 0,
+        "unexpected": [
+          "Validate extension JSON: Error: Field 'classes/RenderingDevice/methods/draw_list_draw/arguments': size changed value in new API, from 4 to 5.",
+          "Validate extension JSON: Error: Hash changed for 'classes/RenderingDevice/methods/draw_list_draw', from FC21B705 to 98695E9E. This means that the function has changed and no compatibility function was provided."
+        ],
+        "draw_list_errors": [
+          "Validate extension JSON: Error: Field 'classes/RenderingDevice/methods/draw_list_draw/arguments': size changed value in new API, from 4 to 5.",
+          "Validate extension JSON: Error: Hash changed for 'classes/RenderingDevice/methods/draw_list_draw', from FC21B705 to 98695E9E. This means that the function has changed and no compatibility function was provided."
+        ],
+        "reference_sha256": "23d807e3f914f7a91b152a8a7b03638d4853f8e642b79f10ce85a43b44340bfd"
+      },
+      {
+        "tag": "4.6-stable",
+        "exit_code": 0,
+        "unexpected": [
+          "Validate extension JSON: Error: Field 'classes/RenderingDevice/methods/draw_list_draw/arguments': size changed value in new API, from 4 to 5.",
+          "Validate extension JSON: Error: Hash changed for 'classes/RenderingDevice/methods/draw_list_draw', from FC21B705 to 98695E9E. This means that the function has changed and no compatibility function was provided."
+        ],
+        "draw_list_errors": [
+          "Validate extension JSON: Error: Field 'classes/RenderingDevice/methods/draw_list_draw/arguments': size changed value in new API, from 4 to 5.",
+          "Validate extension JSON: Error: Hash changed for 'classes/RenderingDevice/methods/draw_list_draw', from FC21B705 to 98695E9E. This means that the function has changed and no compatibility function was provided."
+        ],
+        "reference_sha256": "9b0d23fe8c35a099bbd4f821a444161b047ba81132928e44a9589645761439ea"
+      }
+    ],
+    "unexpected_errors_per_reference": 2,
+    "all_unexpected_errors_are_draw_list_draw": true,
+    "method_loader": {
+      "checker_source_sha256": "a48f4a96ff1ce22d4f33a58ea76a4643e676329510796d04b3c9a761efe32eeb",
+      "results": [
+        {
+          "tag": "4.4-stable",
+          "exit_code": 0,
+          "ci_failure_predicate": true,
+          "outcome_success": false,
+          "outcome_failure": true,
+          "relevant_lines": [
+            "ERROR: Method 'RenderingDevice.draw_list_draw' has changed and no compatibility fallback has been provided. Please open an issue.",
+            "Method bind not found: RenderingDevice.draw_list_draw (hash: 4230067973)",
+            "Outcome = FAILURE"
+          ]
+        },
+        {
+          "tag": "4.5-stable",
+          "exit_code": 0,
+          "ci_failure_predicate": true,
+          "outcome_success": false,
+          "outcome_failure": true,
+          "relevant_lines": [
+            "ERROR: Method 'RenderingDevice.draw_list_draw' has changed and no compatibility fallback has been provided. Please open an issue.",
+            "Method bind not found: RenderingDevice.draw_list_draw (hash: 4230067973)",
+            "Outcome = FAILURE"
+          ]
+        }
+      ]
+    }
+  },
+  "doctool": {
+    "exit": 0,
+    "draw_list_draw_identical": true,
+    "actual_xml": "<method name=\"draw_list_draw\">\n\t\t\t<return type=\"void\" />\n\t\t\t<param index=\"0\" name=\"draw_list\" type=\"int\" />\n\t\t\t<param index=\"1\" name=\"use_indices\" type=\"bool\" />\n\t\t\t<param index=\"2\" name=\"instances\" type=\"int\" />\n\t\t\t<param index=\"3\" name=\"procedural_vertex_count\" type=\"int\" default=\"0\" />\n\t\t\t<param index=\"4\" name=\"first_instance\" type=\"int\" default=\"0\" />\n\t\t\t<description>\n\t\t\t\tSubmits [param draw_list] for rendering on the GPU. This is the raster equivalent to [method compute_list_dispatch]. The first instance drawn has index [param first_instance].\n\t\t\t</description>\n\t\t</method>\n\t\t"
+  },
+  "positive_control": {
+    "editor_sha256": "74727596c51c06b001e2a25f103eeb5a13d7c8e1783a16749089e80158f47cb9",
+    "references": [
+      {
+        "tag": "4.0-stable",
+        "exit_code": 0,
+        "unexpected": [],
+        "draw_list_errors": [
+          "Validate extension JSON: Error: Field 'classes/RenderingDevice/methods/draw_list_draw/arguments': size changed value in new API, from 4 to 5."
+        ]
+      },
+      {
+        "tag": "4.1-stable",
+        "exit_code": 0,
+        "unexpected": [],
+        "draw_list_errors": [
+          "Validate extension JSON: Error: Field 'classes/RenderingDevice/methods/draw_list_draw/arguments': size changed value in new API, from 4 to 5."
+        ]
+      },
+      {
+        "tag": "4.2-stable",
+        "exit_code": 0,
+        "unexpected": [],
+        "draw_list_errors": [
+          "Validate extension JSON: Error: Field 'classes/RenderingDevice/methods/draw_list_draw/arguments': size changed value in new API, from 4 to 5."
+        ]
+      },
+      {
+        "tag": "4.3-stable",
+        "exit_code": 0,
+        "unexpected": [],
+        "draw_list_errors": [
+          "Validate extension JSON: Error: Field 'classes/RenderingDevice/methods/draw_list_draw/arguments': size changed value in new API, from 4 to 5."
+        ]
+      },
+      {
+        "tag": "4.4-stable",
+        "exit_code": 0,
+        "unexpected": [],
+        "draw_list_errors": [
+          "Validate extension JSON: Error: Field 'classes/RenderingDevice/methods/draw_list_draw/arguments': size changed value in new API, from 4 to 5."
+        ]
+      },
+      {
+        "tag": "4.5-stable",
+        "exit_code": 0,
+        "unexpected": [],
+        "draw_list_errors": [
+          "Validate extension JSON: Error: Field 'classes/RenderingDevice/methods/draw_list_draw/arguments': size changed value in new API, from 4 to 5."
+        ]
+      },
+      {
+        "tag": "4.6-stable",
+        "exit_code": 0,
+        "unexpected": [],
+        "draw_list_errors": [
+          "Validate extension JSON: Error: Field 'classes/RenderingDevice/methods/draw_list_draw/arguments': size changed value in new API, from 4 to 5."
+        ]
+      }
+    ],
+    "method_loader": [
+      {
+        "tag": "4.4-stable",
+        "exit_code": 0,
+        "ci_failure_predicate": false,
+        "outcome_success": true,
+        "outcome_failure": false,
+        "counts": {
+          "class_methods.txt": 13903,
+          "builtin_methods.txt": 963,
+          "utility_functions.txt": 114
+        },
+        "relevant_lines": [
+          "Outcome = SUCCESS"
+        ]
+      },
+      {
+        "tag": "4.5-stable",
+        "exit_code": 0,
+        "ci_failure_predicate": false,
+        "outcome_success": true,
+        "outcome_failure": false,
+        "counts": {
+          "class_methods.txt": 14493,
+          "builtin_methods.txt": 998,
+          "utility_functions.txt": 114
+        },
+        "relevant_lines": [
+          "Outcome = SUCCESS"
+        ]
+      },
+      {
+        "tag": "all-four-draw-hashes",
+        "exit_code": 0,
+        "ci_failure_predicate": false,
+        "outcome_success": true,
+        "outcome_failure": false,
+        "counts": {
+          "class_methods.txt": 4,
+          "builtin_methods.txt": 0,
+          "utility_functions.txt": 0
+        },
+        "relevant_lines": [
+          "Outcome = SUCCESS"
+        ]
+      }
+    ],
+    "public_method": {
+      "name": "draw_list_draw",
+      "is_const": false,
+      "is_vararg": false,
+      "is_static": false,
+      "is_virtual": false,
+      "hash": 1293414739,
+      "hash_compatibility": [
+        4230067973,
+        2557042334,
+        3710874499
+      ],
+      "arguments": [
+        {
+          "name": "draw_list",
+          "type": "int",
+          "meta": "int64"
+        },
+        {
+          "name": "use_indices",
+          "type": "bool"
+        },
+        {
+          "name": "instances",
+          "type": "int",
+          "meta": "uint32"
+        },
+        {
+          "name": "procedural_vertex_count",
+          "type": "int",
+          "meta": "uint32",
+          "default_value": "0"
+        },
+        {
+          "name": "first_instance",
+          "type": "int",
+          "meta": "uint32",
+          "default_value": "0"
+        }
+      ]
+    },
+    "doctool_identical": true,
+    "doctool_exit": 0,
+    "all_pass": true
+  },
+  "scope": "Headless API metadata preflight; no GPU rendering or Windows runtime claim.",
+  "method_load_references": [
+    {
+      "tag": "4.4-stable",
+      "reference_sha256": "8a8386e3597083cf4357b3dbf501ede3d38a4e3f7ff75da86dfef0d1d9c3e3a8",
+      "draw_list_draw_hash": 4230067973
+    },
+    {
+      "tag": "4.5-stable",
+      "reference_sha256": "23d807e3f914f7a91b152a8a7b03638d4853f8e642b79f10ce85a43b44340bfd",
+      "draw_list_draw_hash": 4230067973
+    }
+  ]
+}

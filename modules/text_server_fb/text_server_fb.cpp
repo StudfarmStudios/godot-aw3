@@ -39,7 +39,10 @@
 #include "core/os/os.h"
 #include "core/string/print_string.h"
 #include "core/string/translation_server.h"
+
+#ifdef WEBGPU_ENABLED
 #include "servers/rendering/rendering_server.h"
+#endif
 
 #include "modules/modules_enabled.gen.h" // For freetype, msdfgen, svg.
 

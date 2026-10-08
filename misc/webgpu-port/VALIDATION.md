@@ -686,8 +686,9 @@ the corrected public hash **1293414739**. Accepted editor
 compatibility errors. The intermediate `71c87` editor is a discriminating negative
 control: it reports the changed hash without a compatibility function. Validator
 diagnostics were checked explicitly because both invocations return zero. The
-pre-existing warning about the upstream four-argument legacy mapping remains
-unchanged; this repair preserves only the prior fork ABI.
+pre-existing upstream four-argument legacy mapping warning remains in that
+editor; the downstream CI preflight below identifies and repairs that separate
+compatibility gap.
 
 ### Audio thread-query Closure compatibility
 
@@ -725,3 +726,64 @@ This is an unchanged baseline defect: `scene_tree.cpp`, `scene_tree.h`, and
 after its metadata-test failure. The existing test remains intact; no sanitizer
 check was disabled. Source formatting passes. A subsequent sanitizer CI run must
 verify the one-line repair; no post-fix runtime result is claimed here.
+
+### Linux Mono clangd scope and warning cleanup
+
+Revision `e8ad329993` Mono editor job `113555475168` compiles successfully, then clangd-tidy
+infers incompatible non-WebGPU commands for translation units absent from its
+compilation database. Following the existing unsupported-platform policy, the
+changed-file filter now omits only the standalone Tint/preprocessor source units,
+Tint CLI subtree, WebGPU shader-baker platform unit, and assertion-enabled
+standalone conversion test from this non-WebGPU lane. Portable production headers
+remain checked, and the test's assertion guard remains intact. The WebGPU release
+template job `113555475099` passes with the actual Emscripten 4.0.11 build.
+
+Real warnings are repaired: the unused `<limits>` include is removed, the two
+text-server `RenderingServer` includes match their `WEBGPU_ENABLED` uses, and
+`TextureID` relies on its existing zero-initializing default constructor. These
+changes preserve runtime behavior. The unused-include edit nevertheless changes
+the conservative generated translator/profile fingerprint from the frozen
+`3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce` to
+`107df0322013d46e0dd5eb846bcb646a7b55475c9fba8c56e90718b490c5f6dd`. The existing
+profile-3525 browser artifacts retain their original identities; they have not
+been relabeled as runs of the new fingerprint. The existing standalone format
+helper was rebuilt with the cleaned header and passes ASan/UBSan. A subsequent
+native build including the compatibility wrapper below passes, with strict
+shader bake **278/278**. No new browser run is claimed for this correction batch.
+
+### Upstream draw-call compatibility preflight
+
+[Compact preflight evidence](../../webgpu_tests/browser_fork_ports/results/upstream-api-compatibility.json)
+records exact reference hashes and validator diagnostics.
+
+The frozen `d32389ec7575ff0b0cef96589f087352366da194a851fc4428744fe1076be2af`
+editor was checked against all seven exact `godot-headers` references used by
+`validate_extension_api.sh` (4.0 through 4.6 stable). After the existing expected
+errors, every reference reports exactly two unexpected errors: the four-to-five
+argument change and the missing `draw_list_draw` compatibility hash. The 4.4 and
+4.5 `godot-cpp` references used by the subsequent method-loading test both request
+upstream hash **4230067973**, absent from that editor. This is a deterministic
+negative control, not a completed remote CI step. The unchanged CI compatibility
+checker, compiled as a private macOS dylib, also fails both full method-loading
+references with only that missing method and `Outcome = FAILURE`.
+
+A real four-argument wrapper now forwards `first_instance=0`, while preserving
+the prior fork's five-argument compatibility binding. The existing legacy hash
+map can then resolve **3710874499** through the upstream wrapper. Only the exact
+intentional argument-count diagnostic is added to the expected-output file;
+hash failures remain errors.
+
+Corrected immutable editor
+`74727596c51c06b001e2a25f103eeb5a13d7c8e1783a16749089e80158f47cb9` passes all
+seven reference comparisons with zero unexpected diagnostics. The actual CI
+loader passes the full 4.4 reference (**13,903 class, 963 builtin, 114 utility**
+methods) and 4.5 reference (**14,493 class, 998 builtin, 114 utility** methods).
+A separate loader pass resolves all four draw-call hashes: legacy upstream
+**3710874499**, upstream **4230067973**, prior fork **2557042334**, and current
+**1293414739**. Both actual method resolution and the exported compatibility
+hash list are verified; these are headless macOS checks, not a replacement for
+the corrected Linux Mono CI run.
+
+Actual temporary `--doctool` runs with both editors reproduce the current
+`draw_list_draw` XML exactly, including all parameter names, types, both zero
+defaults, and its description. No documentation metadata adjustment is needed.
