@@ -17,7 +17,7 @@ namespace Godot
     {
         internal godot_string_name.movable NativeValue;
 
-        private WeakReference<IDisposable>? _weakReferenceToSelf;
+        private long _trackerToken;
 
         ~StringName()
         {
@@ -38,16 +38,17 @@ namespace Godot
             // Always dispose `NativeValue` even if disposing is true
             NativeValue.DangerousSelfRef.Dispose();
 
-            if (_weakReferenceToSelf != null)
+            if (_trackerToken != 0)
             {
-                DisposablesTracker.UnregisterDisposable(_weakReferenceToSelf);
+                DisposablesTracker.UnregisterDisposable(_trackerToken);
+                _trackerToken = 0;
             }
         }
 
         private StringName(godot_string_name nativeValueToOwn)
         {
             NativeValue = (godot_string_name.movable)nativeValueToOwn;
-            _weakReferenceToSelf = DisposablesTracker.RegisterDisposable(this);
+            _trackerToken = DisposablesTracker.RegisterDisposable(this);
         }
 
         // Explicit name to make it very clear
@@ -70,7 +71,7 @@ namespace Godot
             if (!string.IsNullOrEmpty(name))
             {
                 NativeValue = (godot_string_name.movable)NativeFuncs.godotsharp_string_name_new_from_string(name);
-                _weakReferenceToSelf = DisposablesTracker.RegisterDisposable(this);
+                _trackerToken = DisposablesTracker.RegisterDisposable(this);
             }
         }
 

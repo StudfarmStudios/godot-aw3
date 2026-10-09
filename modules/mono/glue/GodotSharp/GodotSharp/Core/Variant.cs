@@ -19,12 +19,12 @@ public partial struct Variant : IDisposable
     {
         private godot_variant.movable _native;
 
-        private WeakReference<IDisposable>? _weakReferenceToSelf;
+        private long _trackerToken;
 
         public Disposer(in godot_variant.movable nativeVar)
         {
             _native = nativeVar;
-            _weakReferenceToSelf = DisposablesTracker.RegisterDisposable(this);
+            _trackerToken = DisposablesTracker.RegisterDisposable(this);
         }
 
         ~Disposer()
@@ -42,9 +42,10 @@ public partial struct Variant : IDisposable
         {
             _native.DangerousSelfRef.Dispose();
 
-            if (_weakReferenceToSelf != null)
+            if (_trackerToken != 0)
             {
-                DisposablesTracker.UnregisterDisposable(_weakReferenceToSelf);
+                DisposablesTracker.UnregisterDisposable(_trackerToken);
+                _trackerToken = 0;
             }
         }
     }

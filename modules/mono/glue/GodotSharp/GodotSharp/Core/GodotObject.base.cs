@@ -20,7 +20,7 @@ namespace Godot
         internal IntPtr NativePtr;
         private bool _memoryOwn;
 
-        private WeakReference<GodotObject>? _weakReferenceToSelf;
+        private long _trackerToken;
 
         /// <summary>
         /// Constructs a new <see cref="GodotObject"/>.
@@ -74,7 +74,7 @@ namespace Godot
                     GetType(), cachedType);
             }
 
-            _weakReferenceToSelf = DisposablesTracker.RegisterGodotObject(this);
+            _trackerToken = DisposablesTracker.RegisterGodotObject(this);
         }
 
         internal GodotObject(bool memoryOwn)
@@ -152,9 +152,10 @@ namespace Godot
                 NativePtr = IntPtr.Zero;
             }
 
-            if (_weakReferenceToSelf != null)
+            if (_trackerToken != 0)
             {
-                DisposablesTracker.UnregisterGodotObject(this, _weakReferenceToSelf);
+                DisposablesTracker.UnregisterGodotObject(this, _trackerToken);
+                _trackerToken = 0;
             }
         }
 

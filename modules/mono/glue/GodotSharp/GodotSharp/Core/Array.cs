@@ -30,7 +30,7 @@ namespace Godot.Collections
     {
         internal godot_array.movable NativeValue;
 
-        private WeakReference<IDisposable>? _weakReferenceToSelf;
+        private long _trackerToken;
 
         /// <summary>
         /// Constructs a new empty <see cref="Array"/>.
@@ -38,7 +38,7 @@ namespace Godot.Collections
         public Array()
         {
             NativeValue = (godot_array.movable)NativeFuncs.godotsharp_array_new();
-            _weakReferenceToSelf = DisposablesTracker.RegisterDisposable(this);
+            _trackerToken = DisposablesTracker.RegisterDisposable(this);
         }
 
         /// <summary>
@@ -70,7 +70,7 @@ namespace Godot.Collections
             ArgumentNullException.ThrowIfNull(array);
 
             NativeValue = (godot_array.movable)NativeFuncs.godotsharp_array_new();
-            _weakReferenceToSelf = DisposablesTracker.RegisterDisposable(this);
+            _trackerToken = DisposablesTracker.RegisterDisposable(this);
 
             int length = array.Length;
 
@@ -90,7 +90,7 @@ namespace Godot.Collections
         public Array(scoped ReadOnlySpan<StringName> span)
         {
             NativeValue = (godot_array.movable)NativeFuncs.godotsharp_array_new();
-            _weakReferenceToSelf = DisposablesTracker.RegisterDisposable(this);
+            _trackerToken = DisposablesTracker.RegisterDisposable(this);
 
             int length = span.Length;
 
@@ -114,7 +114,7 @@ namespace Godot.Collections
         public Array(scoped ReadOnlySpan<NodePath> span)
         {
             NativeValue = (godot_array.movable)NativeFuncs.godotsharp_array_new();
-            _weakReferenceToSelf = DisposablesTracker.RegisterDisposable(this);
+            _trackerToken = DisposablesTracker.RegisterDisposable(this);
 
             int length = span.Length;
 
@@ -138,7 +138,7 @@ namespace Godot.Collections
         public Array(scoped ReadOnlySpan<Rid> span)
         {
             NativeValue = (godot_array.movable)NativeFuncs.godotsharp_array_new();
-            _weakReferenceToSelf = DisposablesTracker.RegisterDisposable(this);
+            _trackerToken = DisposablesTracker.RegisterDisposable(this);
 
             int length = span.Length;
 
@@ -162,7 +162,7 @@ namespace Godot.Collections
         public Array(scoped ReadOnlySpan<GodotObject> span)
         {
             NativeValue = (godot_array.movable)NativeFuncs.godotsharp_array_new();
-            _weakReferenceToSelf = DisposablesTracker.RegisterDisposable(this);
+            _trackerToken = DisposablesTracker.RegisterDisposable(this);
 
             int length = span.Length;
 
@@ -177,7 +177,7 @@ namespace Godot.Collections
             NativeValue = (godot_array.movable)(nativeValueToOwn.IsAllocated ?
                 nativeValueToOwn :
                 NativeFuncs.godotsharp_array_new());
-            _weakReferenceToSelf = DisposablesTracker.RegisterDisposable(this);
+            _trackerToken = DisposablesTracker.RegisterDisposable(this);
         }
 
         // Explicit name to make it very clear
@@ -203,9 +203,10 @@ namespace Godot.Collections
             // Always dispose `NativeValue` even if disposing is true
             NativeValue.DangerousSelfRef.Dispose();
 
-            if (_weakReferenceToSelf != null)
+            if (_trackerToken != 0)
             {
-                DisposablesTracker.UnregisterDisposable(_weakReferenceToSelf);
+                DisposablesTracker.UnregisterDisposable(_trackerToken);
+                _trackerToken = 0;
             }
         }
 
