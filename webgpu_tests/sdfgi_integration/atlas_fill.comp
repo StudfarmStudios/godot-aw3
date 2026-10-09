@@ -1,0 +1,14 @@
+#version 450
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+layout(rgba16f, set = 0, binding = 1) uniform restrict writeonly image3D light_atlas;
+layout(rgba8, set = 0, binding = 2) uniform restrict writeonly image3D aniso0_atlas;
+layout(rgba8, set = 0, binding = 3) uniform restrict writeonly image3D aniso1_atlas;
+void main() {
+    ivec3 pos = ivec3(gl_GlobalInvocationID);
+    ivec3 tile = pos / 128;
+    uint cascade = uint(tile.x + tile.y * 2 + tile.z * 4);
+    vec4 value = vec4(float(cascade + 1u) / 16.0, vec3(pos % 128) / 127.0);
+    imageStore(light_atlas, pos, value);
+    imageStore(aniso0_atlas, pos, value);
+    imageStore(aniso1_atlas, pos, value);
+}

@@ -32,6 +32,7 @@
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/clone_context.h"
 #include "src/tint/lang/core/ir/module.h"
+#include "src/tint/lang/core/ir/phony.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/core/type/builtin_structs.h"
 #include "src/tint/lang/core/type/matrix.h"
@@ -412,6 +413,8 @@ struct State {
                     TINT_ASSERT(core::IsAtomic(bc->Func()));
                     TINT_ASSERT(bc->Args()[0]->Type()->UnwrapPtr()->Is<core::type::Atomic>());
                 },
+                // Interface-only references do not read or write an atomic.
+                [&](core::ir::Phony* p) { p->Destroy(); },
                 TINT_ICE_ON_NO_MATCH);
         });
     }

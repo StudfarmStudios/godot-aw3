@@ -30,6 +30,7 @@
 
 #include "fsr2.h"
 
+#include "core/math/math_funcs.h"
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
 #include "servers/rendering/renderer_rd/uniform_set_cache_rd.h"
 
@@ -202,6 +203,13 @@ static FfxErrorCode destroy_backend_context_rd(FfxFsr2Interface *p_backend_inter
 	return FFX_OK;
 }
 
+// Keep the SDK's logical texture description while using buffer atomics on
+// backends without image atomics. All readers and writers use the same buffer.
+static bool resource_uses_atomic_buffer(uint32_t p_id) {
+	return !RD::get_singleton()->has_feature(RD::SUPPORTS_IMAGE_ATOMIC_32_BIT) &&
+			(p_id == FFX_FSR2_RESOURCE_IDENTIFIER_SPD_ATOMIC_COUNT || p_id == FFX_FSR2_RESOURCE_IDENTIFIER_RECONSTRUCTED_PREVIOUS_NEAREST_DEPTH);
+}
+
 static FfxErrorCode create_resource_rd(FfxFsr2Interface *p_backend_interface, const FfxCreateResourceDescription *p_create_resource_description, FfxResourceInternal *p_out_resource) {
 	// FSR2's base implementation won't issue a call to create a heap type that isn't just default on its own,
 	// so we can safely ignore it as RD does not expose this concept.
@@ -211,7 +219,23 @@ static FfxErrorCode create_resource_rd(FfxFsr2Interface *p_backend_interface, co
 	FSR2Context::Scratch &scratch = *reinterpret_cast<FSR2Context::Scratch *>(p_backend_interface->scratchBuffer);
 	FfxResourceDescription res_desc = p_create_resource_description->resourceDescription;
 
-	// FSR2's base implementation never requests buffer creation.
+	if (resource_uses_atomic_buffer(p_create_resource_description->id)) {
+		const uint64_t byte_size = uint64_t(res_desc.width) * res_desc.height * sizeof(uint32_t);
+		ERR_FAIL_COND_V(byte_size == 0 || byte_size > UINT32_MAX, FFX_ERROR_OUT_OF_RANGE);
+		Vector<uint8_t> initial_data;
+		if (p_create_resource_description->initDataSize) {
+			ERR_FAIL_COND_V(p_create_resource_description->initDataSize != byte_size, FFX_ERROR_INVALID_ARGUMENT);
+			initial_data.resize(byte_size);
+			memcpy(initial_data.ptrw(), p_create_resource_description->initData, byte_size);
+		}
+		RID buffer = rd->storage_buffer_create(byte_size, initial_data);
+		ERR_FAIL_COND_V(buffer.is_null(), FFX_ERROR_BACKEND_API_ERROR);
+		rd->set_resource_name(buffer, String(p_create_resource_description->name));
+		p_out_resource->internalIndex = scratch.resources.add(buffer, false, p_create_resource_description->id, res_desc);
+		return FFX_OK;
+	}
+
+	// Other resources remain textures.
 	ERR_FAIL_COND_V(res_desc.type != FFX_RESOURCE_TYPE_TEXTURE1D && res_desc.type != FFX_RESOURCE_TYPE_TEXTURE2D && res_desc.type != FFX_RESOURCE_TYPE_TEXTURE3D, FFX_ERROR_INVALID_ARGUMENT);
 
 	if (res_desc.mipCount == 0) {
@@ -219,18 +243,38 @@ static FfxErrorCode create_resource_rd(FfxFsr2Interface *p_backend_interface, co
 		res_desc.mipCount = uint32_t(1 + std::floor(std::log2(MAX(MAX(res_desc.width, res_desc.height), res_desc.depth))));
 	}
 
+	RD::DataFormat data_format = ffx_surface_format_to_rd_format(res_desc.format);
+	const uint32_t usage = ffx_usage_to_rd_usage_flags(p_create_resource_description->usage);
+	const bool convert_snorm16 = data_format == RD::DATA_FORMAT_R16_SNORM && !rd->texture_is_format_supported_for_usage(data_format, usage);
+	if (convert_snorm16) {
+		// Read-only lookup tables need numeric conversion, not bit reinterpretation.
+		ERR_FAIL_COND_V(p_create_resource_description->usage != FFX_RESOURCE_USAGE_READ_ONLY, FFX_ERROR_INVALID_ARGUMENT);
+		data_format = RD::DATA_FORMAT_R16_SFLOAT;
+	}
+
 	Vector<PackedByteArray> initial_data;
 	if (p_create_resource_description->initDataSize) {
 		PackedByteArray byte_array;
 		byte_array.resize(p_create_resource_description->initDataSize);
-		memcpy(byte_array.ptrw(), p_create_resource_description->initData, p_create_resource_description->initDataSize);
+		if (convert_snorm16) {
+			ERR_FAIL_COND_V(p_create_resource_description->initDataSize % sizeof(int16_t) != 0, FFX_ERROR_INVALID_ARGUMENT);
+			const uint8_t *source = static_cast<const uint8_t *>(p_create_resource_description->initData);
+			for (uint32_t i = 0; i < p_create_resource_description->initDataSize; i += sizeof(int16_t)) {
+				int16_t value;
+				memcpy(&value, source + i, sizeof(value));
+				const uint16_t half = Math::make_half_float(MAX(-1.0f, value / 32767.0f));
+				memcpy(byte_array.ptrw() + i, &half, sizeof(half));
+			}
+		} else {
+			memcpy(byte_array.ptrw(), p_create_resource_description->initData, p_create_resource_description->initDataSize);
+		}
 		initial_data.push_back(byte_array);
 	}
 
 	RD::TextureFormat texture_format;
 	texture_format.texture_type = ffx_resource_type_to_rd_texture_type(res_desc.type);
-	texture_format.format = ffx_surface_format_to_rd_format(res_desc.format);
-	texture_format.usage_bits = ffx_usage_to_rd_usage_flags(p_create_resource_description->usage);
+	texture_format.format = data_format;
+	texture_format.usage_bits = usage;
 	texture_format.width = res_desc.width;
 	texture_format.height = res_desc.height;
 	texture_format.depth = res_desc.depth;
@@ -310,6 +354,13 @@ static FfxErrorCode create_pipeline_rd(FfxFsr2Interface *p_backend_interface, Ff
 		ERR_FAIL_COND_V(effect_pass.pipeline.pipeline_rid.is_null(), FFX_ERROR_BACKEND_API_ERROR);
 	}
 
+	if (p_pass == FFX_FSR2_PASS_COMPUTE_LUMINANCE_PYRAMID && !RD::get_singleton()->has_feature(RD::SUPPORTS_IMAGE_ATOMIC_32_BIT) && effect_pass.pipeline.tail_pipeline_rid.is_null()) {
+		effect_pass.pipeline.tail_shader_rid = effect_pass.shader->version_get_shader(effect_pass.shader_version, 1);
+		ERR_FAIL_COND_V(effect_pass.pipeline.tail_shader_rid.is_null(), FFX_ERROR_BACKEND_API_ERROR);
+		effect_pass.pipeline.tail_pipeline_rid = RD::get_singleton()->compute_pipeline_create(effect_pass.pipeline.tail_shader_rid);
+		ERR_FAIL_COND_V(effect_pass.pipeline.tail_pipeline_rid.is_null(), FFX_ERROR_BACKEND_API_ERROR);
+	}
+
 	// While this is not their intended use, we use the pipeline and root signature pointers to store the
 	// RIDs to the pipeline and shader that RD needs for the compute pipeline.
 	p_out_pipeline->pipeline = reinterpret_cast<FfxPipeline>(&effect_pass.pipeline);
@@ -360,6 +411,13 @@ static FfxErrorCode execute_gpu_job_clear_float_rd(FSR2Context::Scratch &p_scrat
 	RID resource = p_scratch.resources.rids[p_job.target.internalIndex];
 	FfxResourceDescription &desc = p_scratch.resources.descriptions[p_job.target.internalIndex];
 
+	if (resource_uses_atomic_buffer(p_scratch.resources.ids[p_job.target.internalIndex])) {
+		// Godot uses reversed depth, whose far-plane clear value is zero.
+		ERR_FAIL_COND_V(p_job.color[0] != 0.0f, FFX_ERROR_INVALID_ARGUMENT);
+		RD::get_singleton()->buffer_clear(resource, 0, uint64_t(desc.width) * desc.height * sizeof(uint32_t));
+		return FFX_OK;
+	}
+
 	ERR_FAIL_COND_V(desc.type == FFX_RESOURCE_TYPE_BUFFER, FFX_ERROR_INVALID_ARGUMENT);
 
 	Color color(p_job.color[0], p_job.color[1], p_job.color[2], p_job.color[3]);
@@ -399,12 +457,17 @@ static FfxErrorCode execute_gpu_job_compute_rd(FSR2Context::Scratch &p_scratch, 
 
 	for (uint32_t i = 0; i < p_job.pipeline.srvCount; i++) {
 		RID texture_rid = p_scratch.resources.rids[p_job.srvs[i].internalIndex];
-		RD::Uniform texture_uniform(RD::UNIFORM_TYPE_TEXTURE, p_job.pipeline.srvResourceBindings[i].slotIndex, texture_rid);
+		const bool buffer = resource_uses_atomic_buffer(p_scratch.resources.ids[p_job.srvs[i].internalIndex]);
+		RD::Uniform texture_uniform(buffer ? RD::UNIFORM_TYPE_STORAGE_BUFFER : RD::UNIFORM_TYPE_TEXTURE, p_job.pipeline.srvResourceBindings[i].slotIndex, texture_rid);
 		compute_uniforms.push_back(texture_uniform);
 	}
 
 	for (uint32_t i = 0; i < p_job.pipeline.uavCount; i++) {
 		RID image_rid = p_scratch.resources.rids[p_job.uavs[i].internalIndex];
+		if (resource_uses_atomic_buffer(p_scratch.resources.ids[p_job.uavs[i].internalIndex])) {
+			compute_uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_STORAGE_BUFFER, p_job.pipeline.uavResourceBindings[i].slotIndex, image_rid));
+			continue;
+		}
 		RD::Uniform storage_uniform;
 		storage_uniform.uniform_type = RD::UNIFORM_TYPE_IMAGE;
 		storage_uniform.binding = p_job.pipeline.uavResourceBindings[i].slotIndex;
@@ -451,6 +514,19 @@ static FfxErrorCode execute_gpu_job_compute_rd(FSR2Context::Scratch &p_scratch, 
 	RD::get_singleton()->compute_list_bind_uniform_set(compute_list, uniform_set_cache->get_cache_vec(root_signature.shader_rid, 1, compute_uniforms), 1);
 	RD::get_singleton()->compute_list_dispatch(compute_list, p_job.dimensions[0], p_job.dimensions[1], p_job.dimensions[2]);
 	RD::get_singleton()->compute_list_end();
+
+	if (backend_pipeline.tail_pipeline_rid.is_valid()) {
+		// SPD's final workgroup reads mip 5 written by the first dispatch. A pass
+		// boundary gives WebGPU proper visibility, including shadowed storage reads.
+		// The tail exits uniformly when there are no levels above mip 5.
+		RID shader = backend_pipeline.tail_shader_rid;
+		RD::ComputeListID tail_list = RD::get_singleton()->compute_list_begin();
+		RD::get_singleton()->compute_list_bind_compute_pipeline(tail_list, backend_pipeline.tail_pipeline_rid);
+		RD::get_singleton()->compute_list_bind_uniform_set(tail_list, uniform_set_cache->get_cache(shader, 0, u_point_clamp_sampler, u_linear_clamp_sampler), 0);
+		RD::get_singleton()->compute_list_bind_uniform_set(tail_list, uniform_set_cache->get_cache_vec(shader, 1, compute_uniforms), 1);
+		RD::get_singleton()->compute_list_dispatch(tail_list, 1, 1, 1);
+		RD::get_singleton()->compute_list_end();
+	}
 
 	return FFX_OK;
 }
@@ -530,12 +606,21 @@ FSR2Effect::FSR2Effect() {
 			"\n#define FFX_FSR2_OPTION_GODOT_REACTIVE_MASK_CLAMP 1\n"
 			"\n#define FFX_FSR2_OPTION_GODOT_DERIVE_INVALID_MOTION_VECTORS 1\n";
 
+	if (!RD::get_singleton()->has_feature(RD::SUPPORTS_IMAGE_ATOMIC_32_BIT)) {
+		general_defines += "\n#define NO_IMAGE_ATOMICS 1\n";
+	}
+	if (!(RD::get_singleton()->limit_get(RD::LIMIT_SUBGROUP_IN_SHADERS) & RD::SHADER_STAGE_COMPUTE_BIT) || !(RD::get_singleton()->limit_get(RD::LIMIT_SUBGROUP_OPERATIONS) & RD::SUBGROUP_QUAD_BIT)) {
+		general_defines += "\n#define SPD_NO_WAVE_OPERATIONS 1\n";
+	}
+
 	Vector<String> modes_single;
 	modes_single.push_back("");
 
 	Vector<String> modes_with_fp16;
 	modes_with_fp16.push_back("");
-	modes_with_fp16.push_back("\n#define FFX_HALF 1\n");
+	if (capabilities.fp16Supported) {
+		modes_with_fp16.push_back("\n#define FFX_HALF 1\n");
+	}
 
 	// Since Godot currently lacks a shader reflection mechanism to persist the name of the bindings in the shader cache and
 	// there's also no mechanism to compile the shaders offline, the bindings are created manually by looking at the GLSL
@@ -631,8 +716,10 @@ FSR2Effect::FSR2Effect() {
 		Vector<String> accumulate_modes_with_fp16;
 		accumulate_modes_with_fp16.push_back("\n");
 		accumulate_modes_with_fp16.push_back("\n#define FFX_FSR2_OPTION_APPLY_SHARPENING 1\n");
-		accumulate_modes_with_fp16.push_back("\n#define FFX_HALF 1\n");
-		accumulate_modes_with_fp16.push_back("\n#define FFX_HALF 1\n#define FFX_FSR2_OPTION_APPLY_SHARPENING 1\n");
+		if (capabilities.fp16Supported) {
+			accumulate_modes_with_fp16.push_back("\n#define FFX_HALF 1\n");
+			accumulate_modes_with_fp16.push_back("\n#define FFX_HALF 1\n#define FFX_FSR2_OPTION_APPLY_SHARPENING 1\n");
+		}
 
 		// Workaround: Disable FP16 path for the accumulate pass on NVIDIA due to reduced occupancy and high VRAM throughput.
 		const bool fp16_path_supported = RD::get_singleton()->get_device_vendor_name() != "NVIDIA";
@@ -700,7 +787,12 @@ FSR2Effect::FSR2Effect() {
 	{
 		Pass &pass = device.passes[FFX_FSR2_PASS_COMPUTE_LUMINANCE_PYRAMID];
 		pass.shader = &shaders.compute_luminance_pyramid;
-		pass.shader->initialize(modes_single, general_defines);
+		Vector<String> luminance_modes = modes_single;
+		if (!RD::get_singleton()->has_feature(RD::SUPPORTS_IMAGE_ATOMIC_32_BIT)) {
+			luminance_modes.write[0] = "\n#define FFX_SPD_FIRST_PASS 1\n";
+			luminance_modes.push_back("\n#define FFX_SPD_SECOND_PASS 1\n");
+		}
+		pass.shader->initialize(luminance_modes, general_defines);
 		pass.shader_version = pass.shader->version_create();
 
 		pass.sampled_bindings = {

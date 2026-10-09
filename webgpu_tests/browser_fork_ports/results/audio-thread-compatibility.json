@@ -1,0 +1,111 @@
+{
+  "passed": true,
+  "source": "platform/web/js/libs/library_godot_audio.js",
+  "source_sha256": "cc0cccdbf9e9adfb3cb9074c4b287d8930193ef8c181adcaa1fa117e63dafc13",
+  "test": "platform/web/js/libs/library_godot_audio.test.mjs",
+  "test_sha256": "503546cd8d2affce2462e6f5c0c109e279963d88f254125db6ae00bb50dad383",
+  "semantic_controls": {
+    "before": {
+      "source_ref": "74d783e44d",
+      "passed": 0,
+      "failed": 8,
+      "reason": "ENVIRONMENT_IS_PTHREAD ReferenceError, with that global intentionally absent"
+    },
+    "after": {
+      "passed": 8,
+      "failed": 0,
+      "scope": "Four actual library wrappers each in runtime-thread and pthread modes; direct pointers/no allocations or copied stable string/array values before async dispatch."
+    }
+  },
+  "closure_compiler_version": "emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 4.0.20 (6913738ec5371a88c4af5a80db0ab42bad3de681)",
+  "closure_links": [
+    {
+      "variant": "before-nonthreaded",
+      "returncode": 1,
+      "command": [
+        "/Users/jaakkolukkari/Development/emsdk/upstream/emscripten/emcc",
+        "/private/tmp/aw3-audio-pthread-compat/main.c",
+        "--js-library",
+        "/private/tmp/aw3-audio-pthread-compat/before.js",
+        "-O2",
+        "--closure",
+        "1",
+        "-sENVIRONMENT=web,worker",
+        "-sMODULARIZE=1",
+        "-sEXPORT_NAME=AudioControlProbe",
+        "-o",
+        "/private/tmp/aw3-audio-pthread-compat/before-nonthreaded.js"
+      ],
+      "diagnostics": [
+        "building:ERROR: /var/folders/6y/k7rystrx6sbcksb6b3b0kk980000gn/T/emscripten_temp_73jw7e37/before-nonthreaded.jso1.js:399:7: ERROR - [JSC_UNDEFINED_VARIABLE] variable ENVIRONMENT_IS_PTHREAD is undeclared"
+      ],
+      "source_sha256": "15d9654f77c22eda7feff640bd9c6497e584c5a4f1d74015eb6b2746a54b964e",
+      "scope": "Extracted actual four wrapper functions and dependencies, stubbed main-thread audio bodies; standalone current SDK Closure link, not a full Godot build."
+    },
+    {
+      "variant": "after-nonthreaded",
+      "returncode": 0,
+      "command": [
+        "/Users/jaakkolukkari/Development/emsdk/upstream/emscripten/emcc",
+        "/private/tmp/aw3-audio-pthread-compat/main.c",
+        "--js-library",
+        "/private/tmp/aw3-audio-pthread-compat/after.js",
+        "-O2",
+        "--closure",
+        "1",
+        "-sENVIRONMENT=web,worker",
+        "-sMODULARIZE=1",
+        "-sEXPORT_NAME=AudioControlProbe",
+        "-o",
+        "/private/tmp/aw3-audio-pthread-compat/after-nonthreaded.js"
+      ],
+      "diagnostics": [],
+      "source_sha256": "7562fae089f1874f393c8153394b87fc187d660216066cb5c4cfb5ffb74a6cf1",
+      "scope": "Extracted actual four wrapper functions and dependencies, stubbed main-thread audio bodies; standalone current SDK Closure link, not a full Godot build."
+    },
+    {
+      "variant": "after-threaded",
+      "returncode": 0,
+      "command": [
+        "/Users/jaakkolukkari/Development/emsdk/upstream/emscripten/emcc",
+        "/private/tmp/aw3-audio-pthread-compat/main.c",
+        "--js-library",
+        "/private/tmp/aw3-audio-pthread-compat/after.js",
+        "-O2",
+        "--closure",
+        "1",
+        "-sENVIRONMENT=web,worker",
+        "-sMODULARIZE=1",
+        "-sEXPORT_NAME=AudioControlProbe",
+        "-o",
+        "/private/tmp/aw3-audio-pthread-compat/after-threaded.js",
+        "-pthread"
+      ],
+      "diagnostics": [],
+      "source_sha256": "7562fae089f1874f393c8153394b87fc187d660216066cb5c4cfb5ffb74a6cf1",
+      "scope": "Extracted actual four wrapper functions and dependencies, stubbed main-thread audio bodies; standalone current SDK Closure link, not a full Godot build."
+    }
+  ],
+  "old_sdk_source_verification": {
+    "version": "4.0.11",
+    "threaded_url": "https://github.com/emscripten-core/emscripten/blob/4.0.11/system/lib/pthread/emscripten_thread_state.S",
+    "nonthreaded_url": "https://github.com/emscripten-core/emscripten/blob/4.0.11/system/lib/pthread/library_pthread_stub.c",
+    "threaded_sha256": "5c1b3cbe550a23252ca4fa67523e6b62eee51415d349df1e3b11ea7f57f12e89",
+    "nonthreaded_sha256": "3635c65a1ae8cf81910934a71427ad3382870e53700860fc4a2df90fcf11b967",
+    "finding": "Threaded helper explicitly equivalent to !ENVIRONMENT_IS_PTHREAD; nonthreaded stub returns1. Matches installed4.0.20. Exact4.0.11 compiler/link not run locally."
+  },
+  "lint": {
+    "eslint": true,
+    "node_check": true
+  },
+  "ci_negative": {
+    "job_id": 113542642583,
+    "source_commit": "74d783e44d",
+    "sdk": "4.0.11",
+    "failure": "JSC_UNDEFINED_VARIABLE ENVIRONMENT_IS_PTHREAD during nonthreaded template Closure link; C++ build completed."
+  },
+  "limitations": [
+    "No new audio playback/browser smoke; tests cover wrapper routing and data ownership.",
+    "Full exact4.0.11 template link awaits corrected CI."
+  ]
+}

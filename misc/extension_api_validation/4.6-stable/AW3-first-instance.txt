@@ -1,0 +1,6 @@
+AW3 first-instance draw support
+------------------------------
+Validate extension JSON: Error: Field 'classes/RenderingDevice/methods/draw_list_draw/arguments': size changed value in new API, from 4 to 5.
+
+Optional first_instance argument added. The four-argument compatibility method
+preserves the upstream ABI and forwards first_instance=0. Hash failures remain errors.

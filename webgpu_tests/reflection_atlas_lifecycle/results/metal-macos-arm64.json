@@ -1,0 +1,90 @@
+{
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "device": "Apple M1 Ultra (Apple7)",
+  "driver": "Metal 4.0 / Forward+",
+  "execution": "Private byte-identical scene; subprocess bounded to 90 seconds, no timeout in these four runs. New maintained wrapper was added after these executions.",
+  "fixture_sha256": {
+    "project.godot": "92068eb2b8b43edd6756d917ac4041510d507d7cc254e80949287c6d7caf00f5",
+    "lifecycle.gd": "c31fe666d3f0a77469bad16a49d5cc03ecf425fd9b2b1dd3a4b3f178ab2a51f2"
+  },
+  "cases": [
+    {
+      "case": "bad-once",
+      "engine_sha256": "ab2b1f0ba03b4177727e738f87a8d59a0bc27fd79d4d0e9bd14d9a87e4930dd6",
+      "returncode": 0,
+      "strict_passed": false,
+      "texture_rids_leaked": 7,
+      "markers": [
+        "ATLAS_ONCE_RENDERED",
+        "ATLAS_LIFECYCLE_COMPLETE"
+      ],
+      "diagnostic_leaks": [
+        "AW3_LEAK 4531190497337 owner=0 dims=256x256x1 layers=6 mips=1 fmt=96",
+        "AW3_LEAK 4754528796765 owner=4531190497337 dims=256x256x1 layers=1 mips=1 fmt=96",
+        "AW3_LEAK 4763118731358 owner=4531190497337 dims=256x256x1 layers=1 mips=1 fmt=96",
+        "AW3_LEAK 4771708665951 owner=4531190497337 dims=256x256x1 layers=1 mips=1 fmt=96",
+        "AW3_LEAK 4780298600544 owner=4531190497337 dims=256x256x1 layers=1 mips=1 fmt=96",
+        "AW3_LEAK 4788888535137 owner=4531190497337 dims=256x256x1 layers=1 mips=1 fmt=96",
+        "AW3_LEAK 4797478469730 owner=4531190497337 dims=256x256x1 layers=1 mips=1 fmt=96"
+      ],
+      "log_sha256": "38743666edde53632a8668afcd82b35a2de8419794f84737e118d2d1747135d8"
+    },
+    {
+      "case": "bad-switch",
+      "engine_sha256": "ab2b1f0ba03b4177727e738f87a8d59a0bc27fd79d4d0e9bd14d9a87e4930dd6",
+      "returncode": 0,
+      "strict_passed": false,
+      "texture_rids_leaked": 14,
+      "markers": [
+        "ATLAS_ONCE_RENDERED",
+        "ATLAS_LIFECYCLE_COMPLETE",
+        "ATLAS_REALTIME_RENDERED"
+      ],
+      "diagnostic_leaks": [
+        "AW3_LEAK 4531190497337 owner=0 dims=256x256x1 layers=6 mips=1 fmt=96",
+        "AW3_LEAK 5287104741435 owner=5063766442071 dims=256x256x1 layers=1 mips=1 fmt=96",
+        "AW3_LEAK 5252745003089 owner=5063766442071 dims=256x256x1 layers=1 mips=1 fmt=96",
+        "AW3_LEAK 5261334937682 owner=5063766442071 dims=256x256x1 layers=1 mips=1 fmt=96",
+        "AW3_LEAK 5269924872275 owner=5063766442071 dims=256x256x1 layers=1 mips=1 fmt=96",
+        "AW3_LEAK 5278514806868 owner=5063766442071 dims=256x256x1 layers=1 mips=1 fmt=96",
+        "AW3_LEAK 5063766442071 owner=0 dims=256x256x1 layers=6 mips=1 fmt=96",
+        "AW3_LEAK 4754528796765 owner=4531190497337 dims=256x256x1 layers=1 mips=1 fmt=96",
+        "AW3_LEAK 4763118731358 owner=4531190497337 dims=256x256x1 layers=1 mips=1 fmt=96",
+        "AW3_LEAK 4771708665951 owner=4531190497337 dims=256x256x1 layers=1 mips=1 fmt=96",
+        "AW3_LEAK 4780298600544 owner=4531190497337 dims=256x256x1 layers=1 mips=1 fmt=96",
+        "AW3_LEAK 4788888535137 owner=4531190497337 dims=256x256x1 layers=1 mips=1 fmt=96",
+        "AW3_LEAK 4797478469730 owner=4531190497337 dims=256x256x1 layers=1 mips=1 fmt=96",
+        "AW3_LEAK 5295694676067 owner=5063766442071 dims=256x256x1 layers=1 mips=1 fmt=96"
+      ],
+      "log_sha256": "161e69f9f606624d2dd75d9cc907058135155e089b62b955b6cb0ca03d729bf6"
+    },
+    {
+      "case": "fixed-once",
+      "engine_sha256": "862617c897f8a0f1193bff61f2ac861fd1e9f1490716a55b6825785f52f5bbab",
+      "returncode": 0,
+      "strict_passed": true,
+      "texture_rids_leaked": 0,
+      "markers": [
+        "ATLAS_ONCE_RENDERED",
+        "ATLAS_LIFECYCLE_COMPLETE"
+      ],
+      "diagnostic_leaks": [],
+      "log_sha256": "98f7ae305ab2476da9b404134cd0cd5a4b6c0e38f87ccab00107c39d6a8379cc"
+    },
+    {
+      "case": "fixed-switch",
+      "engine_sha256": "862617c897f8a0f1193bff61f2ac861fd1e9f1490716a55b6825785f52f5bbab",
+      "returncode": 0,
+      "strict_passed": true,
+      "texture_rids_leaked": 0,
+      "markers": [
+        "ATLAS_ONCE_RENDERED",
+        "ATLAS_LIFECYCLE_COMPLETE",
+        "ATLAS_REALTIME_RENDERED"
+      ],
+      "diagnostic_leaks": [],
+      "log_sha256": "b762816d7f767bd8c56f8b7219ee0d88a15f9ffede24e74d90e1ecd002c57066"
+    }
+  ],
+  "scope": "Native reflection atlas ownership only; no browser or performance claim."
+}

@@ -449,7 +449,7 @@ public:
 		uint32_t mipmaps = 0;
 		RDD::DataFormat format = RDD::DATA_FORMAT_MAX;
 		uint32_t gpu_pixel_size = 0; // Non-zero when driver promotes format (e.g. R8→R32Float).
-		RDD::TextureID driver_texture_id = {}; // For readback conversion.
+		RDD::TextureID driver_texture_id; // For readback conversion.
 	};
 
 public:
@@ -477,6 +477,7 @@ public:
 		}
 	};
 
+	TextureSamples get_effective_texture_samples(TextureSamples p_requested) const;
 	RID texture_create(const TextureFormat &p_format, const TextureView &p_view, const Vector<Vector<uint8_t>> &p_data = Vector<Vector<uint8_t>>());
 	RID texture_create_shared(const TextureView &p_view, RID p_with_texture);
 	RID texture_create_from_extension(TextureType p_type, DataFormat p_format, TextureSamples p_samples, BitField<RenderingDevice::TextureUsageBits> p_usage, uint64_t p_image, uint64_t p_width, uint64_t p_height, uint64_t p_depth, uint64_t p_layers, uint64_t p_mipmaps = 1);
@@ -1036,6 +1037,8 @@ private:
 	RID _vertex_buffer_create_bind_compat_101561(uint32_t p_size_bytes, const Vector<uint8_t> &p_data, bool p_use_as_storage);
 	RID _index_buffer_create_bind_compat_101561(uint32_t p_size_indices, IndexBufferFormat p_format, const Vector<uint8_t> &p_data, bool p_use_restart_indices);
 	RID _storage_buffer_create_bind_compat_101561(uint32_t p_size, const Vector<uint8_t> &p_data, BitField<StorageBufferUsage> p_usage);
+
+	void _draw_list_draw_bind_compat_4_6(DrawListID p_list, bool p_use_indices, uint32_t p_instances, uint32_t p_procedural_vertices);
 #endif
 
 public:
@@ -1147,6 +1150,8 @@ public:
 
 	typedef Uniform PipelineImmutableSampler;
 	RID shader_create_from_bytecode_with_samplers(const Vector<uint8_t> &p_shader_binary, RID p_placeholder = RID(), const Vector<PipelineImmutableSampler> &p_immutable_samplers = Vector<PipelineImmutableSampler>());
+	// Internal cache transaction: empty entries are skipped; failure leaves every placeholder unchanged.
+	Vector<RID> shader_create_from_bytecode_batch(const Vector<Vector<uint8_t>> &p_shader_binaries, const Vector<RID> &p_placeholders, const Vector<PipelineImmutableSampler> &p_immutable_samplers);
 
 private:
 	static const uint32_t MAX_UNIFORM_SETS = 16;

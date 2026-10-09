@@ -473,10 +473,14 @@ void SceneShaderForwardClustered::ShaderData::_create_pipeline(PipelineKey p_pip
 				// Writes to normal and roughness in opaque way.
 				blend_state = RD::PipelineColorBlendState::create_disabled(5);
 				break;
+			case PIPELINE_VERSION_DEPTH_PASS_WITH_SDF:
+				if (!RD::get_singleton()->has_feature(RD::SUPPORTS_FRAGMENT_SHADER_WITH_ONLY_SIDE_EFFECTS)) {
+					blend_state = RD::PipelineColorBlendState::create_disabled(1);
+				}
+				break;
 			case PIPELINE_VERSION_DEPTH_PASS:
 			case PIPELINE_VERSION_DEPTH_PASS_DP:
 			case PIPELINE_VERSION_DEPTH_PASS_MULTIVIEW:
-			case PIPELINE_VERSION_DEPTH_PASS_WITH_SDF:
 			default:
 				break;
 		}
@@ -645,6 +649,9 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 
 	{
 		Vector<ShaderRD::VariantDefine> shader_versions;
+		// Lightmaps enable the advanced group too. Defer WebGPU voxelization
+		// separately so it is compiled only after SDFGI's device limits pass.
+		const ShaderGroup sdfgi_group = RD::get_singleton()->get_device_api_name() == "WebGPU" ? SHADER_GROUP_SDFGI : SHADER_GROUP_ADVANCED;
 		for (uint32_t ubershader = 0; ubershader < 2; ubershader++) {
 			const String base_define = ubershader ? "\n#define UBERSHADER\n" : "";
 			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_BASE, base_define + "\n#define MODE_RENDER_DEPTH\n", true)); // SHADER_VERSION_DEPTH_PASS
@@ -655,7 +662,7 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_MULTIVIEW, base_define + "\n#define USE_MULTIVIEW\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_NORMAL_ROUGHNESS\n", false)); // SHADER_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_MULTIVIEW
 			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_ADVANCED_MULTIVIEW, base_define + "\n#define USE_MULTIVIEW\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_NORMAL_ROUGHNESS\n#define MODE_RENDER_VOXEL_GI\n", false)); // SHADER_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_AND_VOXEL_GI_MULTIVIEW
 			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_ADVANCED, base_define + "\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_MATERIAL\n", false)); // SHADER_VERSION_DEPTH_PASS_WITH_MATERIAL
-			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_ADVANCED, base_define + "\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_SDF\n", false)); // SHADER_VERSION_DEPTH_PASS_WITH_SDF
+			shader_versions.push_back(ShaderRD::VariantDefine(sdfgi_group, base_define + "\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_SDF\n", false)); // SHADER_VERSION_DEPTH_PASS_WITH_SDF
 		}
 
 		Vector<String> color_pass_flags = {
@@ -691,15 +698,14 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 
 		Vector<uint64_t> dynamic_buffers;
 		dynamic_buffers.push_back(ShaderRD::DynamicBuffer::encode(RenderForwardClustered::RENDER_PASS_UNIFORM_SET, 2));
-		shader.initialize(shader_versions, p_defines, Vector<RD::PipelineImmutableSampler>(), dynamic_buffers);
-
+		String sdfgi_defines;
 		if (RD::get_singleton()->get_device_api_name() == "WebGPU") {
-			// Lightmaps also enable the advanced group. Do not compile its unused
-			// SDFGI voxelization variants: they require image atomics, which WebGPU
-			// cannot translate or execute. Keep both specialized and uber variants out.
-			shader.set_variant_enabled(ShaderVersion::SHADER_VERSION_DEPTH_PASS_WITH_SDF, false);
-			shader.set_variant_enabled(ShaderVersion::SHADER_VERSION_DEPTH_PASS_WITH_SDF + ShaderVersion::SHADER_VERSION_COLOR_PASS, false);
+			sdfgi_defines += "\n#define SDFGI_BUFFER_STORAGE\n";
 		}
+		if (!RD::get_singleton()->has_feature(RD::SUPPORTS_FRAGMENT_SHADER_WITH_ONLY_SIDE_EFFECTS)) {
+			sdfgi_defines += "\n#define SDFGI_NEEDS_DUMMY_ATTACHMENT\n";
+		}
+		shader.initialize(shader_versions, p_defines + sdfgi_defines, Vector<RD::PipelineImmutableSampler>(), dynamic_buffers);
 
 		if (RendererCompositorRD::get_singleton()->is_xr_enabled()) {
 			shader.enable_group(SHADER_GROUP_MULTIVIEW);
@@ -1032,6 +1038,13 @@ void SceneShaderForwardClustered::set_default_specialization(const ShaderSpecial
 
 void SceneShaderForwardClustered::enable_multiview_shader_group() {
 	shader.enable_group(SHADER_GROUP_MULTIVIEW);
+}
+
+void SceneShaderForwardClustered::enable_sdfgi_shader_group() {
+	if (RD::get_singleton()->get_device_api_name() == "WebGPU") {
+		shader.enable_group(SHADER_GROUP_SDFGI);
+	}
+	enable_advanced_shader_group();
 }
 
 void SceneShaderForwardClustered::enable_advanced_shader_group(bool p_needs_multiview) {

@@ -1,0 +1,27 @@
+{
+  "passed": true,
+  "checks": 12,
+  "failed_checks": 12,
+  "negative_control": true,
+  "errors": [],
+  "returncode": 1,
+  "seconds": 1.0037153749726713,
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "engine_sha256": "d06206f6c8f66ecd6e8708d477c4ed07f2bb3227a835598c69122dfc7bf305ed",
+  "production_atomic_block_sha256": "efd56c20914fbeac721a6a7d28b1c6d227e4cc76b6d3f4895a6b821b65102cd5",
+  "fixture_atomic_block_sha256": "2d3278b6138722626deb490e07dfbcf32a7c2b00821db22a8d9da87c80d15105",
+  "fallback": false,
+  "command": [
+    "/private/tmp/aw3-webgpu-integrated-third",
+    "--path",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration",
+    "--rendering-method",
+    "forward_plus",
+    "--rendering-driver",
+    "webgpu",
+    "--script",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration/facing.gd",
+    "--",
+    "--fixture-dir=/private/tmp/aw3-sdfgi-third-facing-control"
+  ]
+}

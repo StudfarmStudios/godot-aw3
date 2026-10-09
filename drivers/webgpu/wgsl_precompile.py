@@ -23,6 +23,8 @@ import subprocess
 import sys
 import tempfile
 
+import cache_identity
+
 # ---------------------------------------------------------------------------
 # MurmurHash3 (x86_32) — matches Godot's hash_murmur3_buffer()
 # ---------------------------------------------------------------------------
@@ -146,15 +148,11 @@ def _parse_glsl_recursive(filepath, stages, included_files, current_stage):
             if include_name.startswith("thirdparty/"):
                 include_path = os.path.relpath(include_name)
             else:
-                include_path = os.path.normpath(
-                    os.path.join(os.path.dirname(filepath), include_name)
-                )
+                include_path = os.path.normpath(os.path.join(os.path.dirname(filepath), include_name))
             stage_key = current_stage + ":" + include_path
             if stage_key not in included_files:
                 included_files.add(stage_key)
-                current_stage = _parse_glsl_recursive(
-                    include_path, stages, included_files, current_stage
-                )
+                current_stage = _parse_glsl_recursive(include_path, stages, included_files, current_stage)
             continue
 
         # Regular line — add to current stage.
@@ -174,12 +172,11 @@ def assemble_glsl(stage_lines, general_defines, variant_defines):
     - #CODE : ... → empty (ubershader has no custom code)
     """
     driver_defines = (
-        "#define RENDER_DRIVER_WEBGPU\n"
-        "#define samplerExternalOES sampler2D\n"
-        "#define textureExternalOES texture2D\n"
+        "#define RENDER_DRIVER_WEBGPU\n#define samplerExternalOES sampler2D\n#define textureExternalOES texture2D\n"
     )
 
-    defines_block = general_defines + variant_defines + driver_defines
+    # ShaderRD separates these blocks even when a variant has no trailing newline.
+    defines_block = "\n".join((general_defines, variant_defines, driver_defines))
 
     result = []
     for line in stage_lines:
@@ -210,52 +207,40 @@ GENERAL_DEFINES_FORWARD_MOBILE = (
     "\n#define MATERIAL_UNIFORM_SET 3\n"
 )
 
-GENERAL_DEFINES_CANVAS = (
-    "#define MAX_LIGHTS 256\n"
-    "\n#define SAMPLERS_BINDING_FIRST_INDEX 10\n"
-)
+GENERAL_DEFINES_CANVAS = "#define MAX_LIGHTS 256\n\n#define SAMPLERS_BINDING_FIRST_INDEX 10\n"
 
 # Particles shader defines (particles_storage.cpp:56-61).
-GENERAL_DEFINES_PARTICLES = (
-    "#define SAMPLERS_BINDING_FIRST_INDEX 3\n"
-)
+GENERAL_DEFINES_PARTICLES = "#define SAMPLERS_BINDING_FIRST_INDEX 3\n"
 
 # Sky shader defines (sky.cpp:714-730).
-GENERAL_DEFINES_SKY = (
-    "\n#define MAX_DIRECTIONAL_LIGHT_DATA_STRUCTS 4\n"
-    "\n#define SAMPLERS_BINDING_FIRST_INDEX 4\n"
-)
+GENERAL_DEFINES_SKY = "\n#define MAX_DIRECTIONAL_LIGHT_DATA_STRUCTS 4\n\n#define SAMPLERS_BINDING_FIRST_INDEX 4\n"
 
 # Volumetric fog shader defines (fog.cpp:218-226).
-GENERAL_DEFINES_FOG = (
-    "#define SAMPLERS_BINDING_FIRST_INDEX 3\n"
-)
+GENERAL_DEFINES_FOG = "#define SAMPLERS_BINDING_FIRST_INDEX 3\n"
 
 # Volumetric fog process shader defines (fog.cpp:303-323).
-GENERAL_DEFINES_FOG_PROCESS = (
-    "\n#define MAX_DIRECTIONAL_LIGHT_DATA_STRUCTS 8\n"
-    "\n#define MAX_SKY_LOD 5.0\n"
-)
+GENERAL_DEFINES_FOG_PROCESS = "\n#define MAX_DIRECTIONAL_LIGHT_DATA_STRUCTS 8\n\n#define MAX_SKY_LOD 5.0\n"
 
 # Voxel GI defines (gi.cpp:3445-3457).
-GENERAL_DEFINES_VOXEL_GI = (
-    "\n#define MAX_LIGHTS 32\n"
-)
+GENERAL_DEFINES_VOXEL_GI = "\n#define MAX_LIGHTS 32\n"
 
-# SDFGI defines (gi.cpp).
-GENERAL_DEFINES_SDFGI_PREPROCESS = (
-    "\n#define OCCLUSION_SIZE 4\n"
+# SDFGI capability decisions and constants from GI::init / GI::SDFGI.
+GENERAL_DEFINES_SDFGI_STORAGE = (
+    "\n#define SDFGI_NATIVE_STORAGE_FORMAT\n#define SDFGI_BUFFER_STORAGE\n#define SDFGI_CASCADE_ATLAS\n"
 )
-GENERAL_DEFINES_SDFGI_DIRECT_LIGHT = (
-    "\n#define OCT_SIZE 5\n"
-)
-GENERAL_DEFINES_SDFGI_INTEGRATE = (
-    "\n#define OCT_SIZE 5\n"
-    "\n#define SH_SIZE 16\n"
-)
-GENERAL_DEFINES_SDFGI_DEBUG = (
-    "\n#define OCT_SIZE 5\n"
-)
+GENERAL_DEFINES_SDFGI_PREPROCESS = "\n#define OCCLUSION_SIZE 8\n" + GENERAL_DEFINES_SDFGI_STORAGE
+GENERAL_DEFINES_SDFGI_DIRECT_LIGHT = "\n#define OCT_SIZE 6\n" + GENERAL_DEFINES_SDFGI_STORAGE
+GENERAL_DEFINES_SDFGI_INTEGRATE = "\n#define OCT_SIZE 6\n\n#define SH_SIZE 16\n" + GENERAL_DEFINES_SDFGI_STORAGE
+GENERAL_DEFINES_SDFGI_DEBUG = "\n#define OCT_SIZE 6\n" + GENERAL_DEFINES_SDFGI_STORAGE
+
+# These are deliberately absent from this conservative WebGPU profile. Do not
+# turn a translator failure into an exclusion without checking runtime gating.
+PROFILE_EXCLUSIONS = {
+    "tonemap_mobile:subpass,subpass_1d_lut": "tone_mapper.cpp disables input-attachment variants on WebGPU",
+    "cluster_render:use_attachment": "WebGPU supports fragment-only side effects; cluster_builder_rd.cpp selects the attachment-free variant",
+    "giprobe_write": "unused legacy GLSL; no ShaderRD class or initialization exists in this renderer",
+    "multiview,VRS,subgroups": "optional shader features are disabled in target_profile.json",
+}
 
 # Empty general defines for effect shaders that need no special defines.
 GENERAL_DEFINES_NONE = ""
@@ -304,7 +289,9 @@ SHADER_REGISTRY = [
     # ── Canvas SDF ──────────────────────────────────────────────────
     ("servers/rendering/renderer_rd/shaders/canvas_sdf.glsl",
      GENERAL_DEFINES_NONE, [
-        ("default", "", [COMP]),
+        (f"{mode.lower()}_{fmt.lower()}", f"\n#define {mode}\n#define {fmt}\n", [COMP])
+        for fmt in ("SDF_R16F", "SDF_RGBA16F")
+        for mode in ("MODE_LOAD", "MODE_LOAD_SHRINK", "MODE_PROCESS", "MODE_PROCESS_OPTIMIZED", "MODE_STORE", "MODE_STORE_SHRINK")
     ]),
 
     # ── Blit ────────────────────────────────────────────────────────
@@ -351,6 +338,7 @@ SHADER_REGISTRY = [
         ("gaussian_glow_auto_exposure", "\n#define MODE_GAUSSIAN_BLUR\n#define MODE_GLOW\n#define GLOW_USE_AUTO_EXPOSURE\n", [COMP]),
         ("simple_copy", "\n#define MODE_SIMPLE_COPY\n", [COMP]),
         ("simple_copy_8bit", "\n#define MODE_SIMPLE_COPY\n#define DST_IMAGE_8BIT\n", [COMP]),
+        ("simple_copy_rg16f", "\n#define MODE_SIMPLE_COPY\n#define DST_IMAGE_RG16F\n", [COMP]),
         ("simple_copy_depth", "\n#define MODE_SIMPLE_COPY_DEPTH\n", [COMP]),
         ("set_color", "\n#define MODE_SET_COLOR\n", [COMP]),
         ("set_color_8bit", "\n#define MODE_SET_COLOR\n#define DST_IMAGE_8BIT\n", [COMP]),
@@ -375,15 +363,13 @@ SHADER_REGISTRY = [
      GENERAL_DEFINES_NONE, [("default", "", [VERT, FRAG])]),
 
     ("servers/rendering/renderer_rd/shaders/effects/cube_to_octmap.glsl",
-     GENERAL_DEFINES_NONE, [("default", "", [COMP])]),
+     GENERAL_DEFINES_NONE, [("default", "", [VERT, FRAG])]),
 
     # ── Tone Mapper ─────────────────────────────────────────────────
     ("servers/rendering/renderer_rd/shaders/effects/tonemap_mobile.glsl",
      GENERAL_DEFINES_NONE, [
         ("normal", "\n", [VERT, FRAG]),
         ("1d_lut", "\n#define USE_1D_LUT\n", [VERT, FRAG]),
-        ("subpass", "\n#define SUBPASS\n", [VERT, FRAG]),
-        ("subpass_1d_lut", "\n#define SUBPASS\n#define USE_1D_LUT\n", [VERT, FRAG]),
     ]),
 
     ("servers/rendering/renderer_rd/shaders/effects/tonemap.glsl",
@@ -413,6 +399,7 @@ SHADER_REGISTRY = [
     ("servers/rendering/renderer_rd/shaders/effects/bokeh_dof.glsl",
      GENERAL_DEFINES_NONE, [
         ("gen_blur", "\n#define MODE_GEN_BLUR_SIZE\n", [COMP]),
+        ("gen_blur_depth", "\n#define MODE_GEN_BLUR_SIZE\n#define SOURCE_DEPTH\n", [COMP]),
         ("box_weight", "\n#define MODE_BOKEH_BOX\n#define OUTPUT_WEIGHT\n", [COMP]),
         ("hex_weight", "\n#define MODE_BOKEH_HEXAGONAL\n#define OUTPUT_WEIGHT\n", [COMP]),
         ("circular", "\n#define MODE_BOKEH_CIRCULAR\n#define OUTPUT_WEIGHT\n", [COMP]),
@@ -422,10 +409,13 @@ SHADER_REGISTRY = [
     ("servers/rendering/renderer_rd/shaders/effects/bokeh_dof_raster.glsl",
      GENERAL_DEFINES_NONE, [
         ("gen_blur", "\n#define MODE_GEN_BLUR_SIZE\n", [VERT, FRAG]),
+        ("gen_blur_depth", "\n#define MODE_GEN_BLUR_SIZE\n#define SOURCE_DEPTH\n", [VERT, FRAG]),
         ("box", "\n#define MODE_BOKEH_BOX\n#define OUTPUT_WEIGHT\n", [VERT, FRAG]),
         ("hex", "\n#define MODE_BOKEH_HEXAGONAL\n#define OUTPUT_WEIGHT\n", [VERT, FRAG]),
         ("circular", "\n#define MODE_BOKEH_CIRCULAR\n#define OUTPUT_WEIGHT\n", [VERT, FRAG]),
         ("composite", "\n#define MODE_COMPOSITE_BOKEH\n", [VERT, FRAG]),
+        ("box_no_weight", "\n#define MODE_BOKEH_BOX\n", [VERT, FRAG]),
+        ("hex_no_weight", "\n#define MODE_BOKEH_HEXAGONAL\n", [VERT, FRAG]),
     ]),
 
     # ── Sort ────────────────────────────────────────────────────────
@@ -495,53 +485,130 @@ SHADER_REGISTRY = [
 
     # ── Octahedral Map Effects ──────────────────────────────────────
     ("servers/rendering/renderer_rd/shaders/effects/octmap_downsampler.glsl",
-     GENERAL_DEFINES_NONE, [("default", "", [COMP])]),
+     GENERAL_DEFINES_NONE, [
+        ('rgba16f', '\n#define OCTMAP_FORMAT rgba16f\n', [COMP]),
+        ('rgb10_a2', '\n#define OCTMAP_FORMAT rgb10_a2\n', [COMP]),
+    ]),
     ("servers/rendering/renderer_rd/shaders/effects/octmap_downsampler_raster.glsl",
      GENERAL_DEFINES_NONE, [("default", "", [VERT, FRAG])]),
     ("servers/rendering/renderer_rd/shaders/effects/octmap_filter.glsl",
-     GENERAL_DEFINES_NONE, [("default", "", [COMP])]),
+     GENERAL_DEFINES_NONE, [
+        ('low_False_rgba16f', '\n#define USE_LOW_QUALITY\n#define OCTMAP_FORMAT rgba16f\n', [COMP]),
+        ('low_False_rgb10_a2', '\n#define USE_LOW_QUALITY\n#define OCTMAP_FORMAT rgb10_a2\n', [COMP]),
+        ('low_True_rgba16f', '\n#define USE_LOW_QUALITY\n#define USE_TEXTURE_ARRAY\n#define OCTMAP_FORMAT rgba16f\n', [COMP]),
+        ('low_True_rgb10_a2', '\n#define USE_LOW_QUALITY\n#define USE_TEXTURE_ARRAY\n#define OCTMAP_FORMAT rgb10_a2\n', [COMP]),
+        ('high_False_rgba16f', '\n#define USE_HIGH_QUALITY\n#define OCTMAP_FORMAT rgba16f\n', [COMP]),
+        ('high_False_rgb10_a2', '\n#define USE_HIGH_QUALITY\n#define OCTMAP_FORMAT rgb10_a2\n', [COMP]),
+        ('high_True_rgba16f', '\n#define USE_HIGH_QUALITY\n#define USE_TEXTURE_ARRAY\n#define OCTMAP_FORMAT rgba16f\n', [COMP]),
+        ('high_True_rgb10_a2', '\n#define USE_HIGH_QUALITY\n#define USE_TEXTURE_ARRAY\n#define OCTMAP_FORMAT rgb10_a2\n', [COMP]),
+    ]),
     ("servers/rendering/renderer_rd/shaders/effects/octmap_filter_raster.glsl",
-     GENERAL_DEFINES_NONE, [("default", "", [VERT, FRAG])]),
+     GENERAL_DEFINES_NONE, [
+        ('use_low_quality', '\n#define USE_LOW_QUALITY\n', [VERT, FRAG]),
+        ('use_high_quality', '\n#define USE_HIGH_QUALITY\n', [VERT, FRAG]),
+    ]),
     ("servers/rendering/renderer_rd/shaders/effects/octmap_roughness.glsl",
-     GENERAL_DEFINES_NONE, [("default", "", [COMP])]),
+     GENERAL_DEFINES_NONE, [
+        ('rgba16f', '\n#define OCTMAP_FORMAT rgba16f\n', [COMP]),
+        ('rgb10_a2', '\n#define OCTMAP_FORMAT rgb10_a2\n', [COMP]),
+    ]),
     ("servers/rendering/renderer_rd/shaders/effects/octmap_roughness_raster.glsl",
      GENERAL_DEFINES_NONE, [("default", "", [VERT, FRAG])]),
 
     # ── SSR ─────────────────────────────────────────────────────────
     ("servers/rendering/renderer_rd/shaders/effects/screen_space_reflection.glsl",
      GENERAL_DEFINES_NONE, [("default", "", [COMP])]),
-    ("servers/rendering/renderer_rd/shaders/effects/screen_space_reflection_downsample.glsl",
-     GENERAL_DEFINES_NONE, [("default", "", [COMP])]),
     ("servers/rendering/renderer_rd/shaders/effects/screen_space_reflection_filter.glsl",
      GENERAL_DEFINES_NONE, [("default", "", [COMP])]),
-    ("servers/rendering/renderer_rd/shaders/effects/screen_space_reflection_hiz.glsl",
-     GENERAL_DEFINES_NONE, [("default", "", [COMP])]),
     ("servers/rendering/renderer_rd/shaders/effects/screen_space_reflection_resolve.glsl",
-     GENERAL_DEFINES_NONE, [("default", "", [COMP])]),
+     GENERAL_DEFINES_NONE, [
+        ("default", "", [COMP]),
+        ("source_depth", "\n#define SOURCE_DEPTH\n", [COMP]),
+    ]),
+    ("servers/rendering/renderer_rd/shaders/effects/screen_space_reflection_downsample.glsl",
+     GENERAL_DEFINES_NONE, [("default", "", [COMP])] + [
+        (f"odd_{x}_{y}", "\n" +
+         ("#define MODE_ODD_WIDTH\n" if x else "") +
+         ("#define MODE_ODD_HEIGHT\n" if y else ""), [COMP])
+        for x in (False, True) for y in (False, True) if x or y
+    ] + [
+        (f"source_depth_odd_{x}_{y}", "\n#define SOURCE_DEPTH\n" +
+         ("#define MODE_ODD_WIDTH\n" if x else "") +
+         ("#define MODE_ODD_HEIGHT\n" if y else ""), [COMP])
+        for x in (False, True) for y in (False, True)
+    ]),
+    ("servers/rendering/renderer_rd/shaders/effects/screen_space_reflection_hiz.glsl",
+     GENERAL_DEFINES_NONE, [("default", "", [COMP])] + [
+        (f"odd_{x}_{y}", "\n" +
+         ("#define MODE_ODD_WIDTH\n" if x else "") +
+         ("#define MODE_ODD_HEIGHT\n" if y else ""), [COMP])
+        for x in (False, True) for y in (False, True) if x or y
+    ] + [
+        (f"source_depth_odd_{x}_{y}", "\n#define SOURCE_DEPTH\n" +
+         ("#define MODE_ODD_WIDTH\n" if x else "") +
+         ("#define MODE_ODD_HEIGHT\n" if y else ""), [COMP])
+        for x in (False, True) for y in (False, True)
+    ]),
 
     # ── SSAO ────────────────────────────────────────────────────────
     ("servers/rendering/renderer_rd/shaders/effects/ssao.glsl",
-     GENERAL_DEFINES_NONE, [("default", "", [COMP])]),
+     GENERAL_DEFINES_NONE, [
+        ('default', '\n', [COMP]),
+        ('ssao_base', '\n#define SSAO_BASE\n', [COMP]),
+        ('adaptive', '\n#define ADAPTIVE\n', [COMP]),
+    ]),
     ("servers/rendering/renderer_rd/shaders/effects/ssao_blur.glsl",
-     GENERAL_DEFINES_NONE, [("default", "", [COMP])]),
+     GENERAL_DEFINES_NONE, [
+        ('mode_non_smart', '\n#define MODE_NON_SMART\n', [COMP]),
+        ('mode_smart', '\n#define MODE_SMART\n', [COMP]),
+        ('mode_wide', '\n#define MODE_WIDE\n', [COMP]),
+    ]),
     ("servers/rendering/renderer_rd/shaders/effects/ssao_importance_map.glsl",
-     GENERAL_DEFINES_NONE, [("default", "", [COMP])]),
+     GENERAL_DEFINES_NONE, [
+        ('generate_map', '\n#define GENERATE_MAP\n', [COMP]),
+        ('process_mapa', '\n#define PROCESS_MAPA\n', [COMP]),
+        ('process_mapb', '\n#define PROCESS_MAPB\n', [COMP]),
+    ]),
     ("servers/rendering/renderer_rd/shaders/effects/ssao_interleave.glsl",
-     GENERAL_DEFINES_NONE, [("default", "", [COMP])]),
+     GENERAL_DEFINES_NONE, [
+        ('mode_non_smart', '\n#define MODE_NON_SMART\n', [COMP]),
+        ('mode_smart', '\n#define MODE_SMART\n', [COMP]),
+        ('mode_half', '\n#define MODE_HALF\n', [COMP]),
+    ]),
 
     # ── SSIL ────────────────────────────────────────────────────────
     ("servers/rendering/renderer_rd/shaders/effects/ssil.glsl",
-     GENERAL_DEFINES_NONE, [("default", "", [COMP])]),
+     GENERAL_DEFINES_NONE, [
+        ('default', '\n', [COMP]),
+        ('ssil_base', '\n#define SSIL_BASE\n', [COMP]),
+        ('adaptive', '\n#define ADAPTIVE\n', [COMP]),
+    ]),
     ("servers/rendering/renderer_rd/shaders/effects/ssil_blur.glsl",
-     GENERAL_DEFINES_NONE, [("default", "", [COMP])]),
+     GENERAL_DEFINES_NONE, [
+        ('mode_non_smart', '\n#define MODE_NON_SMART\n', [COMP]),
+        ('mode_smart', '\n#define MODE_SMART\n', [COMP]),
+        ('mode_wide', '\n#define MODE_WIDE\n', [COMP]),
+    ]),
     ("servers/rendering/renderer_rd/shaders/effects/ssil_importance_map.glsl",
-     GENERAL_DEFINES_NONE, [("default", "", [COMP])]),
+     GENERAL_DEFINES_NONE, [
+        ('generate_map', '\n#define GENERATE_MAP\n', [COMP]),
+        ('process_mapa', '\n#define PROCESS_MAPA\n', [COMP]),
+        ('process_mapb', '\n#define PROCESS_MAPB\n', [COMP]),
+    ]),
     ("servers/rendering/renderer_rd/shaders/effects/ssil_interleave.glsl",
-     GENERAL_DEFINES_NONE, [("default", "", [COMP])]),
+     GENERAL_DEFINES_NONE, [
+        ('mode_non_smart', '\n#define MODE_NON_SMART\n', [COMP]),
+        ('mode_smart', '\n#define MODE_SMART\n', [COMP]),
+        ('mode_half', '\n#define MODE_HALF\n', [COMP]),
+    ]),
 
     # ── Subsurface Scattering ───────────────────────────────────────
     ("servers/rendering/renderer_rd/shaders/effects/subsurface_scattering.glsl",
-     GENERAL_DEFINES_NONE, [("default", "", [COMP])]),
+     GENERAL_DEFINES_NONE, [
+        ('use_11_samples', '\n#define USE_11_SAMPLES\n', [COMP]),
+        ('use_17_samples', '\n#define USE_17_SAMPLES\n', [COMP]),
+        ('use_25_samples', '\n#define USE_25_SAMPLES\n', [COMP]),
+    ]),
 
     # ── SS Effects Downsample ───────────────────────────────────────
     ("servers/rendering/renderer_rd/shaders/effects/ss_effects_downsample.glsl",
@@ -549,13 +616,12 @@ SHADER_REGISTRY = [
 
     # ── Cluster ─────────────────────────────────────────────────────
     ("servers/rendering/renderer_rd/shaders/cluster_debug.glsl",
-     GENERAL_DEFINES_NONE, [("default", "", [VERT, FRAG])]),
+     GENERAL_DEFINES_NONE, [("default", "", [COMP])]),
     # NO_SUBGROUPS is what cluster_builder_rd.cpp defines on a device without
     # fragment-stage subgroup ops, which is every WebGPU device. Without it this
     # entry compiles the subgroup path, whose SPIR-V the runtime never asks for.
     ("servers/rendering/renderer_rd/shaders/cluster_render.glsl",
-     "\n#define NO_SUBGROUPS\n", [("default", "", [VERT, FRAG]),
-                                  ("use_attachment", "\n#define USE_ATTACHMENT\n", [VERT, FRAG])]),
+     "\n#define NO_SUBGROUPS\n", [("default", "", [VERT, FRAG])]),
     ("servers/rendering/renderer_rd/shaders/cluster_store.glsl",
      GENERAL_DEFINES_NONE, [("default", "", [COMP])]),
 
@@ -565,11 +631,15 @@ SHADER_REGISTRY = [
 
     # ── GI (gi.cpp:3573) ───────────────────────────────────────────
     ("servers/rendering/renderer_rd/shaders/environment/gi.glsl",
-     "\n#define SDFGI_OCT_SIZE 5\n", [("default", "", [COMP])]),
+     "\n#define SDFGI_OCT_SIZE 6\n" + GENERAL_DEFINES_SDFGI_STORAGE, [
+        ('voxel', '\n#define USE_VOXEL_GI_INSTANCES\n', [COMP]),
+        ('voxel_nearest', '\n#define USE_VOXEL_GI_INSTANCES\n#define SAMPLE_VOXEL_GI_NEAREST\n', [COMP]),
+        ('sdfgi', '\n#define USE_SDFGI\n', [COMP]),
+        ('combined', '\n#define USE_SDFGI\n#define USE_VOXEL_GI_INSTANCES\n', [COMP]),
+        ('combined_nearest', '\n#define USE_SDFGI\n#define USE_VOXEL_GI_INSTANCES\n#define SAMPLE_VOXEL_GI_NEAREST\n', [COMP]),
+    ]),
 
     # ── GI Probe Write ──────────────────────────────────────────────
-    ("servers/rendering/renderer_rd/shaders/giprobe_write.glsl",
-     GENERAL_DEFINES_NONE, [("default", "", [COMP])]),
 
     # ── Volumetric Fog (fog.cpp:218) ────────────────────────────────
     ("servers/rendering/renderer_rd/shaders/environment/volumetric_fog.glsl",
@@ -589,13 +659,39 @@ SHADER_REGISTRY = [
     ("servers/rendering/renderer_rd/shaders/environment/sdfgi_debug.glsl",
      GENERAL_DEFINES_SDFGI_DEBUG, [("default", "", [COMP])]),
     ("servers/rendering/renderer_rd/shaders/environment/sdfgi_debug_probes.glsl",
-     GENERAL_DEFINES_SDFGI_DEBUG, [("default", "", [VERT, FRAG])]),
+     "\n#define OCT_SIZE 6\n", [
+        ('mode_probes', '\n#define MODE_PROBES\n', [VERT, FRAG]),
+        ('mode_visibility', '\n#define MODE_VISIBILITY\n', [VERT, FRAG]),
+    ]),
     ("servers/rendering/renderer_rd/shaders/environment/sdfgi_direct_light.glsl",
-     GENERAL_DEFINES_SDFGI_DIRECT_LIGHT, [("default", "", [COMP])]),
+     GENERAL_DEFINES_SDFGI_DIRECT_LIGHT, [
+        ('mode_process_static', '\n#define MODE_PROCESS_STATIC\n', [COMP]),
+        ('mode_process_dynamic', '\n#define MODE_PROCESS_DYNAMIC\n', [COMP]),
+    ]),
     ("servers/rendering/renderer_rd/shaders/environment/sdfgi_integrate.glsl",
-     GENERAL_DEFINES_SDFGI_INTEGRATE, [("default", "", [COMP])]),
+     GENERAL_DEFINES_SDFGI_INTEGRATE, [
+        ('mode_process_array_False', '\n#define MODE_PROCESS\n', [COMP]),
+        ('mode_process_array_True', '\n#define MODE_PROCESS\n#define USE_RADIANCE_OCTMAP_ARRAY\n', [COMP]),
+        ('mode_store_array_False', '\n#define MODE_STORE\n', [COMP]),
+        ('mode_store_array_True', '\n#define MODE_STORE\n#define USE_RADIANCE_OCTMAP_ARRAY\n', [COMP]),
+        ('mode_scroll_array_False', '\n#define MODE_SCROLL\n', [COMP]),
+        ('mode_scroll_array_True', '\n#define MODE_SCROLL\n#define USE_RADIANCE_OCTMAP_ARRAY\n', [COMP]),
+        ('mode_scroll_store_array_False', '\n#define MODE_SCROLL_STORE\n', [COMP]),
+        ('mode_scroll_store_array_True', '\n#define MODE_SCROLL_STORE\n#define USE_RADIANCE_OCTMAP_ARRAY\n', [COMP]),
+    ]),
     ("servers/rendering/renderer_rd/shaders/environment/sdfgi_preprocess.glsl",
-     GENERAL_DEFINES_SDFGI_PREPROCESS, [("default", "", [COMP])]),
+     GENERAL_DEFINES_SDFGI_PREPROCESS, [
+        ('mode_scroll', '\n#define MODE_SCROLL\n', [COMP]),
+        ('mode_scroll_occlusion', '\n#define MODE_SCROLL_OCCLUSION\n', [COMP]),
+        ('mode_initialize_jump_flood', '\n#define MODE_INITIALIZE_JUMP_FLOOD\n', [COMP]),
+        ('mode_initialize_jump_flood_half', '\n#define MODE_INITIALIZE_JUMP_FLOOD_HALF\n', [COMP]),
+        ('mode_jumpflood', '\n#define MODE_JUMPFLOOD\n', [COMP]),
+        ('mode_jumpflood_optimized', '\n#define MODE_JUMPFLOOD_OPTIMIZED\n', [COMP]),
+        ('mode_upscale_jump_flood', '\n#define MODE_UPSCALE_JUMP_FLOOD\n', [COMP]),
+        ('mode_occlusion', '\n#define MODE_OCCLUSION\n', [COMP]),
+        ('mode_store', '\n#define MODE_STORE\n', [COMP]),
+        ('mode_clear_light', '\n#define MODE_CLEAR_LIGHT\n', [COMP]),
+    ]),
 ]
 # fmt: on
 
@@ -631,9 +727,12 @@ def compile_glsl_to_spirv(glsl_source, stage, glslang_path="glslangValidator"):
                 # where SSBOs come out as Uniform + BufferBlock rather than the
                 # StorageBuffer storage class - different SPIR-V, so a different
                 # hash, so nothing precompiled here would ever be found at runtime.
-                "--target-env", "vulkan1.1",
-                "-S", stage,
-                "-o", spv_path,
+                "--target-env",
+                "vulkan1.1",
+                "-S",
+                stage,
+                "-o",
+                spv_path,
                 glsl_path,
             ],
             capture_output=True,
@@ -683,30 +782,36 @@ def convert_spirv_batch(spv_files, tint_cli_path):
             [tint_cli_path, "--batch"] + paths,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=300,
         )
-    except FileNotFoundError:
-        print(f"[WGSL Precompile] ERROR: Tint CLI not found at: {tint_cli_path}", file=sys.stderr)
-        sys.exit(1)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise RuntimeError(f"Tint batch process failed: {error}") from error
 
     if result.returncode != 0:
-        print(f"Tint batch conversion failed: {result.stderr}", file=sys.stderr)
-        return {}
+        raise RuntimeError(f"Tint batch conversion exited {result.returncode}: {result.stderr[-4000:]}")
 
-    results = json.loads(result.stdout)
+    try:
+        results = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("Tint batch returned invalid JSON") from error
+    if not isinstance(results, dict):
+        raise RuntimeError("Tint batch returned a non-object result")
     output = {}
     for key, path in spv_files:
         val = results.get(path)
         if isinstance(val, dict) and "error" in val:
             print(f"  Tint error for {key}: {val['error']}", file=sys.stderr)
             output[key] = None
-        else:
+        elif isinstance(val, str) and val:
             output[key] = val
+        else:
+            print(f"  Tint omitted a valid result for {key}", file=sys.stderr)
+            output[key] = None
 
     return output
 
 
-def generate_precompiled_header(entries, output_path):
+def generate_precompiled_header(entries, output_path, fingerprint):
     """Generate wgsl_precompiled.gen.h from a list of (hash, wgsl) entries.
 
     Args:
@@ -722,6 +827,7 @@ def generate_precompiled_header(entries, output_path):
         f.write("// Checked at runtime before falling back to Tint.\n")
         f.write("#pragma once\n\n")
         f.write("#include <cstdint>\n\n")
+        f.write(f'static constexpr char _wgsl_precompiled_fingerprint[] = "{fingerprint}";\n\n')
         f.write("struct WgslPrecompiledEntry {\n")
         f.write("\tuint64_t spv_hash;\n")
         f.write("\tconst char *wgsl;\n")
@@ -737,13 +843,11 @@ def generate_precompiled_header(entries, output_path):
             # Use raw string literal to avoid escaping issues.
             # Ensure the WGSL doesn't contain the delimiter )wgsl".
             delimiter = "wgsl"
-            while f"){delimiter}\"" in wgsl:
+            while f'){delimiter}"' in wgsl:
                 delimiter += "_"
             f.write(f'\t{{ 0x{spv_hash:016X}ULL, R"{delimiter}({wgsl}){delimiter}" }},\n')
         f.write("};\n\n")
-        f.write(
-            f"static const uint32_t _wgsl_precompiled_count = {len(entries)};\n"
-        )
+        f.write(f"static const uint32_t _wgsl_precompiled_count = {len(entries)};\n")
 
 
 # ---------------------------------------------------------------------------
@@ -762,12 +866,23 @@ def precompile_wgsl(repo_root, output_path, glslang_path="glslangValidator"):
     Returns:
         Number of successfully precompiled entries.
     """
+    # Unique names isolate concurrent builds; failed conversions also clean up.
+    with tempfile.TemporaryDirectory(prefix="godot-wgsl-precompile-") as workspace:
+        return _precompile_wgsl(repo_root, output_path, glslang_path, workspace)
+
+
+def _precompile_wgsl(repo_root, output_path, glslang_path, workspace):
     # Find the tint_convert_cli binary (built by build.sh → bin/tint_convert_cli).
     tint_cli = os.path.join(repo_root, "bin", "tint_convert_cli")
     if not os.path.isfile(tint_cli):
         print("[WGSL Precompile] ERROR: bin/tint_convert_cli not found.", file=sys.stderr)
         print("[WGSL Precompile] Run: ./drivers/webgpu/tint_cli/build.sh", file=sys.stderr)
         sys.exit(1)
+
+    fingerprint = cache_identity.fingerprint(repo_root)
+    actual = subprocess.check_output([tint_cli, "--fingerprint"], text=True, timeout=10).strip()
+    if actual != fingerprint:
+        raise RuntimeError("Tint CLI translator/profile identity differs from current sources; rebuild the CLI")
 
     total = 0
     compiled = 0
@@ -780,11 +895,14 @@ def precompile_wgsl(repo_root, output_path, glslang_path="glslangValidator"):
     spv_data = {}  # key → spv_bytes
 
     print(f"[WGSL Precompile] Processing {len(SHADER_REGISTRY)} shader files...")
+    for variants, reason in PROFILE_EXCLUSIONS.items():
+        print(f"[WGSL Precompile] Profile excludes {variants}: {reason}")
 
     for glsl_rel, general_defines, variants in SHADER_REGISTRY:
         glsl_path = os.path.join(repo_root, glsl_rel)
         if not os.path.exists(glsl_path):
-            print(f"  SKIP: {glsl_rel} (file not found)")
+            print(f"  FAIL: {glsl_rel} (file not found)")
+            failed_compile += 1
             continue
 
         # Parse the GLSL file.
@@ -811,17 +929,14 @@ def precompile_wgsl(repo_root, output_path, glslang_path="glslangValidator"):
                 spv_bytes, error = compile_glsl_to_spirv(glsl_source, stage_type, glslang_path)
                 if spv_bytes is None:
                     shader_name = os.path.basename(glsl_rel)
-                    # These optional variants fall back to runtime translation.
-                    # Keep their compiler diagnostics attached to that context,
-                    # rather than emitting standalone build-error lines.
-                    detail = error.replace("\n", " | ")[:120] if error else "unknown"
+                    detail = error.replace("\n", " | ")[:2000] if error else "unknown"
                     print(f"  FAIL: {shader_name}:{variant_name}:{stage_type} — {detail}")
                     failed_compile += 1
                     continue
 
                 # Save SPIR-V for batch Tint conversion.
                 key = f"{glsl_rel}:{variant_name}:{stage_type}"
-                spv_path = os.path.join(tempfile.gettempdir(), f"wgsl_pre_{hash(key) & 0xFFFFFFFF:08x}.spv")
+                spv_path = os.path.join(workspace, f"module_{len(spv_batch)}.spv")
                 with open(spv_path, "wb") as f:
                     f.write(spv_bytes)
                 spv_batch.append((key, spv_path))
@@ -850,10 +965,25 @@ def precompile_wgsl(repo_root, output_path, glslang_path="glslangValidator"):
             except OSError:
                 pass
 
-    # Generate the output header.
-    generate_precompiled_header(entries, output_path)
+    print(
+        f"[WGSL Precompile] Results: {compiled} compiled, {failed_compile} glsl failures, {failed_convert} tint failures"
+    )
+    if failed_compile or failed_convert:
+        raise RuntimeError(
+            "Unexpected shader precompilation failures; fix the recipe/translator or explicitly document a runtime-disabled profile exclusion"
+        )
 
-    print(f"[WGSL Precompile] Results: {compiled} compiled, {failed_compile} glsl failures, {failed_convert} tint failures")
+    # Do not replace a valid previous table with a partial/failed batch.
+    with tempfile.NamedTemporaryFile(
+        dir=os.path.dirname(os.path.abspath(output_path)), suffix=".tmp", delete=False
+    ) as temporary:
+        staged_output = temporary.name
+    try:
+        generate_precompiled_header(entries, staged_output, fingerprint)
+        os.replace(staged_output, output_path)
+    finally:
+        if os.path.exists(staged_output):
+            os.unlink(staged_output)
     print(f"[WGSL Precompile] Unique entries: {len(entries)} (from {total} total modules)")
     print(f"[WGSL Precompile] Output: {output_path}")
 
@@ -919,8 +1049,8 @@ if __name__ == "__main__":
         sys.exit(1)
 
     repo_root = sys.argv[1]
-    output = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
-        repo_root, "drivers", "webgpu", "wgsl_precompiled.gen.h"
+    output = (
+        sys.argv[2] if len(sys.argv) > 2 else os.path.join(repo_root, "drivers", "webgpu", "wgsl_precompiled.gen.h")
     )
     glslang = sys.argv[3] if len(sys.argv) > 3 else "glslangValidator"
 

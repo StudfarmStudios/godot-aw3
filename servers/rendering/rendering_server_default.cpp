@@ -30,11 +30,12 @@
 
 #include "rendering_server_default.h"
 
-#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED)
+#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED) && defined(THREADS_ENABLED)
 #include <emscripten/emscripten.h>
 #include <emscripten/eventloop.h>
 #include <emscripten/html5.h>
 #include <emscripten/threading.h>
+
 #include <cstdio>
 #include <cstdlib>
 
@@ -294,7 +295,7 @@ void RenderingServerDefault::_finish() {
 
 void RenderingServerDefault::init() {
 	if (create_thread) {
-#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED)
+#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED) && defined(THREADS_ENABLED)
 		if (DisplayServer::get_singleton()->has_deferred_rendering()) {
 			_web_start_render_thread();
 			return;
@@ -317,7 +318,7 @@ void RenderingServerDefault::finish() {
 	if (create_thread) {
 		command_queue.push(this, &RenderingServerDefault::_finish);
 		command_queue.push(this, &RenderingServerDefault::_thread_exit);
-#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED)
+#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED) && defined(THREADS_ENABLED)
 		if (web_render_thread_started) {
 			// _thread_exit finalizes the GPU objects in the render thread's realm
 			// and stops its loops; this sync returns once that has run. The thread
@@ -462,7 +463,7 @@ void RenderingServerDefault::_assign_mt_ids(WorkerThreadPool::TaskID p_pump_task
 
 void RenderingServerDefault::_thread_exit() {
 	exit = true;
-#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED)
+#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED) && defined(THREADS_ENABLED)
 	if (web_render_thread_started) {
 		// Still inside the flush finish() is waiting on, so the DisplayServer's
 		// GPU objects are gone before the game thread tears anything else down.
@@ -471,7 +472,7 @@ void RenderingServerDefault::_thread_exit() {
 #endif
 }
 
-#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED)
+#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED) && defined(THREADS_ENABLED)
 void RenderingServerDefault::_web_start_render_thread() {
 	print_verbose("RenderingServerWrapMT: Starting render thread (web pthread)");
 	web_render_self = this;
@@ -645,7 +646,7 @@ void RenderingServerDefault::draw(bool p_present, double frame_step) {
 	RS::get_singleton()->emit_signal(SNAME("frame_pre_draw"));
 	changes = 0;
 	if (create_thread) {
-#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED)
+#if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED) && defined(THREADS_ENABLED)
 		if (web_render_thread_started) {
 			// The frame must be drawn from the render thread's animation-frame
 			// callback; this stops the drain right before it (see _web_render_raf).

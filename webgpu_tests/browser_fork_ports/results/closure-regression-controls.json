@@ -1,0 +1,35 @@
+{
+  "passed": true,
+  "closure_compiler": "v20240317",
+  "tests": {
+    "source_wrapper": {
+      "passed": 6,
+      "failed": 0
+    },
+    "original_compiled_wrapper": {
+      "passed": 1,
+      "failed": 5,
+      "expected_failure": true
+    },
+    "extern_repaired_compiled_wrapper": {
+      "passed": 6,
+      "failed": 0
+    },
+    "actual_closure_import": {
+      "passed": 2,
+      "failed": 0,
+      "cases": [
+        "Production EM_ASM body and installed emdawn helper link correctly after Closure.",
+        "Old quoted call throws TypeError after the same Closure compilation."
+      ]
+    }
+  },
+  "files": {
+    "platform/web/js/engine/engine.externs.js": "bd8e25fe789385bac4f93f7330ad85ca3b819c044ee132b2fdaad502aae8f826",
+    "platform/web/js/engine/webgpu-device.test.mjs": "f0ada845d190f4430808bf353ee63f4a8435e1d50d1927a5448bff922438d260",
+    "platform/web/js/engine/webgpu-import.test.mjs": "4a60aecdacc7d9669dd36d30fad6ef4fdaa675bd621a1ffdb0a41042c94a9f76"
+  },
+  "scope": "Compiled-wrapper public browser API and production internal device-import helper; browser evidence separately preserves actual runtime failures.",
+  "original_wrapper_sha256": "aca0b581d77d2d42c05cc63d28e5beb627d1fbfc4190356063f80d9a5c6f9443",
+  "repaired_wrapper_sha256": "bfae84d0ac927e6188179636c946ca23d9a20b14fe166ec631e9eacb8c60e656"
+}

@@ -1,0 +1,33 @@
+{
+  "passed": true,
+  "checks": 2,
+  "negative_control": true,
+  "errors": [],
+  "returncode": 1,
+  "values": [
+    [
+      "0.750000",
+      "0.000000"
+    ],
+    [
+      "0.250000",
+      "0.000000"
+    ]
+  ],
+  "engine_sha256": "67c9e7d81941c96e1218cd3d7a0e222af17b283a1d94a54e69bdb9dda428e136",
+  "gi_source_sha256": "ac60e27a0f3cd82650c395a9148d9d7b92e68dd50bd4bca1052de63e34b7f875",
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "command": [
+    "/private/tmp/aw3-webgpu-integrated-fifth",
+    "--path",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration",
+    "--rendering-method",
+    "forward_plus",
+    "--rendering-driver",
+    "webgpu",
+    "--script",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration/depth_read.gd",
+    "--",
+    "--fixture-dir=/private/tmp/aw3-sdfgi-depth-read-control"
+  ]
+}

@@ -32,10 +32,9 @@
 
 #ifdef WEBGPU_ENABLED
 
-#include "webgpu_objects.h"
-
-#include "servers/rendering/rendering_device_driver.h"
 #include "core/templates/hash_map.h"
+#include "drivers/webgpu/webgpu_objects.h"
+#include "servers/rendering/rendering_device_driver.h"
 
 #include <webgpu/webgpu.h>
 
@@ -67,6 +66,8 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 		uint32_t first_instance_draws = 0;
 		uint32_t ring_overflows = 0;
 		uint32_t compute_dispatches_skipped = 0;
+		uint32_t shadow_copies = 0;
+		uint32_t shadow_pass_restarts = 0;
 		double last_log_time = 0;
 		double last_frame_time = 0;
 		uint32_t frames_since_log = 0;
@@ -87,6 +88,8 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 			first_instance_draws = 0;
 			ring_overflows = 0;
 			compute_dispatches_skipped = 0;
+			shadow_copies = 0;
+			shadow_pass_restarts = 0;
 			// Kept in step, or the next per-frame delta underflows.
 			draw_calls_at_last_frame = 0;
 			set_bind_group_calls_at_last_frame = 0;
@@ -100,13 +103,9 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 	WGPULimits device_limits = WGPU_LIMITS_INIT;
 	bool timestamp_supported = false;
 	bool has_texture_formats_tier1 = false;
+	bool has_texture_formats_tier2 = false;
 	bool has_rw_storage_textures = false; // readonly-and-readwrite-storage-textures
 
-	// Source WGPUTexture → shadow WGPUTexture handles for read_write storage splits.
-	// When a source texture is updated (command_copy_buffer_to_texture), the new
-	// data is also copied to every registered shadow so compute shaders see
-	// the latest contents through the read-only shadow binding.
-	HashMap<WGPUTexture, LocalVector<WGPUTexture>> rw_shadow_copy_map;
 	bool float32_filterable_supported = false;
 	bool float32_blendable_supported = false;
 	bool depth_clip_control_supported = false;
@@ -209,6 +208,17 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 	HashMap<uint64_t, WGPURenderPipeline> depth_rect_clear_pipelines;
 	WGPURenderPipeline _get_depth_rect_clear_pipeline(WGPUTextureFormat p_format, uint32_t p_samples);
 
+	HashMap<String, WGPURenderPipeline> region_clear_pipelines;
+	WGPURenderPipeline _get_region_clear_pipeline(const LocalVector<WGPUTextureFormat> &p_color_formats, uint32_t p_color_mask, WGPUTextureFormat p_depth_format, bool p_clear_depth, bool p_clear_stencil, uint32_t p_samples);
+
+	// Cached by storage format; equal-format resolves keep the native fast path.
+	struct ResolveComputePipeline {
+		WGPUBindGroupLayout bind_group_layout = nullptr;
+		WGPUComputePipeline pipeline = nullptr;
+	};
+	HashMap<WGPUTextureFormat, ResolveComputePipeline> resolve_compute_pipelines;
+	bool _resolve_texture_compute(WGCommandBuffer *p_cmd, WGPUTextureFormat p_dst_format, WGPUTextureView p_src_view, WGPUTextureView p_dst_view, uint32_t p_width, uint32_t p_height);
+
 	// --- Dummy Samplers for BGL Rebinding ---
 	// When a bind group must be re-created with a different BGL (e.g., because
 	// the original BGL has a Comparison sampler but the target has Filtering),
@@ -223,6 +233,8 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 	WGPUSampler _compatible_sampler(WGPUSampler p_sampler, const WGShader *p_shader, uint32_t p_set_index, uint32_t p_binding);
 
 	// --- BGL Rebinding Helper ---
+	WGPUTextureView _get_rw_shadow_view(WGUniformSet *p_us, uint32_t p_write_binding);
+	void _refresh_compute_shadows(WGCommandBuffer *p_cmd);
 	WGPUBindGroup _get_compatible_bind_group(WGUniformSet *p_us, WGShader *p_target_shader, uint32_t p_set_idx);
 
 	// --- Pixel Format Mapping ---
@@ -238,15 +250,19 @@ class RenderingDeviceDriverWebGPU : public RenderingDeviceDriver {
 	// storage texel formats). With texture-formats-tier1, these formats are valid
 	// storage formats natively and promotion is skipped.
 	WGPUTextureFormat _promote_storage_format(WGPUTextureFormat p_format) const;
+	bool _supports_rw_storage_format(WGPUTextureFormat p_format) const;
+	void _remap_unsupported_wgsl_storage_formats(char *&r_wgsl) const;
+	void _lower_storage_texture_access(char *&r_wgsl, const HashMap<uint32_t, WGPUStorageTextureAccess> &p_contract, HashMap<uint32_t, uint32_t> *r_splits, HashSet<uint32_t> *r_sampled_reads, HashMap<uint32_t, WGPUTextureFormat> *r_formats) const;
 	WGPUBufferUsage _buffer_usage_to_wgpu(BitField<BufferUsageBits> p_usage) const;
 	WGPUTextureUsage _texture_usage_to_wgpu(BitField<TextureUsageBits> p_usage) const;
 	WGPUTextureDimension _texture_type_to_dimension(TextureType p_type) const;
 	WGPUTextureViewDimension _texture_type_to_view_dimension(TextureType p_type) const;
 
+	void _ensure_push_constant_space(WGCommandBuffer *p_cmd_buf, uint32_t p_aligned_size);
 	void _flush_push_constants(WGCommandBuffer *p_cmd_buf, WGShader *p_shader);
 	bool _ensure_shader_layout(WGShader *p_shader);
 	bool _ensure_shader_modules(WGShader *p_shader);
-	WGPUShaderModule _create_module_with_spec_constants(const PackedByteArray &p_spirv, VectorView<PipelineSpecializationConstant> p_constants, ShaderStage p_stage);
+	WGPUShaderModule _create_module_with_spec_constants(const PackedByteArray &p_spirv, VectorView<PipelineSpecializationConstant> p_constants, ShaderStage p_stage, const WGShader *p_shader);
 
 public:
 	RenderingDeviceDriverWebGPU(RenderingContextDriverWebGPU *p_context_driver);
@@ -310,14 +326,14 @@ public:
 	/// Heap-allocated so that pointers remain stable across HashMap rehashes
 	/// and can safely be passed to async WebGPU map callbacks.
 	struct ReadbackEntry {
-		WGPUBuffer staging = nullptr;   ///< Persistent staging buffer (CopyDst | MapRead).
-		uint8_t *shadow = nullptr;      ///< CPU-side shadow buffer.
-		uint64_t size = 0;              ///< Buffer size in bytes.
-		bool map_complete = false;      ///< Set by async map callback.
-		bool map_pending = false;       ///< True while mapAsync is in flight (not yet completed).
-		bool has_data = false;          ///< True after first successful readback.
-		bool cancelled = false;         ///< Source freed while map pending; callback will clean up.
-		WGPUFuture map_future = {};     ///< The pending map, for native Dawn to wait on.
+		WGPUBuffer staging = nullptr; ///< Persistent staging buffer (CopyDst | MapRead).
+		uint8_t *shadow = nullptr; ///< CPU-side shadow buffer.
+		uint64_t size = 0; ///< Buffer size in bytes.
+		bool map_complete = false; ///< Set by async map callback.
+		bool map_pending = false; ///< True while mapAsync is in flight (not yet completed).
+		bool has_data = false; ///< True after first successful readback.
+		bool cancelled = false; ///< Source freed while map pending; callback will clean up.
+		WGPUFuture map_future = {}; ///< The pending map, for native Dawn to wait on.
 	};
 	HashMap<uint64_t, ReadbackEntry *> _readback_cache; ///< Keyed by source buffer/texture pointer.
 	/// Async map callback — copies GPU data to shadow buffer.
@@ -332,6 +348,9 @@ public:
 	LocalVector<WGBuffer *> _staging_upload_queue;
 	void _stage_pending_upload(WGBuffer *p_buf, uint64_t p_offset, uint64_t p_size);
 	void _flush_pending_staging_uploads();
+
+	// Immutable zero source for bounded, ordered storage-texture clears.
+	WGPUBuffer texture_clear_zero_buffer = nullptr;
 
 	// Scratch upload ring: command_copy_buffer copies each staged region's
 	// bytes into upload_ring_cpu at a bump-allocated offset and records the

@@ -1,0 +1,459 @@
+{
+  "passed": false,
+  "checks": 46,
+  "tint_sha256": "bfa3c2d9a434bcbc873bd4cc180780f13b9c7d82f75b1db9840a64e54dab63e2",
+  "source_sha256": {
+    "servers/rendering/renderer_rd/shaders/environment/sdfgi_preprocess.glsl": "62132b33ce40ff7527cd3ee683a3085554aaa8d3de92802390f4ff548abf87be",
+    "servers/rendering/renderer_rd/shaders/environment/sdfgi_direct_light.glsl": "76415eabce9f26bdd5835b3920807dd43ea5ed8379bf937128313509b1da05b3",
+    "servers/rendering/renderer_rd/shaders/environment/sdfgi_integrate.glsl": "0171fe0c31e6692eb25f9a556ae505a0121a3dd240d33a84dadf07ad45274748",
+    "servers/rendering/renderer_rd/shaders/environment/sdfgi_debug.glsl": "ecaa0ebec63129064a8980f403a08217c59503ebfbbb88111eb7843096f3b39c",
+    "servers/rendering/renderer_rd/shaders/environment/gi.glsl": "8a4ef64f610bc4a0b762bb3bd9e9ec44568e5fdd0102aad940470c01ea3cdabd",
+    "servers/rendering/renderer_rd/shaders/sdfgi_cascade_inc.glsl": "710d024577b3ae377b00de49b0404585089261c784a74d1999bdab24e859aa27"
+  },
+  "results": [
+    {
+      "shader": "packed-sdfgi_preprocess-0",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "packed-sdfgi_preprocess-1",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "packed-sdfgi_preprocess-2",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "packed-sdfgi_preprocess-3",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "packed-sdfgi_preprocess-4",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "packed-sdfgi_preprocess-5",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "packed-sdfgi_preprocess-6",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "packed-sdfgi_preprocess-7",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "packed-sdfgi_preprocess-8",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "packed-sdfgi_preprocess-9",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "packed-sdfgi_direct_light-0",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "packed-sdfgi_direct_light-1",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "packed-sdfgi_integrate-0",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "packed-sdfgi_integrate-0-sky-array",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "packed-sdfgi_integrate-1",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "packed-sdfgi_integrate-1-sky-array",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "packed-sdfgi_integrate-2",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "packed-sdfgi_integrate-2-sky-array",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "packed-sdfgi_integrate-3",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "packed-sdfgi_integrate-3-sky-array",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "packed-sdfgi_debug-0",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "packed-gi-0",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "packed-gi-1",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": null,
+      "texture_bindings": null,
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "webgpu-sdfgi_preprocess-0",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 0,
+        "storage": 3
+      },
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "webgpu-sdfgi_preprocess-1",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 0,
+        "storage": 1
+      },
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "webgpu-sdfgi_preprocess-2",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 0,
+        "storage": 2
+      },
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "webgpu-sdfgi_preprocess-3",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 0,
+        "storage": 2
+      },
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "webgpu-sdfgi_preprocess-4",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 0,
+        "storage": 2
+      },
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "webgpu-sdfgi_preprocess-5",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 0,
+        "storage": 2
+      },
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "webgpu-sdfgi_preprocess-6",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 0,
+        "storage": 3
+      },
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "webgpu-sdfgi_preprocess-7",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 0,
+        "storage": 0
+      },
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "webgpu-sdfgi_preprocess-8",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 0,
+        "storage": 6
+      },
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "webgpu-sdfgi_preprocess-9",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 0,
+        "storage": 3
+      },
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "webgpu-sdfgi_direct_light-0",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 2,
+        "storage": 0
+      },
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "webgpu-sdfgi_direct_light-1",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 4,
+        "storage": 3
+      },
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "webgpu-sdfgi_integrate-0",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 5,
+        "storage": 3
+      },
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "webgpu-sdfgi_integrate-0-sky-array",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 5,
+        "storage": 3
+      },
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "webgpu-sdfgi_integrate-1",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 0,
+        "storage": 2
+      },
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "webgpu-sdfgi_integrate-1-sky-array",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 0,
+        "storage": 2
+      },
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "webgpu-sdfgi_integrate-2",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 0,
+        "storage": 5
+      },
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "webgpu-sdfgi_integrate-2-sky-array",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 0,
+        "storage": 5
+      },
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "webgpu-sdfgi_integrate-3",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 0,
+        "storage": 4
+      },
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "webgpu-sdfgi_integrate-3-sky-array",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 0,
+        "storage": 4
+      },
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "webgpu-sdfgi_debug-0",
+      "passed": true,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 4,
+        "storage": 1
+      },
+      "hardware_depth_typed": null
+    },
+    {
+      "shader": "webgpu-gi-0",
+      "passed": false,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 6,
+        "storage": 2
+      },
+      "hardware_depth_typed": false
+    },
+    {
+      "shader": "webgpu-gi-1",
+      "passed": false,
+      "spirv_valid": true,
+      "tint_translated": true,
+      "texture_bindings": {
+        "sampled": 8,
+        "storage": 2
+      },
+      "hardware_depth_typed": false
+    }
+  ],
+  "negative_control": true,
+  "description": "Original unmarked hardware-depth input translates successfully but loses its required depth type; two expected assertion failures.",
+  "expected_failing_variants": [
+    "webgpu-gi-0",
+    "webgpu-gi-1"
+  ],
+  "expected_failure_detected": true
+}

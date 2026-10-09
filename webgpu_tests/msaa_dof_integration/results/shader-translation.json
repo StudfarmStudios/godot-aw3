@@ -1,0 +1,36 @@
+{
+  "passed": true,
+  "checks": [
+    {
+      "case": "bokeh_compute_float",
+      "passed": true,
+      "glslang_errors": "",
+      "tint_errors": "",
+      "source_sha256": "ecf31d9a72a618d0171263b7c1f0a2eda560e1f6b7bd1be61f74eb505887573f"
+    },
+    {
+      "case": "bokeh_compute_depth",
+      "passed": true,
+      "glslang_errors": "",
+      "tint_errors": "",
+      "source_sha256": "a476fbdd85f0c69d59a89388f9d6c62aa5a07def9e89aa36a065ed069a8f461f",
+      "depth_texture_preserved": true
+    },
+    {
+      "case": "bokeh_raster_float",
+      "passed": true,
+      "glslang_errors": "",
+      "tint_errors": "",
+      "source_sha256": "99f2ffb17542a64bb33536f1cd7d3bf1e9cc37cd25bf89c018e70ab43c695548"
+    },
+    {
+      "case": "bokeh_raster_depth",
+      "passed": true,
+      "glslang_errors": "",
+      "tint_errors": "",
+      "source_sha256": "cb18e28a9c8052660940df7d26d8a689f35d246beb06b837870cd17832343a6e",
+      "depth_texture_preserved": true
+    }
+  ],
+  "tint_cli_sha256": "6fd86eea9eb98aff979901e8abb45a814123d7d9aae91ef4d47c51d585b5c072"
+}

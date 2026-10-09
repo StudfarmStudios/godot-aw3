@@ -524,6 +524,7 @@ private:
 			int32_t pad[2];
 		};
 
+		RD::DataFormat read_format = RD::DATA_FORMAT_R16_SNORM;
 		CanvasSdfShaderRD shader;
 		RID shader_version;
 		RID pipelines[SHADER_MAX];

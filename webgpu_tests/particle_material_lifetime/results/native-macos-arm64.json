@@ -1,0 +1,205 @@
+{
+  "platform": "macOS arm64 / Apple M1 Ultra",
+  "old": {
+    "engine_sha256": "862617c897f8a0f1193bff61f2ac861fd1e9f1490716a55b6825785f52f5bbab",
+    "cases": [
+      {
+        "driver": "metal",
+        "case": "runtime",
+        "exit_code": 0,
+        "probe": {
+          "case": "runtime",
+          "live_before_shutdown": 0,
+          "materials": 4,
+          "pass": true
+        },
+        "errors": [
+          "ERROR: 1 RID allocations of type 'N10RendererRD15MaterialStorage6ShaderE' were leaked at exit.",
+          "ERROR: 1 shaders of type ParticlesShaderRD were never freed"
+        ],
+        "pass": false
+      },
+      {
+        "driver": "metal",
+        "case": "shutdown",
+        "exit_code": 0,
+        "probe": {
+          "case": "shutdown",
+          "live_before_shutdown": 4,
+          "materials": 4,
+          "pass": true
+        },
+        "errors": [
+          "ERROR: 1 RID allocations of type 'N10RendererRD15MaterialStorage6ShaderE' were leaked at exit.",
+          "ERROR: 1 shaders of type ParticlesShaderRD were never freed"
+        ],
+        "pass": false
+      },
+      {
+        "driver": "webgpu",
+        "case": "runtime",
+        "exit_code": 0,
+        "probe": {
+          "case": "runtime",
+          "live_before_shutdown": 0,
+          "materials": 4,
+          "pass": true
+        },
+        "errors": [
+          "ERROR: 1 RID allocations of type 'N10RendererRD15MaterialStorage6ShaderE' were leaked at exit.",
+          "ERROR: 1 shaders of type ParticlesShaderRD were never freed"
+        ],
+        "pass": false
+      },
+      {
+        "driver": "webgpu",
+        "case": "shutdown",
+        "exit_code": 0,
+        "probe": {
+          "case": "shutdown",
+          "live_before_shutdown": 4,
+          "materials": 4,
+          "pass": true
+        },
+        "errors": [
+          "ERROR: 1 RID allocations of type 'N10RendererRD15MaterialStorage6ShaderE' were leaked at exit.",
+          "ERROR: 1 shaders of type ParticlesShaderRD were never freed"
+        ],
+        "pass": false
+      }
+    ],
+    "all_pass": false
+  },
+  "fixed": {
+    "engine_sha256": "8ef30015ed8eca8b87c9285a680a7d814982ae3f795593aa2ee43968046556d4",
+    "cases": [
+      {
+        "driver": "metal",
+        "case": "runtime",
+        "exit_code": 0,
+        "probe": {
+          "case": "runtime",
+          "live_before_shutdown": 0,
+          "materials": 4,
+          "pass": true
+        },
+        "errors": [],
+        "pass": true
+      },
+      {
+        "driver": "metal",
+        "case": "shutdown",
+        "exit_code": 0,
+        "probe": {
+          "case": "shutdown",
+          "live_before_shutdown": 4,
+          "materials": 4,
+          "pass": true
+        },
+        "errors": [],
+        "pass": true
+      },
+      {
+        "driver": "webgpu",
+        "case": "runtime",
+        "exit_code": 0,
+        "probe": {
+          "case": "runtime",
+          "live_before_shutdown": 0,
+          "materials": 4,
+          "pass": true
+        },
+        "errors": [],
+        "pass": true
+      },
+      {
+        "driver": "webgpu",
+        "case": "shutdown",
+        "exit_code": 0,
+        "probe": {
+          "case": "shutdown",
+          "live_before_shutdown": 4,
+          "materials": 4,
+          "pass": true
+        },
+        "errors": [],
+        "pass": true
+      }
+    ],
+    "all_pass": true
+  },
+  "fixed_source_scope": "Final8ef30015 editor includes explicit int(enum) casts in static_assert. Earlier1a8dd0de positives and its broad Metal run remain separately identified; runtime key behavior is unchanged.",
+  "broad_metal": {
+    "engine_sha256": "1a8dd0de6694e4c9c7a964d6d4a016ad77d6d72828eba20b5a775902026bfc4d",
+    "console_sha256": "0fa1575276a9eb427544db28fac9e2b4be15ba07a3f6b7d8a532f63541e76fe5",
+    "exit_code": 0,
+    "scene_completed": true,
+    "errors": []
+  },
+  "trace_control": {
+    "engine_sha256": "b286e5e19204bd712d52c22c6e460f15344e7ba75f85949315594e6d77d52025",
+    "new_key_hash": 2075887138,
+    "assigned_key_hash": 2075886516,
+    "registered_users": 1,
+    "destructor_found_entry": false,
+    "reentrant_update": false
+  },
+  "fixed_before_enum_casts": {
+    "engine_sha256": "1a8dd0de6694e4c9c7a964d6d4a016ad77d6d72828eba20b5a775902026bfc4d",
+    "cases": [
+      {
+        "driver": "metal",
+        "case": "runtime",
+        "exit_code": 0,
+        "probe": {
+          "case": "runtime",
+          "live_before_shutdown": 0,
+          "materials": 4,
+          "pass": true
+        },
+        "errors": [],
+        "pass": true
+      },
+      {
+        "driver": "metal",
+        "case": "shutdown",
+        "exit_code": 0,
+        "probe": {
+          "case": "shutdown",
+          "live_before_shutdown": 4,
+          "materials": 4,
+          "pass": true
+        },
+        "errors": [],
+        "pass": true
+      },
+      {
+        "driver": "webgpu",
+        "case": "runtime",
+        "exit_code": 0,
+        "probe": {
+          "case": "runtime",
+          "live_before_shutdown": 0,
+          "materials": 4,
+          "pass": true
+        },
+        "errors": [],
+        "pass": true
+      },
+      {
+        "driver": "webgpu",
+        "case": "shutdown",
+        "exit_code": 0,
+        "probe": {
+          "case": "shutdown",
+          "live_before_shutdown": 4,
+          "materials": 4,
+          "pass": true
+        },
+        "errors": [],
+        "pass": true
+      }
+    ],
+    "all_pass": true
+  }
+}

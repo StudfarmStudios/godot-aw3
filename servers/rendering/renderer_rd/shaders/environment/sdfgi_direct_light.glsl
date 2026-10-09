@@ -8,7 +8,10 @@ layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 #define MAX_CASCADES 8
 
-layout(set = 0, binding = 1) uniform texture3D sdf_cascades[MAX_CASCADES];
+#include "../sdfgi_cascade_inc.glsl"
+
+// Cascade bindings are matched by gi.cpp.
+SDFGI_DECLARE_CASCADE_TEXTURES(sdf_cascades, 100)
 layout(set = 0, binding = 2) uniform sampler linear_sampler;
 layout(set = 0, binding = 3) uniform sampler linear_sampler_with_mipmaps;
 
@@ -37,9 +40,18 @@ layout(set = 0, binding = 5, std430) restrict buffer readonly ProcessVoxels {
 }
 process_voxels;
 
+// WebGPU stores decoded channels because integer/float format aliasing is unavailable.
+#ifdef SDFGI_NATIVE_STORAGE_FORMAT
+layout(rgba16f, set = 0, binding = 6) uniform restrict writeonly image3D dst_light;
+#else
 layout(r32ui, set = 0, binding = 6) uniform restrict writeonly uimage3D dst_light;
+#endif
 layout(rgba8, set = 0, binding = 7) uniform restrict writeonly image3D dst_aniso0;
+#ifdef SDFGI_NATIVE_STORAGE_FORMAT
+layout(rgba8, set = 0, binding = 8) uniform restrict writeonly image3D dst_aniso1;
+#else
 layout(rg8, set = 0, binding = 8) uniform restrict writeonly image3D dst_aniso1;
+#endif
 
 struct CascadeData {
 	vec3 offset; //offset of (0,0,0) in world coordinates
@@ -405,7 +417,7 @@ void main() {
 				//read how much to advance from SDF
 				vec3 uvw = (pos + ray_dir * advance) * pos_to_uvw;
 
-				float distance = texture(sampler3D(sdf_cascades[j], linear_sampler), uvw).r * 255.0 - 1.0;
+				float distance = sdf_cascades_sample(j, linear_sampler, uvw, 0.0).r * 255.0 - 1.0;
 				if (distance < 0.001) {
 					//consider hit
 					hit = true;
@@ -506,10 +518,19 @@ void main() {
 	aniso1.r = lumas[4] / luma_total;
 	aniso1.g = lumas[5] / luma_total;
 
+#ifdef SDFGI_CASCADE_ATLAS
+	ivec3 atlas_offset = sdfgi_cascade_offset(params.cascade, int(params.grid_size.x));
+#else
+	ivec3 atlas_offset = ivec3(0);
+#endif
 	//save to 3D textures
-	imageStore(dst_aniso0, positioni, aniso0);
-	imageStore(dst_aniso1, positioni, vec4(aniso1, 0.0, 0.0));
-	imageStore(dst_light, positioni, uvec4(light_total_rgbe));
+	imageStore(dst_aniso0, positioni + atlas_offset, aniso0);
+	imageStore(dst_aniso1, positioni + atlas_offset, vec4(aniso1, 0.0, 0.0));
+#ifdef SDFGI_NATIVE_STORAGE_FORMAT
+	imageStore(dst_light, positioni + atlas_offset, vec4(clamp(light_total, 0.0, 65408.0), 0.0));
+#else
+	imageStore(dst_light, positioni + atlas_offset, uvec4(light_total_rgbe));
+#endif
 
 	//also fill neighbors, so light interpolation during the indirect pass works
 
@@ -548,9 +569,13 @@ void main() {
 	for (uint i = 0; i < max_neighbours; i++) {
 		if (bool(neighbors & (1 << i))) {
 			ivec3 neighbour_pos = positioni + neighbour_positions[i];
-			imageStore(dst_light, neighbour_pos, uvec4(light_total_rgbe));
-			imageStore(dst_aniso0, neighbour_pos, aniso0);
-			imageStore(dst_aniso1, neighbour_pos, vec4(aniso1, 0.0, 0.0));
+#ifdef SDFGI_NATIVE_STORAGE_FORMAT
+			imageStore(dst_light, neighbour_pos + atlas_offset, vec4(clamp(light_total, 0.0, 65408.0), 0.0));
+#else
+			imageStore(dst_light, neighbour_pos + atlas_offset, uvec4(light_total_rgbe));
+#endif
+			imageStore(dst_aniso0, neighbour_pos + atlas_offset, aniso0);
+			imageStore(dst_aniso1, neighbour_pos + atlas_offset, vec4(aniso1, 0.0, 0.0));
 		}
 	}
 

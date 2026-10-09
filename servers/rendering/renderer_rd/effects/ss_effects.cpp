@@ -279,6 +279,7 @@ SSEffects::SSEffects() {
 
 	// Screen Space Reflections
 	ssr_half_size = GLOBAL_GET("rendering/environment/screen_space_reflection/half_size");
+	ssr.use_depth_variants = RD::get_singleton()->get_device_api_name() == "WebGPU";
 
 	{
 		{
@@ -287,11 +288,16 @@ SSEffects::SSEffects() {
 			ssr_downsample_modes.push_back("\n#define MODE_ODD_WIDTH\n"); // SCREEN_SPACE_REFLECTION_DOWNSAMPLE_ODD_WIDTH
 			ssr_downsample_modes.push_back("\n#define MODE_ODD_HEIGHT\n"); // SCREEN_SPACE_REFLECTION_DOWNSAMPLE_ODD_HEIGHT
 			ssr_downsample_modes.push_back("\n#define MODE_ODD_WIDTH\n#define MODE_ODD_HEIGHT\n"); // SCREEN_SPACE_REFLECTION_DOWNSAMPLE_ODD_WIDTH_AND_HEIGHT
+			if (ssr.use_depth_variants) {
+				for (int i = 0; i < SCREEN_SPACE_REFLECTION_DOWNSAMPLE_MAX; i++) {
+					ssr_downsample_modes.push_back(ssr_downsample_modes[i] + "#define SOURCE_DEPTH\n");
+				}
+			}
 
 			ssr.downsample_shader.initialize(ssr_downsample_modes);
 			ssr.downsample_shader_version = ssr.downsample_shader.version_create();
 
-			for (uint32_t i = 0; i < SCREEN_SPACE_REFLECTION_DOWNSAMPLE_MAX; i++) {
+			for (int i = 0; i < ssr_downsample_modes.size(); i++) {
 				ssr.downsample_pipelines[i].create_compute_pipeline(ssr.downsample_shader.version_get_shader(ssr.downsample_shader_version, i));
 			}
 		}
@@ -302,47 +308,52 @@ SSEffects::SSEffects() {
 			ssr_hiz_modes.push_back("\n#define MODE_ODD_WIDTH\n"); // SCREEN_SPACE_REFLECTION_HIZ_ODD_WIDTH
 			ssr_hiz_modes.push_back("\n#define MODE_ODD_HEIGHT\n"); // SCREEN_SPACE_REFLECTION_HIZ_ODD_HEIGHT
 			ssr_hiz_modes.push_back("\n#define MODE_ODD_WIDTH\n#define MODE_ODD_HEIGHT\n"); // SCREEN_SPACE_REFLECTION_HIZ_ODD_WIDTH_AND_HEIGHT
+			if (ssr.use_depth_variants) {
+				for (int i = 0; i < SCREEN_SPACE_REFLECTION_HIZ_MAX; i++) {
+					ssr_hiz_modes.push_back(ssr_hiz_modes[i] + "#define SOURCE_DEPTH\n");
+				}
+			}
 
 			ssr.hiz_shader.initialize(ssr_hiz_modes);
 			ssr.hiz_shader_version = ssr.hiz_shader.version_create();
 
-			for (uint32_t i = 0; i < SCREEN_SPACE_REFLECTION_HIZ_MAX; i++) {
+			for (int i = 0; i < ssr_hiz_modes.size(); i++) {
 				ssr.hiz_pipelines[i].create_compute_pipeline(ssr.hiz_shader.version_get_shader(ssr.hiz_shader_version, i));
 			}
 		}
 
-		// WGSL cannot express the filter shader's format-less storage image
-		// writes, so on WebGPU the SSR pipelines can only fail to build - skip
-		// them (and their startup error spam); SSR is unusable there either way.
-		if (RD::get_singleton()->get_device_api_name() != "WebGPU") {
-			{
-				Vector<String> ssr_modes;
-				ssr_modes.push_back("\n");
+		{
+			Vector<String> ssr_modes;
+			ssr_modes.push_back("\n");
 
-				ssr.ssr_shader.initialize(ssr_modes);
-				ssr.ssr_shader_version = ssr.ssr_shader.version_create();
+			ssr.ssr_shader.initialize(ssr_modes);
+			ssr.ssr_shader_version = ssr.ssr_shader.version_create();
 
-				ssr.ssr_pipeline.create_compute_pipeline(ssr.ssr_shader.version_get_shader(ssr.ssr_shader_version, 0));
+			ssr.ssr_pipeline.create_compute_pipeline(ssr.ssr_shader.version_get_shader(ssr.ssr_shader_version, 0));
+		}
+
+		{
+			Vector<String> ssr_filter_modes;
+			ssr_filter_modes.push_back("\n");
+
+			ssr.filter_shader.initialize(ssr_filter_modes);
+			ssr.filter_shader_version = ssr.filter_shader.version_create();
+
+			ssr.filter_pipeline.create_compute_pipeline(ssr.filter_shader.version_get_shader(ssr.filter_shader_version, 0));
+		}
+
+		{
+			Vector<String> ssr_resolve_modes;
+			ssr_resolve_modes.push_back("\n");
+			if (ssr.use_depth_variants) {
+				ssr_resolve_modes.push_back("\n#define SOURCE_DEPTH\n");
 			}
 
-			{
-				Vector<String> ssr_filter_modes;
-				ssr_filter_modes.push_back("\n");
+			ssr.resolve_shader.initialize(ssr_resolve_modes);
+			ssr.resolve_shader_version = ssr.resolve_shader.version_create();
 
-				ssr.filter_shader.initialize(ssr_filter_modes);
-				ssr.filter_shader_version = ssr.filter_shader.version_create();
-
-				ssr.filter_pipeline.create_compute_pipeline(ssr.filter_shader.version_get_shader(ssr.filter_shader_version, 0));
-			}
-
-			{
-				Vector<String> ssr_resolve_modes;
-				ssr_resolve_modes.push_back("\n");
-
-				ssr.resolve_shader.initialize(ssr_resolve_modes);
-				ssr.resolve_shader_version = ssr.resolve_shader.version_create();
-
-				ssr.resolve_pipeline.create_compute_pipeline(ssr.resolve_shader.version_get_shader(ssr.resolve_shader_version, 0));
+			for (int i = 0; i < ssr_resolve_modes.size(); i++) {
+				ssr.resolve_pipelines[i].create_compute_pipeline(ssr.resolve_shader.version_get_shader(ssr.resolve_shader_version, i));
 			}
 		}
 	}
@@ -428,15 +439,17 @@ void SSEffects::copy_internal_texture_to_last_frame(Ref<RenderSceneBuffersRD> p_
 SSEffects::~SSEffects() {
 	{
 		// Cleanup SS Reflections
-		for (int i = 0; i < SCREEN_SPACE_REFLECTION_DOWNSAMPLE_MAX; i++) {
-			ssr.downsample_pipelines[i].free();
+		for (PipelineDeferredRD &pipeline : ssr.downsample_pipelines) {
+			pipeline.free();
 		}
-		for (int i = 0; i < SCREEN_SPACE_REFLECTION_HIZ_MAX; i++) {
-			ssr.hiz_pipelines[i].free();
+		for (PipelineDeferredRD &pipeline : ssr.hiz_pipelines) {
+			pipeline.free();
 		}
 		ssr.ssr_pipeline.free();
 		ssr.filter_pipeline.free();
-		ssr.resolve_pipeline.free();
+		for (PipelineDeferredRD &pipeline : ssr.resolve_pipelines) {
+			pipeline.free();
+		}
 
 		ssr.downsample_shader.version_free(ssr.downsample_shader_version);
 		ssr.hiz_shader.version_free(ssr.hiz_shader_version);
@@ -1532,6 +1545,9 @@ void SSEffects::screen_space_reflection(Ref<RenderSceneBuffersRD> p_render_buffe
 				downsample_mode = SCREEN_SPACE_REFLECTION_DOWNSAMPLE_DEFAULT;
 			}
 
+			if (ssr.use_depth_variants && (RD::get_singleton()->texture_get_format(source_depth_texture).usage_bits & RD::TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
+				downsample_mode += SCREEN_SPACE_REFLECTION_DOWNSAMPLE_MAX;
+			}
 			RID downsample_shader = ssr.downsample_shader.version_get_shader(ssr.downsample_shader_version, downsample_mode);
 
 			RD::Uniform u_source_depth(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 0, Vector<RID>{ nearest_sampler, source_depth_texture });
@@ -1595,6 +1611,9 @@ void SSEffects::screen_space_reflection(Ref<RenderSceneBuffersRD> p_render_buffe
 				hiz_mode = SCREEN_SPACE_REFLECTION_HIZ_DEFAULT;
 			}
 
+			if (ssr.use_depth_variants && (RD::get_singleton()->texture_get_format(source).usage_bits & RD::TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
+				hiz_mode += SCREEN_SPACE_REFLECTION_HIZ_MAX;
+			}
 			RID hiz_shader = ssr.hiz_shader.version_get_shader(ssr.hiz_shader_version, hiz_mode);
 
 			RD::Uniform u_source(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 0, Vector<RID>{ nearest_sampler, source });
@@ -1693,12 +1712,13 @@ void SSEffects::screen_space_reflection(Ref<RenderSceneBuffersRD> p_render_buffe
 	if (ssr_half_size) {
 		RD::get_singleton()->draw_command_begin_label("SSR Resolve");
 
-		RID resolve_shader = ssr.resolve_shader.version_get_shader(ssr.resolve_shader_version, 0);
-
 		for (uint32_t v = 0; v < view_count; v++) {
+			RID depth_texture = p_render_buffers->get_depth_texture(v);
+			const int resolve_mode = ssr.use_depth_variants && (RD::get_singleton()->texture_get_format(depth_texture).usage_bits & RD::TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) ? 1 : 0;
+			RID resolve_shader = ssr.resolve_shader.version_get_shader(ssr.resolve_shader_version, resolve_mode);
 			RD::ComputeListID compute_list = RD::get_singleton()->compute_list_begin();
 
-			RD::get_singleton()->compute_list_bind_compute_pipeline(compute_list, ssr.resolve_pipeline.get_rid());
+			RD::get_singleton()->compute_list_bind_compute_pipeline(compute_list, ssr.resolve_pipelines[resolve_mode].get_rid());
 
 			Vector2i internal_size = p_render_buffers->get_internal_size();
 
@@ -1706,7 +1726,6 @@ void SSEffects::screen_space_reflection(Ref<RenderSceneBuffersRD> p_render_buffe
 			push_constant.screen_size[0] = internal_size.x;
 			push_constant.screen_size[1] = internal_size.y;
 
-			RID depth_texture = p_render_buffers->get_depth_texture(v);
 			RID depth_half_texture = p_render_buffers->get_texture_slice(RB_SCOPE_SSR, RB_HIZ, v, 0);
 			RID normal_roughness_half_texture = p_render_buffers->get_texture_slice(RB_SCOPE_SSR, RB_NORMAL_ROUGHNESS, v, 0);
 			RID ssr_texture = p_render_buffers->get_texture_slice(RB_SCOPE_SSR, RB_SSR, v, 0, 1, p_ssr_buffers.mipmaps);

@@ -40,6 +40,10 @@
 #include "core/string/translation_server.h"
 #include "scene/resources/image_texture.h"
 
+#ifdef WEBGPU_ENABLED
+#include "servers/rendering/rendering_server.h"
+#endif
+
 #include "modules/modules_enabled.gen.h" // For freetype, msdfgen, svg.
 
 // Built-in ICU data.
@@ -3394,9 +3398,10 @@ void TextServerAdvanced::_font_set_texture_image(const RID &p_font_rid, const Ve
 	tex.texture_w = p_image->get_width();
 	tex.texture_h = p_image->get_height();
 
-	Ref<Image> img = p_image;
+	// A restored cache may be extended before the render thread consumes this
+	// first upload, so it needs the same immutable snapshot as rasterized glyphs.
+	Ref<Image> img = p_image->duplicate();
 	if (fd->mipmaps && !img->has_mipmaps()) {
-		img = p_image->duplicate();
 		img->generate_mipmaps();
 	}
 	tex.texture = ImageTexture::create_from_image(img);
@@ -3767,6 +3772,80 @@ void TextServerAdvanced::_font_set_glyph_texture_idx(const RID &p_font_rid, cons
 	fgl.found = true;
 }
 
+// Callers hold the font mutex. The snapshot must never alias the Image object
+// that subsequent glyph rasterization writes into, even without mipmaps.
+void TextServerAdvanced::_ensure_atlas_texture(FontForSizeAdvanced *p_ffsd, int32_t p_texture_index, bool p_fix_edge, bool p_mipmaps) const {
+	ShelfPackTexture &tex = p_ffsd->textures.write[p_texture_index];
+	if (!tex.dirty) {
+		return;
+	}
+	if (p_fix_edge) {
+		tex.image->fix_alpha_edges();
+	}
+	Ref<Image> image = tex.image->duplicate();
+	tex.dirty = false;
+
+#ifdef WEBGPU_ENABLED
+	// Only the active WebGPU driver needs this workaround. A build that also
+	// contains Vulkan or OpenGL must retain their immediate upload behavior.
+	if (tex.texture.is_valid() && _queue_atlas_upload(tex.texture, image, p_mipmaps)) {
+		return;
+	}
+#endif
+
+	if (p_mipmaps && !image->has_mipmaps()) {
+		image->generate_mipmaps();
+	}
+	if (tex.texture.is_null()) {
+		// Drawing needs a valid RID immediately, including for the first glyph.
+		tex.texture = ImageTexture::create_from_image(image);
+	} else {
+		tex.texture->update(image);
+	}
+}
+
+#ifdef WEBGPU_ENABLED
+bool TextServerAdvanced::_queue_atlas_upload(const Ref<ImageTexture> &p_texture, const Ref<Image> &p_image, bool p_mipmaps) const {
+	RenderingServer *rs = RenderingServer::get_singleton();
+	if (rs == nullptr || OS::get_singleton()->get_current_rendering_driver_name() != "webgpu") {
+		return false;
+	}
+	MutexLock lock(atlas_upload_mutex);
+	if (!atlas_flush_connected) {
+		Error err = rs->connect(SNAME("frame_pre_draw"), callable_mp(const_cast<TextServerAdvanced *>(this), &TextServerAdvanced::_flush_pending_atlas_uploads));
+		if (err != OK) {
+			return false;
+		}
+		atlas_flush_connected = true;
+	}
+	// Replacing an entry releases the previous snapshot, so memory is bounded
+	// by dirty atlases, not the number of glyphs added in a frame. References
+	// keep the upload valid if its font or size cache is freed before the flush.
+	PendingAtlasUpload &upload = pending_atlas_uploads[p_texture->get_instance_id()];
+	upload.texture = p_texture;
+	upload.image = p_image;
+	upload.mipmaps = p_mipmaps;
+	return true;
+}
+
+void TextServerAdvanced::_flush_pending_atlas_uploads() {
+	HashMap<ObjectID, PendingAtlasUpload> uploads;
+	{
+		MutexLock lock(atlas_upload_mutex);
+		SWAP(uploads, pending_atlas_uploads);
+	}
+	// Never hold the queue mutex while uploading or acquire a font mutex here.
+	// Producers only take font -> queue, so flushing cannot invert that order.
+	for (KeyValue<ObjectID, PendingAtlasUpload> &E : uploads) {
+		PendingAtlasUpload &upload = E.value;
+		if (upload.mipmaps && !upload.image->has_mipmaps()) {
+			upload.image->generate_mipmaps();
+		}
+		upload.texture->update(upload.image);
+	}
+}
+#endif
+
 RID TextServerAdvanced::_font_get_glyph_texture_rid(const RID &p_font_rid, const Vector2i &p_size, int64_t p_glyph) const {
 	FontAdvanced *fd = _get_font_data(p_font_rid);
 	ERR_FAIL_NULL_V(fd, RID());
@@ -3793,32 +3872,7 @@ RID TextServerAdvanced::_font_get_glyph_texture_rid(const RID &p_font_rid, const
 	ERR_FAIL_COND_V(fgl.texture_idx < -1 || fgl.texture_idx >= ffsd->textures.size(), RID());
 
 	if (fgl.texture_idx != -1) {
-		if (ffsd->textures[fgl.texture_idx].dirty) {
-			ShelfPackTexture &tex = ffsd->textures.write[fgl.texture_idx];
-			Ref<Image> img = tex.image;
-			if (fgl.fix_edge) {
-				// Same as the "fix alpha border" process option when importing SVGs
-				img->fix_alpha_edges();
-			}
-			if (fd->mipmaps && !img->has_mipmaps()) {
-				img = tex.image->duplicate();
-				img->generate_mipmaps();
-			} else if (img == tex.image) {
-				// texture_2d_update() only queues this image; with a separate
-				// render thread it is read later, while the next glyph rasterised
-				// into this atlas is still writing through ptrw(). The buffer is
-				// copy-on-write and not safe to share across that, and the reader
-				// can catch it mid-reallocation and see no data at all. Hand over
-				// a copy nothing else will touch.
-				img = tex.image->duplicate();
-			}
-			if (tex.texture.is_null()) {
-				tex.texture = ImageTexture::create_from_image(img);
-			} else {
-				tex.texture->update(img);
-			}
-			tex.dirty = false;
-		}
+		_ensure_atlas_texture(ffsd, fgl.texture_idx, fgl.fix_edge, fd->mipmaps);
 		return ffsd->textures[fgl.texture_idx].texture->get_rid();
 	}
 
@@ -3851,32 +3905,7 @@ Size2 TextServerAdvanced::_font_get_glyph_texture_size(const RID &p_font_rid, co
 	ERR_FAIL_COND_V(fgl.texture_idx < -1 || fgl.texture_idx >= ffsd->textures.size(), Size2());
 
 	if (fgl.texture_idx != -1) {
-		if (ffsd->textures[fgl.texture_idx].dirty) {
-			ShelfPackTexture &tex = ffsd->textures.write[fgl.texture_idx];
-			Ref<Image> img = tex.image;
-			if (fgl.fix_edge) {
-				// Same as the "fix alpha border" process option when importing SVGs
-				img->fix_alpha_edges();
-			}
-			if (fd->mipmaps && !img->has_mipmaps()) {
-				img = tex.image->duplicate();
-				img->generate_mipmaps();
-			} else if (img == tex.image) {
-				// texture_2d_update() only queues this image; with a separate
-				// render thread it is read later, while the next glyph rasterised
-				// into this atlas is still writing through ptrw(). The buffer is
-				// copy-on-write and not safe to share across that, and the reader
-				// can catch it mid-reallocation and see no data at all. Hand over
-				// a copy nothing else will touch.
-				img = tex.image->duplicate();
-			}
-			if (tex.texture.is_null()) {
-				tex.texture = ImageTexture::create_from_image(img);
-			} else {
-				tex.texture->update(img);
-			}
-			tex.dirty = false;
-		}
+		_ensure_atlas_texture(ffsd, fgl.texture_idx, fgl.fix_edge, fd->mipmaps);
 		return ffsd->textures[fgl.texture_idx].texture->get_size();
 	}
 
@@ -4335,28 +4364,7 @@ void TextServerAdvanced::_font_draw_glyph(const RID &p_font_rid, const RID &p_ca
 				modulate.r = modulate.g = modulate.b = 1.0;
 			}
 #endif
-			if (ffsd->textures[fgl.texture_idx].dirty) {
-				ShelfPackTexture &tex = ffsd->textures.write[fgl.texture_idx];
-				Ref<Image> img = tex.image;
-				if (fgl.fix_edge) {
-					// Same as the "fix alpha border" process option when importing SVGs
-					img->fix_alpha_edges();
-				}
-				if (fd->mipmaps && !img->has_mipmaps()) {
-					img = tex.image->duplicate();
-					img->generate_mipmaps();
-				} else if (img == tex.image) {
-					// See above: the queued update must not alias the atlas the
-					// text server keeps writing into.
-					img = tex.image->duplicate();
-				}
-				if (tex.texture.is_null()) {
-					tex.texture = ImageTexture::create_from_image(img);
-				} else {
-					tex.texture->update(img);
-				}
-				tex.dirty = false;
-			}
+			_ensure_atlas_texture(ffsd, fgl.texture_idx, fgl.fix_edge, fd->mipmaps);
 			if (fd->msdf) {
 				Point2 cpos = p_pos;
 				cpos += fgl.rect.position * (double)p_size / (double)fd->msdf_source_size;
@@ -4482,24 +4490,7 @@ void TextServerAdvanced::_font_draw_glyph_outline(const RID &p_font_rid, const R
 				modulate.r = modulate.g = modulate.b = 1.0;
 			}
 #endif
-			if (ffsd->textures[fgl.texture_idx].dirty) {
-				ShelfPackTexture &tex = ffsd->textures.write[fgl.texture_idx];
-				Ref<Image> img = tex.image;
-				if (fd->mipmaps && !img->has_mipmaps()) {
-					img = tex.image->duplicate();
-					img->generate_mipmaps();
-				} else if (img == tex.image) {
-					// See above: the queued update must not alias the atlas the
-					// text server keeps writing into.
-					img = tex.image->duplicate();
-				}
-				if (tex.texture.is_null()) {
-					tex.texture = ImageTexture::create_from_image(img);
-				} else {
-					tex.texture->update(img);
-				}
-				tex.dirty = false;
-			}
+			_ensure_atlas_texture(ffsd, fgl.texture_idx, false, fd->mipmaps);
 			if (fd->msdf) {
 				Point2 cpos = p_pos;
 				cpos += fgl.rect.position * (double)p_size / (double)fd->msdf_source_size;
@@ -8450,6 +8441,13 @@ void TextServerAdvanced::_font_clear_system_fallback_cache() {
 }
 
 void TextServerAdvanced::_cleanup() {
+#ifdef WEBGPU_ENABLED
+	// Release retained texture references while RenderingServer still exists.
+	{
+		MutexLock lock(atlas_upload_mutex);
+		pending_atlas_uploads.clear();
+	}
+#endif
 	font_clear_system_fallback_cache();
 }
 

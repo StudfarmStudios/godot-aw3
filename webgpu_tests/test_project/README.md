@@ -1,6 +1,10 @@
 # WebGPU Shader Coverage Test Project
 
-A Godot 4.6 project that programmatically creates a scene exercising **100% of RenderingDevice shader paths**. When exported with the WebGPU template and run in a browser, it forces compilation of all shader variants through the SPIR-V → WGSL pipeline.
+A Godot 4.7 scene exercising a broad set of RenderingDevice features through the
+SPIR-V → WGSL pipeline. This is a smoke test, not proof of every shader variant
+or feature's visual correctness. Feature availability, resources and deferred
+compilation affect the work actually submitted; separate shader corpora and
+targeted numerical/visual fixtures provide stronger checks.
 
 ## What it exercises
 
@@ -12,7 +16,7 @@ A Godot 4.6 project that programmatically creates a scene exercising **100% of R
 - `screen_space_reflection.glsl` + downsample/filter/resolve — SSR
 - `volumetric_fog.glsl` + `volumetric_fog_process.glsl` — Volumetric fog
 - `sdfgi_*.glsl` (5 shaders) — Signed distance field GI
-- `voxel_gi.glsl` + `voxel_gi_sdf.glsl` — Voxel-based GI
+- A VoxelGI node is created, but has no baked data and does not establish VoxelGI shader coverage
 - `bokeh_dof.glsl` — Depth of field
 - Glow/bloom blur shaders
 
@@ -65,7 +69,7 @@ A Godot 4.6 project that programmatically creates a scene exercising **100% of R
 - PointLight2D (canvas lighting path)
 
 ### Post-Processing & AA
-- `taa_resolve.glsl` — Temporal anti-aliasing
+- `taa_resolve.glsl` — Temporal anti-aliasing after switching off FSR2 halfway through the run
 - `motion_vectors.glsl` — Motion vector generation
 - FSR2 (temporal upscaling, 6+ compute shaders)
 - Luminance reduction (auto-exposure)
@@ -92,14 +96,89 @@ node ../shader_corpus/validate_spirv_dump.mjs /tmp/spirv_dump/
 godot --headless --path . --export-release "WebGPU" export/index.html
 ```
 
-### Run in headless Chrome
+### Run in Chrome
 ```bash
-# Serve the export and verify no shader errors in console
-npx playwright test smoke_test.mjs
+npm install --no-save playwright@1.64.0
+npx playwright install chromium --with-deps
+# Linux CI uses a headed browser on a virtual display.
+xvfb-run -a node preflight.mjs
+xvfb-run -a node smoke_test.mjs ./export/
 ```
+
+Linux CI pins Playwright 1.64.0 / Chromium 156.0.8078.4 and explicitly selects
+SwiftShader for software validation. ANGLE uses the documented SwANGLE pair
+`--use-gl=angle --use-angle=swiftshader`; Dawn separately selects SwiftShader.
+This selects the bundled SwiftShader ICD for ANGLE as well as for Dawn; generic
+ANGLE Vulkan can otherwise select an unavailable system driver. ANGLE still
+requires the surface extensions supplied by bundled SwiftShader. Both scripts
+share the same browser flags and require at least 48 sampled textures, eight
+storage textures and eight storage buffers per shader stage. The preflight
+requests these limits and exercises all 64 bindings in one compute dispatch,
+then checks numerical GPU readback. The smoke test checks the engine's own
+adapter and requested device and rejects Mobile fallback.
+
+Chromium's `--disable-dawn-features=tiered_adapter_limits` removes privacy tier
+rounding for this software runner; native limit normalization, device limit
+validation and GPU validation remain enabled. SwiftShader's dynamic-buffer
+limits otherwise reduce the grouped texture limits below Forward+ requirements,
+even though the underlying implementation supports the needed bindings. See the
+[pinned Chromium switch](https://github.com/chromium/chromium/blob/156.0.8078.4/gpu/command_buffer/service/webgpu_decoder_impl.cc#L1143),
+[Dawn limit tiers](https://github.com/google/dawn/blob/0a2c7df818e285d6db0f085135139cda04cee8bb/src/dawn/native/Limits.cpp#L73)
+and [required-limit validation](https://github.com/google/dawn/blob/0a2c7df818e285d6db0f085135139cda04cee8bb/src/dawn/native/Adapter.cpp#L293).
+The Linux smoke uses a 320 × 180 browser viewport and a thirty-minute bound. The
+original 1280 × 720 cold software run reached Forward+ and its first FSR2 frame
+but exceeded two minutes without shader errors or device loss. The smaller
+viewport reduces raster work while preserving the ten-frame scene, all enabled
+effects and the FSR2-to-TAA transition; canvas dimensions are logged to verify the
+actual rendering size. The broad-scene export explicitly uses adaptive canvas
+policy 2; the shared export helper defaults to project-sized policy 1 for the
+fixed-pixel targeted fixtures. This is a correctness smoke test, not a performance or
+visual-quality comparison. Other platforms keep their existing viewport/time
+defaults. A timeout remains a failure.
+
+The software launch also sets a finite 120-second GPU watchdog timeout. The
+preceding 320 × 180 run ended when Chromium's GPU process exited with raw POSIX
+status 512, followed by device loss; the harness had not timed out. Chromium's
+pinned sources map this status to exit code 2 (`RESULT_CODE_HUNG`), which its
+watchdog uses. The switch overrides the normal software watchdog allowance,
+while the separate 1800-second smoke deadline still detects incomplete work.
+The previous 300-second run stayed alive and reached frame five's TAA transition
+only 2.7 seconds before the deadline. Its resource capture showed active CPU work,
+over 10 GiB of available memory and no memory pressure or OOM events. It remains a
+failed timeout control, not proof that all ten frames completed. A separate
+600-second diagnostic reached TAA after about 381 seconds and remained CPU-busy
+until the cutoff, again without validation errors, device loss or memory
+pressure. Both timeouts remain failed evidence. The longer bound gives the full
+software workload room to finish without reducing scene coverage. Successful
+canvas texture requests are logged as additional progress observations; these
+are not proof of GPU completion and never replace the scene's completion gate.
+Neither GPU validation nor any failure gate is disabled. CI saves process CPU/RSS,
+cgroup memory counters and available kernel diagnostics to help distinguish slow
+software work, resource pressure and a real stall. These are diagnostic controls,
+not an assertion that every watchdog termination is harmless. See the pinned
+[watchdog termination](https://github.com/chromium/chromium/blob/156.0.8078.4/gpu/ipc/service/gpu_watchdog_thread.cc#L711),
+[timeout parsing](https://github.com/chromium/chromium/blob/156.0.8078.4/gpu/ipc/service/gpu_watchdog_thread.cc#L55)
+and [POSIX wait status](https://github.com/chromium/chromium/blob/156.0.8078.4/base/process/kill_posix.cc#L43).
+
+A manual workflow run can set `reuse_export_run_id` to a prior run in the same
+repository. This diagnostic path downloads the identified `webgpu-export`
+artifact without rebuilding it, records its source revision and file hashes, and
+uses distinct diagnostic check names. It is not acceptance of the harness
+revision's engine build. Normal push and PR runs still require their own fresh
+candidate build, export, translation corpus, preflight and smoke test.
+
+This configuration is test infrastructure, not a browser flag required of users,
+and does not establish Firefox/Windows/D3D12 or other hardware-driver coverage.
+
+CI retains the complete console/error report (`smoke-result.json`), browser
+version and launch flags. `DEBUG=pw:browser` captures Chromium process output;
+`VERBOSE=1` includes all page console messages in `smoke.log`. The independent
+preflight runs alongside the candidate build so an unusable software adapter is
+reported before waiting for compilation.
 
 ## Pass criteria
 
-- All frames render without `[SHADER]` errors in console
+- Adapter and device meet the Forward+ binding requirements; no Mobile fallback
+- The frame sequence completes without engine, browser or shader errors in console
 - No device-lost events
 - GDScript reports `PASS` in output

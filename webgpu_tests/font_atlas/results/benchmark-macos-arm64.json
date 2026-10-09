@@ -1,0 +1,300 @@
+{
+  "trials": {
+    "baseline": [
+      {
+        "passed": true,
+        "checks": 1,
+        "returncode": 0,
+        "timed_out": false,
+        "seconds": 3.4177502089878544,
+        "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+        "engine_sha256": "180d7f82a0f00404fb8fcabc58a9a7609cde1f52c4e9a36a6cd5486385d689d4",
+        "command": [
+          "/private/tmp/aw3-webgpu-before-partial-clears",
+          "--path",
+          "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/font_atlas",
+          "--rendering-method",
+          "forward_plus",
+          "--rendering-driver",
+          "webgpu",
+          "--render-thread",
+          "separate",
+          "--",
+          "--font=/private/tmp/aw3-webgpu-fork-ports/thirdparty/fonts/Inter_Regular.woff2",
+          "--server=advanced",
+          "--benchmark"
+        ],
+        "errors": [],
+        "benchmarks": [
+          {
+            "glyphs": 94,
+            "median_ms": 40.206,
+            "milliseconds": [
+              46.448,
+              38.914,
+              40.153,
+              41.93,
+              40.095,
+              37.956,
+              37.251,
+              38.371,
+              40.259,
+              40.927,
+              43.829,
+              41.435
+            ],
+            "mipmaps": true,
+            "server": "ICU / HarfBuzz / Graphite (Built-in)"
+          }
+        ]
+      },
+      {
+        "passed": true,
+        "checks": 1,
+        "returncode": 0,
+        "timed_out": false,
+        "seconds": 2.982366833020933,
+        "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+        "engine_sha256": "180d7f82a0f00404fb8fcabc58a9a7609cde1f52c4e9a36a6cd5486385d689d4",
+        "command": [
+          "/private/tmp/aw3-webgpu-before-partial-clears",
+          "--path",
+          "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/font_atlas",
+          "--rendering-method",
+          "forward_plus",
+          "--rendering-driver",
+          "webgpu",
+          "--render-thread",
+          "separate",
+          "--",
+          "--font=/private/tmp/aw3-webgpu-fork-ports/thirdparty/fonts/Inter_Regular.woff2",
+          "--server=advanced",
+          "--benchmark"
+        ],
+        "errors": [],
+        "benchmarks": [
+          {
+            "glyphs": 94,
+            "median_ms": 39.136,
+            "milliseconds": [
+              39.977,
+              39.053,
+              39.542,
+              44.16,
+              37.905,
+              40.855,
+              39.806,
+              38.31,
+              39.219,
+              37.981,
+              38.673,
+              38.906
+            ],
+            "mipmaps": true,
+            "server": "ICU / HarfBuzz / Graphite (Built-in)"
+          }
+        ]
+      },
+      {
+        "passed": true,
+        "checks": 1,
+        "returncode": 0,
+        "timed_out": false,
+        "seconds": 2.288493916974403,
+        "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+        "engine_sha256": "180d7f82a0f00404fb8fcabc58a9a7609cde1f52c4e9a36a6cd5486385d689d4",
+        "command": [
+          "/private/tmp/aw3-webgpu-before-partial-clears",
+          "--path",
+          "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/font_atlas",
+          "--rendering-method",
+          "forward_plus",
+          "--rendering-driver",
+          "webgpu",
+          "--render-thread",
+          "separate",
+          "--",
+          "--font=/private/tmp/aw3-webgpu-fork-ports/thirdparty/fonts/Inter_Regular.woff2",
+          "--server=advanced",
+          "--benchmark"
+        ],
+        "errors": [],
+        "benchmarks": [
+          {
+            "glyphs": 94,
+            "median_ms": 38.1195,
+            "milliseconds": [
+              38.031,
+              40.668,
+              38.103,
+              38.136,
+              36.363,
+              37.205,
+              36.93,
+              38.938,
+              40.406,
+              37.281,
+              41.688,
+              38.592
+            ],
+            "mipmaps": true,
+            "server": "ICU / HarfBuzz / Graphite (Built-in)"
+          }
+        ]
+      }
+    ],
+    "candidate": [
+      {
+        "passed": true,
+        "checks": 1,
+        "returncode": 0,
+        "timed_out": false,
+        "seconds": 2.961578582995571,
+        "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+        "engine_sha256": "9f42747715d04c53775e222ec469b32ac5a407b21c0f70ffbab143c96da228bb",
+        "command": [
+          "/private/tmp/aw3-webgpu-parallel-ports-second",
+          "--path",
+          "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/font_atlas",
+          "--rendering-method",
+          "forward_plus",
+          "--rendering-driver",
+          "webgpu",
+          "--render-thread",
+          "separate",
+          "--",
+          "--font=/private/tmp/aw3-webgpu-fork-ports/thirdparty/fonts/Inter_Regular.woff2",
+          "--server=advanced",
+          "--benchmark"
+        ],
+        "errors": [],
+        "benchmarks": [
+          {
+            "glyphs": 94,
+            "median_ms": 17.356,
+            "milliseconds": [
+              17.764,
+              17.203,
+              18.273,
+              16.737,
+              16.861,
+              17.519,
+              17.591,
+              17.017,
+              16.479,
+              17.528,
+              17.509,
+              16.816
+            ],
+            "mipmaps": true,
+            "server": "ICU / HarfBuzz / Graphite (Built-in)"
+          }
+        ]
+      },
+      {
+        "passed": true,
+        "checks": 1,
+        "returncode": 0,
+        "timed_out": false,
+        "seconds": 2.0365205000853166,
+        "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+        "engine_sha256": "9f42747715d04c53775e222ec469b32ac5a407b21c0f70ffbab143c96da228bb",
+        "command": [
+          "/private/tmp/aw3-webgpu-parallel-ports-second",
+          "--path",
+          "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/font_atlas",
+          "--rendering-method",
+          "forward_plus",
+          "--rendering-driver",
+          "webgpu",
+          "--render-thread",
+          "separate",
+          "--",
+          "--font=/private/tmp/aw3-webgpu-fork-ports/thirdparty/fonts/Inter_Regular.woff2",
+          "--server=advanced",
+          "--benchmark"
+        ],
+        "errors": [],
+        "benchmarks": [
+          {
+            "glyphs": 94,
+            "median_ms": 17.9055,
+            "milliseconds": [
+              20.047,
+              17.496,
+              19.181,
+              17.447,
+              17.72,
+              19.09,
+              18.091,
+              17.175,
+              17.302,
+              18.091,
+              18.211,
+              17.259
+            ],
+            "mipmaps": true,
+            "server": "ICU / HarfBuzz / Graphite (Built-in)"
+          }
+        ]
+      },
+      {
+        "passed": true,
+        "checks": 1,
+        "returncode": 0,
+        "timed_out": false,
+        "seconds": 2.6467717919731513,
+        "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+        "engine_sha256": "9f42747715d04c53775e222ec469b32ac5a407b21c0f70ffbab143c96da228bb",
+        "command": [
+          "/private/tmp/aw3-webgpu-parallel-ports-second",
+          "--path",
+          "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/font_atlas",
+          "--rendering-method",
+          "forward_plus",
+          "--rendering-driver",
+          "webgpu",
+          "--render-thread",
+          "separate",
+          "--",
+          "--font=/private/tmp/aw3-webgpu-fork-ports/thirdparty/fonts/Inter_Regular.woff2",
+          "--server=advanced",
+          "--benchmark"
+        ],
+        "errors": [],
+        "benchmarks": [
+          {
+            "glyphs": 94,
+            "median_ms": 17.832,
+            "milliseconds": [
+              17.57,
+              17.903,
+              17.497,
+              17.288,
+              18.49,
+              18.096,
+              17.138,
+              16.354,
+              20.358,
+              17.781,
+              18.28,
+              17.883
+            ],
+            "mipmaps": true,
+            "server": "ICU / HarfBuzz / Graphite (Built-in)"
+          }
+        ]
+      }
+    ]
+  },
+  "median_trial_ms": {
+    "baseline": 39.136,
+    "candidate": 17.832
+  },
+  "paired_candidate_baseline_ratios": [
+    0.4316768641496294,
+    0.4575199304987735,
+    0.46779207492228386
+  ],
+  "median_paired_ratio": 0.4575199304987735
+}

@@ -1,0 +1,40 @@
+{
+  "passed": true,
+  "checks": 53,
+  "errors": [],
+  "returncode": 0,
+  "timed_out": false,
+  "seconds": 3.456226250040345,
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "command": [
+    "/private/tmp/aw3-webgpu-depth-canvas-dof",
+    "--path",
+    "/private/tmp/aw3-font-extended-final/project",
+    "--rendering-method",
+    "forward_plus",
+    "--rendering-driver",
+    "webgpu",
+    "--render-thread",
+    "separate",
+    "--",
+    "--font=/private/tmp/aw3-webgpu-fork-ports/thirdparty/fonts/Inter_Regular.woff2",
+    "--emoji=/System/Library/Fonts/Apple Color Emoji.ttc",
+    "--svg=/private/tmp/aw3-font-extended-final/authored-svg.ttf"
+  ],
+  "engine_sha256": "d9508b4463617af707eff84a597a1138987357acfd975fe0a58c330066d1e85f",
+  "font_sha256": {
+    "/private/tmp/aw3-webgpu-fork-ports/thirdparty/fonts/Inter_Regular.woff2": "e06f6b1bc553aaea4e4668023ed0ab0a147129c3107f511bc7d03d361b0ae085",
+    "/System/Library/Fonts/Apple Color Emoji.ttc": "435ee0b75b26d671e089ddad38640473cc31febc4dbdfae27843a0a000d7ff62",
+    "/private/tmp/aw3-font-extended-final/authored-svg.ttf": "d52f7d7856d05d838171e0700eb5a2c30702f14afd7eec9698fb60788537adec"
+  },
+  "images": [
+    "ICU___HarfBuzz___Graphite_(Built-in)-lcd.png",
+    "ICU___HarfBuzz___Graphite_(Built-in)-msdf.png",
+    "ICU___HarfBuzz___Graphite_(Built-in)-emoji.png",
+    "ICU___HarfBuzz___Graphite_(Built-in)-svg.png",
+    "Fallback_(Built-in)-lcd.png",
+    "Fallback_(Built-in)-msdf.png",
+    "Fallback_(Built-in)-emoji.png",
+    "Fallback_(Built-in)-svg.png"
+  ]
+}

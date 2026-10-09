@@ -30,7 +30,6 @@
 
 #include "texture_storage.h"
 
-
 #include "core/config/engine.h"
 #include "servers/rendering/renderer_rd/effects/copy_effects.h"
 #include "servers/rendering/renderer_rd/framebuffer_cache_rd.h"
@@ -630,7 +629,20 @@ TextureStorage::TextureStorage() {
 		sdf_modes.push_back("\n#define MODE_STORE\n");
 		sdf_modes.push_back("\n#define MODE_STORE_SHRINK\n");
 
-		rt_sdf.shader.initialize(sdf_modes);
+		String sdf_defines;
+		if (!RD::get_singleton()->texture_is_format_supported_for_usage(rt_sdf.read_format, RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT)) {
+			// WebGPU promotes scalar float16 storage to float32. SDF sampling
+			// needs linear filtering, including the finite-difference normals.
+			// Keep the compact scalar output when float32 filtering is available.
+			if (RD::get_singleton()->sampler_is_format_supported_for_filter(RD::DATA_FORMAT_R32_SFLOAT, RD::SAMPLER_FILTER_LINEAR)) {
+				rt_sdf.read_format = RD::DATA_FORMAT_R16_SFLOAT;
+				sdf_defines += "\n#define SDF_R16F\n";
+			} else {
+				rt_sdf.read_format = RD::DATA_FORMAT_R16G16B16A16_SFLOAT;
+				sdf_defines += "\n#define SDF_RGBA16F\n";
+			}
+		}
+		rt_sdf.shader.initialize(sdf_modes, sdf_defines);
 
 		rt_sdf.shader_version = rt_sdf.shader.version_create();
 
@@ -4784,11 +4796,21 @@ RID TextureStorage::render_target_get_rd_texture(RID p_render_target) {
 RID TextureStorage::render_target_get_rd_texture_slice(RID p_render_target, uint32_t p_layer) {
 	RenderTarget *rt = render_target_owner.get_or_null(p_render_target);
 	ERR_FAIL_NULL_V(rt, RID());
+	ERR_FAIL_UNSIGNED_INDEX_V(p_layer, rt->view_count, RID());
 
-	if (rt->view_count == 1) {
+	if (rt->overridden.color.is_valid()) {
+		if (rt->view_count == 1) {
+			return rt->overridden.color;
+		}
+
+		RenderTarget::RTOverridden::SliceKey key(rt->overridden.color, p_layer);
+		if (!rt->overridden.cached_slices.has(key)) {
+			rt->overridden.cached_slices[key] = RD::get_singleton()->texture_create_shared_from_slice(RD::TextureView(), rt->overridden.color, p_layer, 0);
+		}
+		return rt->overridden.cached_slices[key];
+	} else if (rt->view_count == 1) {
 		return rt->color;
 	} else {
-		ERR_FAIL_UNSIGNED_INDEX_V(p_layer, rt->view_count, RID());
 		if (rt->color_slices.is_empty()) {
 			for (uint32_t v = 0; v < rt->view_count; v++) {
 				RID slice = RD::get_singleton()->texture_create_shared_from_slice(RD::TextureView(), rt->color, v, 0);
@@ -5002,7 +5024,7 @@ void TextureStorage::_render_target_allocate_sdf(RenderTarget *rt) {
 	rt->sdf_buffer_process[0] = RD::get_singleton()->texture_create(tformat, RD::TextureView());
 	rt->sdf_buffer_process[1] = RD::get_singleton()->texture_create(tformat, RD::TextureView());
 
-	tformat.format = RD::DATA_FORMAT_R16_SNORM;
+	tformat.format = rt_sdf.read_format;
 	tformat.usage_bits = RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT;
 
 	rt->sdf_buffer_read = RD::get_singleton()->texture_create(tformat, RD::TextureView());

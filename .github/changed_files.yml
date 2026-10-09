@@ -22,7 +22,12 @@ clangd:
   - "!**/thirdparty/**"
   - "!**/*-so_wrap.{h,c}"
   - "!drivers/{apple*,core*,d3d12,metal,wasapi,windows,winmidi,xaudio2}/**"
-  - "!editor/shader/shader_baker/shader_baker_export_plugin_platform_{d3d12,metal}.{h,cpp}"
+  # These use a separate WebGPU/host-tool build, absent from the Linux Mono compilation database.
+  - "!drivers/webgpu/{spirv_preprocess,tint_wrapper}.cpp"
+  - "!drivers/webgpu/tint_cli/**"
+  - "!editor/shader/shader_baker/shader_baker_export_plugin_platform_{d3d12,metal,webgpu}.{h,cpp}"
+  # Standalone assertion-enabled test; inheriting the engine's NDEBUG flags disables its oracle.
+  - "!misc/webgpu-port/test_texture_formats.cpp"
   - "!modules/camera/camera_{android,macos,win}.{h,cpp}"
   - "!modules/openxr/extensions/platform/openxr_{android,metal}_extension.{h,cpp}"
   - "!platform/{android,ios,macos,visionos,web,windows}/**"

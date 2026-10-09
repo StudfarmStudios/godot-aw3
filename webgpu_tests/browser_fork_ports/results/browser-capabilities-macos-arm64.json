@@ -1,0 +1,108 @@
+{
+  "scope": "Standalone browser API probes captured before candidate engine runs; engine evidence is in the separate matrix files",
+  "firefox_copy_note": "Installed Firefox copied temporarily with only app updates disabled; no WebGPU preferences forced",
+  "browsers": [
+    {
+      "browser": "chrome",
+      "platform": "darwin",
+      "forcedWebGPU": false,
+      "version": "Chrome/154.0.8037.98",
+      "capabilities": {
+        "secureContext": true,
+        "crossOriginIsolated": true,
+        "sharedArrayBuffer": true,
+        "offscreenCanvas": true,
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+        "webgpu": true,
+        "adapter": true,
+        "info": {
+          "vendor": "apple",
+          "architecture": "metal-3",
+          "device": "",
+          "description": "",
+          "isFallbackAdapter": false
+        },
+        "features": [
+          "depth32float-stencil8",
+          "rg11b10ufloat-renderable",
+          "texture-formats-tier1",
+          "bgra8unorm-storage",
+          "texture-compression-bc",
+          "dual-source-blending",
+          "core-features-and-limits",
+          "float32-filterable",
+          "indirect-first-instance",
+          "texture-compression-astc-sliced-3d",
+          "float32-blendable",
+          "subgroup-size-control",
+          "texture-compression-astc",
+          "texture-compression-etc2",
+          "depth-clip-control",
+          "texture-compression-bc-sliced-3d",
+          "shader-f16",
+          "texture-formats-tier2",
+          "timestamp-query",
+          "clip-distances",
+          "primitive-index",
+          "texture-component-swizzle",
+          "subgroups"
+        ],
+        "limits": {
+          "maxSampledTexturesPerShaderStage": 48,
+          "maxStorageBuffersPerShaderStage": 10,
+          "maxStorageTexturesPerShaderStage": 8,
+          "maxBindingsPerBindGroup": 1000,
+          "maxBindGroups": 4
+        }
+      },
+      "passed": true
+    },
+    {
+      "browser": "firefox",
+      "platform": "darwin",
+      "forcedWebGPU": false,
+      "version": "firefox/155.0.1",
+      "capabilities": {
+        "secureContext": true,
+        "crossOriginIsolated": true,
+        "sharedArrayBuffer": true,
+        "offscreenCanvas": true,
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:155.0) Gecko/20100101 Firefox/155.0",
+        "webgpu": true,
+        "adapter": true,
+        "info": {
+          "vendor": "",
+          "architecture": "",
+          "device": "",
+          "description": "",
+          "isFallbackAdapter": false
+        },
+        "features": [
+          "depth-clip-control",
+          "depth32float-stencil8",
+          "texture-compression-bc",
+          "texture-compression-bc-sliced-3d",
+          "texture-compression-etc2",
+          "texture-compression-astc",
+          "texture-compression-astc-sliced-3d",
+          "timestamp-query",
+          "indirect-first-instance",
+          "shader-f16",
+          "rg11b10ufloat-renderable",
+          "bgra8unorm-storage",
+          "float32-filterable",
+          "dual-source-blending",
+          "core-features-and-limits"
+        ],
+        "limits": {
+          "maxSampledTexturesPerShaderStage": 64,
+          "maxStorageBuffersPerShaderStage": 9,
+          "maxStorageTexturesPerShaderStage": 32,
+          "maxBindingsPerBindGroup": 4294967295,
+          "maxBindGroups": 8
+        }
+      },
+      "passed": true
+    }
+  ]
+}

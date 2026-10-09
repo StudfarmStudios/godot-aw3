@@ -6,7 +6,12 @@
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
+#ifdef SOURCE_DEPTH
+layout(set = 0, binding = 0) uniform sampler2D godot_depth_source;
+#define source_depth godot_depth_source
+#else
 layout(set = 0, binding = 0) uniform sampler2D source_depth;
+#endif
 layout(set = 0, binding = 1) uniform sampler2D source_normal_roughness;
 layout(r32f, set = 0, binding = 2) uniform restrict writeonly image2D dest_depth;
 layout(rgba8, set = 0, binding = 3) uniform restrict writeonly image2D dest_normal_roughness;

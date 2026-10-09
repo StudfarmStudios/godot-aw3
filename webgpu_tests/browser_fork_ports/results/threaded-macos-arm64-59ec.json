@@ -1,0 +1,2317 @@
+{
+  "passed": true,
+  "purpose": "Threaded candidate: application Worker, cold/warm, both capability modes; all runtime and controlled-shutdown checks pass.",
+  "windows_d3d12_verified": false,
+  "matrices": [
+    {
+      "passed": true,
+      "source_result": "/private/tmp/aw3-browser-threaded-normal-59ec-results/result.json",
+      "template_sha256": "47faa306eb541236ff508b2c147b369d4cd1ab31f397eb614fcc628073e183d7",
+      "engine_sha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
+      "wgsl": {
+        "entries": 777,
+        "failed": 0,
+        "source_modules": 777,
+        "fingerprint": "8b6f9216c8a1afd8144b4378d7efd917d0ac6dbec844391027b5e5ece3b46a10"
+      },
+      "records": [
+        {
+          "browser": "chrome",
+          "host": "darwin",
+          "threads": true,
+          "templateSha256": "47faa306eb541236ff508b2c147b369d4cd1ab31f397eb614fcc628073e183d7",
+          "engineSha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
+          "forcedWebGPU": false,
+          "noFloat32Filterable": false,
+          "version": "Chrome/154.0.8037.98",
+          "passed": true,
+          "runs": [
+            {
+              "temperature": "cold",
+              "errors": [],
+              "warnings": [
+                "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+                "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)",
+                "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+                "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)"
+              ],
+              "phases": [
+                "font",
+                "canvas_sdf",
+                "ssr_off",
+                "ssr_on",
+                "dof_off",
+                "dof_on"
+              ],
+              "capabilities": {
+                "crossOriginIsolated": true,
+                "sharedArrayBuffer": true,
+                "offscreenCanvas": true,
+                "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+                "webgpu": true
+              },
+              "checks": [
+                {
+                  "name": "rebind_canvas_dimensions",
+                  "passed": true,
+                  "detail": [
+                    512,
+                    384
+                  ]
+                },
+                {
+                  "name": "rebind_64_lifetimes_gpu_values",
+                  "passed": true,
+                  "detail": {
+                    "cells": 64,
+                    "min_green": 255,
+                    "max_red": 0,
+                    "max_blue": 0
+                  }
+                },
+                {
+                  "name": "canvas_dimensions",
+                  "passed": true,
+                  "detail": {
+                    "font": [
+                      512,
+                      384
+                    ],
+                    "canvas_sdf": [
+                      512,
+                      384
+                    ],
+                    "ssr_off": [
+                      512,
+                      384
+                    ],
+                    "ssr_on": [
+                      512,
+                      384
+                    ],
+                    "dof_off": [
+                      512,
+                      384
+                    ],
+                    "dof_on": [
+                      512,
+                      384
+                    ]
+                  }
+                },
+                {
+                  "name": "font_mask",
+                  "passed": true,
+                  "detail": 1924
+                },
+                {
+                  "name": "font_lcd",
+                  "passed": true,
+                  "detail": 1796
+                },
+                {
+                  "name": "font_msdf",
+                  "passed": true,
+                  "detail": 2188
+                },
+                {
+                  "name": "font_svg_retains_blue_under_red_modulation",
+                  "passed": true,
+                  "detail": 5168
+                },
+                {
+                  "name": "canvas_sdf_inside",
+                  "passed": true
+                },
+                {
+                  "name": "canvas_sdf_outside",
+                  "passed": true
+                },
+                {
+                  "name": "ssr_visible_source",
+                  "passed": true
+                },
+                {
+                  "name": "ssr_red_reflection",
+                  "passed": true,
+                  "detail": {
+                    "pixels": 7020,
+                    "sum": 2146.5411764704463
+                  }
+                },
+                {
+                  "name": "dof_sharp_panels",
+                  "passed": true,
+                  "detail": [
+                    0.5,
+                    0.5,
+                    0.5
+                  ]
+                },
+                {
+                  "name": "dof_near_blurred",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "dof_focus_preserved",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "dof_far_blurred",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "rebind_lifetime_resource_cleanup",
+                  "passed": true
+                },
+                {
+                  "name": "explicit_forward_plus_webgpu",
+                  "passed": true
+                },
+                {
+                  "name": "wgsl_runtime_identity",
+                  "passed": true
+                },
+                {
+                  "name": "packaged_wgsl_seed_loaded",
+                  "passed": true
+                },
+                {
+                  "name": "wgsc_v4_persisted_identity",
+                  "passed": true
+                },
+                {
+                  "name": "workers_observed",
+                  "passed": true,
+                  "detail": 8
+                },
+                {
+                  "name": "clean_engine_exit",
+                  "passed": true,
+                  "detail": 0
+                }
+              ],
+              "rebindResult": {
+                "cells": 64,
+                "created": 64,
+                "dispatches": 64,
+                "native_readback": false,
+                "passed": true,
+                "retired": 64
+              },
+              "identity": "8b6f9216c8a1afd8144b4378d7efd917d0ac6dbec844391027b5e5ece3b46a10",
+              "cacheMessages": [
+                "[WGSLCACHE] translator/profile 8b6f9216c8a1afd8144b4378d7efd917d0ac6dbec844391027b5e5ece3b46a10",
+                "[WGSLCACHE] seeded 777 entries from bundled cache (777 with SPIR-V binding metadata)",
+                "[WGSLCACHE] flushed 2 new entries (session: cache=196 precompiled=0 tint=2)",
+                "[WGSLCACHE] flushed 2 new entries (session: cache=256 precompiled=1 tint=3)",
+                "[WGSLCACHE] flushed 10 new entries (session: cache=264 precompiled=1 tint=13)",
+                "[WGSLCACHE] flushed 20 new entries (session: cache=282 precompiled=1 tint=33)"
+              ],
+              "persisted": [
+                {
+                  "key": "/userfs/godot/app_userdata/WebGPU candidate browser regressions/wgsl_cache/d773ff85e8f5-8b6f9216c8a1afd8144b-v4.bin",
+                  "bytes": 289885,
+                  "header": [
+                    87,
+                    71,
+                    83,
+                    67,
+                    4,
+                    0,
+                    0,
+                    0,
+                    139,
+                    111,
+                    146,
+                    22,
+                    200,
+                    161,
+                    175,
+                    216,
+                    20,
+                    75,
+                    67,
+                    120,
+                    215,
+                    239,
+                    217,
+                    23,
+                    208,
+                    172,
+                    109,
+                    190,
+                    200,
+                    68,
+                    57,
+                    16,
+                    39,
+                    181,
+                    229,
+                    236,
+                    227,
+                    180,
+                    106,
+                    16
+                  ]
+                }
+              ],
+              "runtimeErrors": [],
+              "runtimePassed": true,
+              "exitCode": 0,
+              "shutdownErrors": [],
+              "passed": true,
+              "worker_count": 8
+            },
+            {
+              "temperature": "warm",
+              "errors": [],
+              "warnings": [
+                "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+                "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)",
+                "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+                "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)"
+              ],
+              "phases": [
+                "font",
+                "canvas_sdf",
+                "ssr_off",
+                "ssr_on",
+                "dof_off",
+                "dof_on"
+              ],
+              "capabilities": {
+                "crossOriginIsolated": true,
+                "sharedArrayBuffer": true,
+                "offscreenCanvas": true,
+                "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+                "webgpu": true
+              },
+              "checks": [
+                {
+                  "name": "rebind_canvas_dimensions",
+                  "passed": true,
+                  "detail": [
+                    512,
+                    384
+                  ]
+                },
+                {
+                  "name": "rebind_64_lifetimes_gpu_values",
+                  "passed": true,
+                  "detail": {
+                    "cells": 64,
+                    "min_green": 255,
+                    "max_red": 0,
+                    "max_blue": 0
+                  }
+                },
+                {
+                  "name": "canvas_dimensions",
+                  "passed": true,
+                  "detail": {
+                    "font": [
+                      512,
+                      384
+                    ],
+                    "canvas_sdf": [
+                      512,
+                      384
+                    ],
+                    "ssr_off": [
+                      512,
+                      384
+                    ],
+                    "ssr_on": [
+                      512,
+                      384
+                    ],
+                    "dof_off": [
+                      512,
+                      384
+                    ],
+                    "dof_on": [
+                      512,
+                      384
+                    ]
+                  }
+                },
+                {
+                  "name": "font_mask",
+                  "passed": true,
+                  "detail": 1924
+                },
+                {
+                  "name": "font_lcd",
+                  "passed": true,
+                  "detail": 1796
+                },
+                {
+                  "name": "font_msdf",
+                  "passed": true,
+                  "detail": 2188
+                },
+                {
+                  "name": "font_svg_retains_blue_under_red_modulation",
+                  "passed": true,
+                  "detail": 5168
+                },
+                {
+                  "name": "canvas_sdf_inside",
+                  "passed": true
+                },
+                {
+                  "name": "canvas_sdf_outside",
+                  "passed": true
+                },
+                {
+                  "name": "ssr_visible_source",
+                  "passed": true
+                },
+                {
+                  "name": "ssr_red_reflection",
+                  "passed": true,
+                  "detail": {
+                    "pixels": 7020,
+                    "sum": 2146.5411764704463
+                  }
+                },
+                {
+                  "name": "dof_sharp_panels",
+                  "passed": true,
+                  "detail": [
+                    0.5,
+                    0.5,
+                    0.5
+                  ]
+                },
+                {
+                  "name": "dof_near_blurred",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "dof_focus_preserved",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "dof_far_blurred",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "rebind_lifetime_resource_cleanup",
+                  "passed": true
+                },
+                {
+                  "name": "explicit_forward_plus_webgpu",
+                  "passed": true
+                },
+                {
+                  "name": "wgsl_runtime_identity",
+                  "passed": true
+                },
+                {
+                  "name": "packaged_wgsl_seed_loaded",
+                  "passed": true
+                },
+                {
+                  "name": "wgsc_v4_persisted_identity",
+                  "passed": true
+                },
+                {
+                  "name": "warm_disk_cache_loaded",
+                  "passed": true
+                },
+                {
+                  "name": "workers_observed",
+                  "passed": true,
+                  "detail": 8
+                },
+                {
+                  "name": "clean_engine_exit",
+                  "passed": true,
+                  "detail": 0
+                }
+              ],
+              "rebindResult": {
+                "cells": 64,
+                "created": 64,
+                "dispatches": 64,
+                "native_readback": false,
+                "passed": true,
+                "retired": 64
+              },
+              "identity": "8b6f9216c8a1afd8144b4378d7efd917d0ac6dbec844391027b5e5ece3b46a10",
+              "cacheMessages": [
+                "[WGSLCACHE] translator/profile 8b6f9216c8a1afd8144b4378d7efd917d0ac6dbec844391027b5e5ece3b46a10",
+                "[WGSLCACHE] seeded 777 entries from bundled cache (777 with SPIR-V binding metadata)",
+                "[WGSLCACHE] loaded 34 entries (34 with SPIR-V binding metadata)"
+              ],
+              "persisted": [
+                {
+                  "key": "/userfs/godot/app_userdata/WebGPU candidate browser regressions/wgsl_cache/d773ff85e8f5-8b6f9216c8a1afd8144b-v4.bin",
+                  "bytes": 289885,
+                  "header": [
+                    87,
+                    71,
+                    83,
+                    67,
+                    4,
+                    0,
+                    0,
+                    0,
+                    139,
+                    111,
+                    146,
+                    22,
+                    200,
+                    161,
+                    175,
+                    216,
+                    20,
+                    75,
+                    67,
+                    120,
+                    215,
+                    239,
+                    217,
+                    23,
+                    208,
+                    172,
+                    109,
+                    190,
+                    200,
+                    68,
+                    57,
+                    16,
+                    39,
+                    181,
+                    229,
+                    236,
+                    227,
+                    180,
+                    106,
+                    16
+                  ]
+                }
+              ],
+              "runtimeErrors": [],
+              "runtimePassed": true,
+              "exitCode": 0,
+              "shutdownErrors": [],
+              "passed": true,
+              "worker_count": 8
+            }
+          ]
+        },
+        {
+          "browser": "firefox",
+          "host": "darwin",
+          "threads": true,
+          "templateSha256": "47faa306eb541236ff508b2c147b369d4cd1ab31f397eb614fcc628073e183d7",
+          "engineSha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
+          "forcedWebGPU": false,
+          "noFloat32Filterable": false,
+          "version": "firefox/155.0.1",
+          "passed": true,
+          "runs": [
+            {
+              "temperature": "cold",
+              "errors": [],
+              "warnings": [
+                "WARNING: WebGPU: float32-blendable feature NOT available \u2014 blend on float32 targets will be disabled.",
+                "   at: _check_capabilities (drivers/webgpu/rendering_device_driver_webgpu.cpp:1989)",
+                "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+                "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)",
+                "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+                "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)"
+              ],
+              "phases": [
+                "font",
+                "canvas_sdf",
+                "ssr_off",
+                "ssr_on",
+                "dof_off",
+                "dof_on"
+              ],
+              "capabilities": {
+                "crossOriginIsolated": true,
+                "sharedArrayBuffer": true,
+                "offscreenCanvas": true,
+                "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:155.0) Gecko/20100101 Firefox/155.0",
+                "webgpu": true
+              },
+              "checks": [
+                {
+                  "name": "rebind_canvas_dimensions",
+                  "passed": true,
+                  "detail": [
+                    512,
+                    384
+                  ]
+                },
+                {
+                  "name": "rebind_64_lifetimes_gpu_values",
+                  "passed": true,
+                  "detail": {
+                    "cells": 64,
+                    "min_green": 255,
+                    "max_red": 0,
+                    "max_blue": 0
+                  }
+                },
+                {
+                  "name": "canvas_dimensions",
+                  "passed": true,
+                  "detail": {
+                    "font": [
+                      512,
+                      384
+                    ],
+                    "canvas_sdf": [
+                      512,
+                      384
+                    ],
+                    "ssr_off": [
+                      512,
+                      384
+                    ],
+                    "ssr_on": [
+                      512,
+                      384
+                    ],
+                    "dof_off": [
+                      512,
+                      384
+                    ],
+                    "dof_on": [
+                      512,
+                      384
+                    ]
+                  }
+                },
+                {
+                  "name": "font_mask",
+                  "passed": true,
+                  "detail": 1924
+                },
+                {
+                  "name": "font_lcd",
+                  "passed": true,
+                  "detail": 1796
+                },
+                {
+                  "name": "font_msdf",
+                  "passed": true,
+                  "detail": 2188
+                },
+                {
+                  "name": "font_svg_retains_blue_under_red_modulation",
+                  "passed": true,
+                  "detail": 5168
+                },
+                {
+                  "name": "canvas_sdf_inside",
+                  "passed": true
+                },
+                {
+                  "name": "canvas_sdf_outside",
+                  "passed": true
+                },
+                {
+                  "name": "ssr_visible_source",
+                  "passed": true
+                },
+                {
+                  "name": "ssr_red_reflection",
+                  "passed": true,
+                  "detail": {
+                    "pixels": 7043,
+                    "sum": 2149.3882352939722
+                  }
+                },
+                {
+                  "name": "dof_sharp_panels",
+                  "passed": true,
+                  "detail": [
+                    0.5,
+                    0.5,
+                    0.5
+                  ]
+                },
+                {
+                  "name": "dof_near_blurred",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "dof_focus_preserved",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "dof_far_blurred",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "rebind_lifetime_resource_cleanup",
+                  "passed": true
+                },
+                {
+                  "name": "explicit_forward_plus_webgpu",
+                  "passed": true
+                },
+                {
+                  "name": "wgsl_runtime_identity",
+                  "passed": true
+                },
+                {
+                  "name": "packaged_wgsl_seed_loaded",
+                  "passed": true
+                },
+                {
+                  "name": "wgsc_v4_persisted_identity",
+                  "passed": true
+                },
+                {
+                  "name": "workers_observed",
+                  "passed": true,
+                  "detail": 8
+                },
+                {
+                  "name": "clean_engine_exit",
+                  "passed": true,
+                  "detail": 0
+                }
+              ],
+              "rebindResult": {
+                "cells": 64,
+                "created": 64,
+                "dispatches": 64,
+                "native_readback": false,
+                "passed": true,
+                "retired": 64
+              },
+              "identity": "8b6f9216c8a1afd8144b4378d7efd917d0ac6dbec844391027b5e5ece3b46a10",
+              "cacheMessages": [
+                "[WGSLCACHE] translator/profile 8b6f9216c8a1afd8144b4378d7efd917d0ac6dbec844391027b5e5ece3b46a10",
+                "[WGSLCACHE] seeded 777 entries from bundled cache (777 with SPIR-V binding metadata)",
+                "[WGSLCACHE] flushed 2 new entries (session: cache=199 precompiled=0 tint=2)",
+                "[WGSLCACHE] flushed 2 new entries (session: cache=256 precompiled=1 tint=3)",
+                "[WGSLCACHE] flushed 8 new entries (session: cache=262 precompiled=1 tint=11)",
+                "[WGSLCACHE] flushed 18 new entries (session: cache=278 precompiled=1 tint=29)"
+              ],
+              "persisted": [
+                {
+                  "key": "/userfs/godot/app_userdata/WebGPU candidate browser regressions/wgsl_cache/d773ff85e8f5-8b6f9216c8a1afd8144b-v4.bin",
+                  "bytes": 268209,
+                  "header": [
+                    87,
+                    71,
+                    83,
+                    67,
+                    4,
+                    0,
+                    0,
+                    0,
+                    139,
+                    111,
+                    146,
+                    22,
+                    200,
+                    161,
+                    175,
+                    216,
+                    20,
+                    75,
+                    67,
+                    120,
+                    215,
+                    239,
+                    217,
+                    23,
+                    208,
+                    172,
+                    109,
+                    190,
+                    200,
+                    68,
+                    57,
+                    16,
+                    39,
+                    181,
+                    229,
+                    236,
+                    227,
+                    180,
+                    106,
+                    16
+                  ]
+                }
+              ],
+              "runtimeErrors": [],
+              "runtimePassed": true,
+              "exitCode": 0,
+              "shutdownErrors": [],
+              "passed": true,
+              "worker_count": 8
+            },
+            {
+              "temperature": "warm",
+              "errors": [],
+              "warnings": [
+                "WARNING: WebGPU: float32-blendable feature NOT available \u2014 blend on float32 targets will be disabled.",
+                "   at: _check_capabilities (drivers/webgpu/rendering_device_driver_webgpu.cpp:1989)",
+                "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+                "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)",
+                "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+                "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)"
+              ],
+              "phases": [
+                "font",
+                "canvas_sdf",
+                "ssr_off",
+                "ssr_on",
+                "dof_off",
+                "dof_on"
+              ],
+              "capabilities": {
+                "crossOriginIsolated": true,
+                "sharedArrayBuffer": true,
+                "offscreenCanvas": true,
+                "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:155.0) Gecko/20100101 Firefox/155.0",
+                "webgpu": true
+              },
+              "checks": [
+                {
+                  "name": "rebind_canvas_dimensions",
+                  "passed": true,
+                  "detail": [
+                    512,
+                    384
+                  ]
+                },
+                {
+                  "name": "rebind_64_lifetimes_gpu_values",
+                  "passed": true,
+                  "detail": {
+                    "cells": 64,
+                    "min_green": 255,
+                    "max_red": 0,
+                    "max_blue": 0
+                  }
+                },
+                {
+                  "name": "canvas_dimensions",
+                  "passed": true,
+                  "detail": {
+                    "font": [
+                      512,
+                      384
+                    ],
+                    "canvas_sdf": [
+                      512,
+                      384
+                    ],
+                    "ssr_off": [
+                      512,
+                      384
+                    ],
+                    "ssr_on": [
+                      512,
+                      384
+                    ],
+                    "dof_off": [
+                      512,
+                      384
+                    ],
+                    "dof_on": [
+                      512,
+                      384
+                    ]
+                  }
+                },
+                {
+                  "name": "font_mask",
+                  "passed": true,
+                  "detail": 1924
+                },
+                {
+                  "name": "font_lcd",
+                  "passed": true,
+                  "detail": 1796
+                },
+                {
+                  "name": "font_msdf",
+                  "passed": true,
+                  "detail": 2188
+                },
+                {
+                  "name": "font_svg_retains_blue_under_red_modulation",
+                  "passed": true,
+                  "detail": 5168
+                },
+                {
+                  "name": "canvas_sdf_inside",
+                  "passed": true
+                },
+                {
+                  "name": "canvas_sdf_outside",
+                  "passed": true
+                },
+                {
+                  "name": "ssr_visible_source",
+                  "passed": true
+                },
+                {
+                  "name": "ssr_red_reflection",
+                  "passed": true,
+                  "detail": {
+                    "pixels": 7043,
+                    "sum": 2149.3882352939722
+                  }
+                },
+                {
+                  "name": "dof_sharp_panels",
+                  "passed": true,
+                  "detail": [
+                    0.5,
+                    0.5,
+                    0.5
+                  ]
+                },
+                {
+                  "name": "dof_near_blurred",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "dof_focus_preserved",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "dof_far_blurred",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "rebind_lifetime_resource_cleanup",
+                  "passed": true
+                },
+                {
+                  "name": "explicit_forward_plus_webgpu",
+                  "passed": true
+                },
+                {
+                  "name": "wgsl_runtime_identity",
+                  "passed": true
+                },
+                {
+                  "name": "packaged_wgsl_seed_loaded",
+                  "passed": true
+                },
+                {
+                  "name": "wgsc_v4_persisted_identity",
+                  "passed": true
+                },
+                {
+                  "name": "warm_disk_cache_loaded",
+                  "passed": true
+                },
+                {
+                  "name": "workers_observed",
+                  "passed": true,
+                  "detail": 8
+                },
+                {
+                  "name": "clean_engine_exit",
+                  "passed": true,
+                  "detail": 0
+                }
+              ],
+              "rebindResult": {
+                "cells": 64,
+                "created": 64,
+                "dispatches": 64,
+                "native_readback": false,
+                "passed": true,
+                "retired": 64
+              },
+              "identity": "8b6f9216c8a1afd8144b4378d7efd917d0ac6dbec844391027b5e5ece3b46a10",
+              "cacheMessages": [
+                "[WGSLCACHE] translator/profile 8b6f9216c8a1afd8144b4378d7efd917d0ac6dbec844391027b5e5ece3b46a10",
+                "[WGSLCACHE] seeded 777 entries from bundled cache (777 with SPIR-V binding metadata)",
+                "[WGSLCACHE] loaded 30 entries (30 with SPIR-V binding metadata)",
+                "[WGSLCACHE] flushed 2 new entries (session: cache=308 precompiled=0 tint=2)"
+              ],
+              "persisted": [
+                {
+                  "key": "/userfs/godot/app_userdata/WebGPU candidate browser regressions/wgsl_cache/d773ff85e8f5-8b6f9216c8a1afd8144b-v4.bin",
+                  "bytes": 275974,
+                  "header": [
+                    87,
+                    71,
+                    83,
+                    67,
+                    4,
+                    0,
+                    0,
+                    0,
+                    139,
+                    111,
+                    146,
+                    22,
+                    200,
+                    161,
+                    175,
+                    216,
+                    20,
+                    75,
+                    67,
+                    120,
+                    215,
+                    239,
+                    217,
+                    23,
+                    208,
+                    172,
+                    109,
+                    190,
+                    200,
+                    68,
+                    57,
+                    16,
+                    39,
+                    181,
+                    229,
+                    236,
+                    227,
+                    180,
+                    106,
+                    16
+                  ]
+                }
+              ],
+              "runtimeErrors": [],
+              "runtimePassed": true,
+              "exitCode": 0,
+              "shutdownErrors": [],
+              "passed": true,
+              "worker_count": 8
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "passed": true,
+      "source_result": "/private/tmp/aw3-browser-threaded-nofilter-59ec-results/result.json",
+      "template_sha256": "47faa306eb541236ff508b2c147b369d4cd1ab31f397eb614fcc628073e183d7",
+      "engine_sha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
+      "wgsl": {
+        "entries": 777,
+        "failed": 0,
+        "source_modules": 777,
+        "fingerprint": "8b6f9216c8a1afd8144b4378d7efd917d0ac6dbec844391027b5e5ece3b46a10"
+      },
+      "records": [
+        {
+          "browser": "chrome",
+          "host": "darwin",
+          "threads": true,
+          "templateSha256": "47faa306eb541236ff508b2c147b369d4cd1ab31f397eb614fcc628073e183d7",
+          "engineSha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
+          "forcedWebGPU": false,
+          "noFloat32Filterable": true,
+          "version": "Chrome/154.0.8037.98",
+          "passed": true,
+          "runs": [
+            {
+              "temperature": "cold",
+              "errors": [],
+              "warnings": [
+                "WARNING: WebGPU: float32-filterable feature NOT available \u2014 32F linear sampling will fall back to nearest.",
+                "   at: _check_capabilities (drivers/webgpu/rendering_device_driver_webgpu.cpp:1973)",
+                "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+                "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)",
+                "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+                "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)"
+              ],
+              "phases": [
+                "font",
+                "canvas_sdf",
+                "ssr_off",
+                "ssr_on",
+                "dof_off",
+                "dof_on"
+              ],
+              "capabilities": {
+                "crossOriginIsolated": true,
+                "sharedArrayBuffer": true,
+                "offscreenCanvas": true,
+                "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+                "webgpu": true
+              },
+              "checks": [
+                {
+                  "name": "rebind_canvas_dimensions",
+                  "passed": true,
+                  "detail": [
+                    512,
+                    384
+                  ]
+                },
+                {
+                  "name": "rebind_64_lifetimes_gpu_values",
+                  "passed": true,
+                  "detail": {
+                    "cells": 64,
+                    "min_green": 255,
+                    "max_red": 0,
+                    "max_blue": 0
+                  }
+                },
+                {
+                  "name": "canvas_dimensions",
+                  "passed": true,
+                  "detail": {
+                    "font": [
+                      512,
+                      384
+                    ],
+                    "canvas_sdf": [
+                      512,
+                      384
+                    ],
+                    "ssr_off": [
+                      512,
+                      384
+                    ],
+                    "ssr_on": [
+                      512,
+                      384
+                    ],
+                    "dof_off": [
+                      512,
+                      384
+                    ],
+                    "dof_on": [
+                      512,
+                      384
+                    ]
+                  }
+                },
+                {
+                  "name": "font_mask",
+                  "passed": true,
+                  "detail": 1924
+                },
+                {
+                  "name": "font_lcd",
+                  "passed": true,
+                  "detail": 1796
+                },
+                {
+                  "name": "font_msdf",
+                  "passed": true,
+                  "detail": 2188
+                },
+                {
+                  "name": "font_svg_retains_blue_under_red_modulation",
+                  "passed": true,
+                  "detail": 5168
+                },
+                {
+                  "name": "canvas_sdf_inside",
+                  "passed": true
+                },
+                {
+                  "name": "canvas_sdf_outside",
+                  "passed": true
+                },
+                {
+                  "name": "ssr_visible_source",
+                  "passed": true
+                },
+                {
+                  "name": "ssr_red_reflection",
+                  "passed": true,
+                  "detail": {
+                    "pixels": 7020,
+                    "sum": 2146.5411764704463
+                  }
+                },
+                {
+                  "name": "dof_sharp_panels",
+                  "passed": true,
+                  "detail": [
+                    0.5,
+                    0.5,
+                    0.5
+                  ]
+                },
+                {
+                  "name": "dof_near_blurred",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "dof_focus_preserved",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "dof_far_blurred",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "rebind_lifetime_resource_cleanup",
+                  "passed": true
+                },
+                {
+                  "name": "explicit_forward_plus_webgpu",
+                  "passed": true
+                },
+                {
+                  "name": "float32_filtering_omitted",
+                  "passed": true
+                },
+                {
+                  "name": "wgsl_runtime_identity",
+                  "passed": true
+                },
+                {
+                  "name": "packaged_wgsl_seed_loaded",
+                  "passed": true
+                },
+                {
+                  "name": "wgsc_v4_persisted_identity",
+                  "passed": true
+                },
+                {
+                  "name": "workers_observed",
+                  "passed": true,
+                  "detail": 8
+                },
+                {
+                  "name": "clean_engine_exit",
+                  "passed": true,
+                  "detail": 0
+                }
+              ],
+              "rebindResult": {
+                "cells": 64,
+                "created": 64,
+                "dispatches": 64,
+                "native_readback": false,
+                "passed": true,
+                "retired": 64
+              },
+              "identity": "8b6f9216c8a1afd8144b4378d7efd917d0ac6dbec844391027b5e5ece3b46a10",
+              "cacheMessages": [
+                "[WGSLCACHE] translator/profile 8b6f9216c8a1afd8144b4378d7efd917d0ac6dbec844391027b5e5ece3b46a10",
+                "[WGSLCACHE] seeded 777 entries from bundled cache (777 with SPIR-V binding metadata)",
+                "[WGSLCACHE] flushed 8 new entries (session: cache=189 precompiled=6 tint=2)",
+                "[WGSLCACHE] flushed 2 new entries (session: cache=250 precompiled=7 tint=3)",
+                "[WGSLCACHE] flushed 10 new entries (session: cache=258 precompiled=7 tint=13)",
+                "[WGSLCACHE] flushed 20 new entries (session: cache=276 precompiled=7 tint=33)"
+              ],
+              "persisted": [
+                {
+                  "key": "/userfs/godot/app_userdata/WebGPU candidate browser regressions/wgsl_cache/d773ff85e8f5-8b6f9216c8a1afd8144b-v4.bin",
+                  "bytes": 294066,
+                  "header": [
+                    87,
+                    71,
+                    83,
+                    67,
+                    4,
+                    0,
+                    0,
+                    0,
+                    139,
+                    111,
+                    146,
+                    22,
+                    200,
+                    161,
+                    175,
+                    216,
+                    20,
+                    75,
+                    67,
+                    120,
+                    215,
+                    239,
+                    217,
+                    23,
+                    208,
+                    172,
+                    109,
+                    190,
+                    200,
+                    68,
+                    57,
+                    16,
+                    39,
+                    181,
+                    229,
+                    236,
+                    227,
+                    180,
+                    106,
+                    16
+                  ]
+                }
+              ],
+              "runtimeErrors": [],
+              "runtimePassed": true,
+              "exitCode": 0,
+              "shutdownErrors": [],
+              "passed": true,
+              "worker_count": 8
+            },
+            {
+              "temperature": "warm",
+              "errors": [],
+              "warnings": [
+                "WARNING: WebGPU: float32-filterable feature NOT available \u2014 32F linear sampling will fall back to nearest.",
+                "   at: _check_capabilities (drivers/webgpu/rendering_device_driver_webgpu.cpp:1973)",
+                "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+                "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)",
+                "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+                "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)"
+              ],
+              "phases": [
+                "font",
+                "canvas_sdf",
+                "ssr_off",
+                "ssr_on",
+                "dof_off",
+                "dof_on"
+              ],
+              "capabilities": {
+                "crossOriginIsolated": true,
+                "sharedArrayBuffer": true,
+                "offscreenCanvas": true,
+                "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+                "webgpu": true
+              },
+              "checks": [
+                {
+                  "name": "rebind_canvas_dimensions",
+                  "passed": true,
+                  "detail": [
+                    512,
+                    384
+                  ]
+                },
+                {
+                  "name": "rebind_64_lifetimes_gpu_values",
+                  "passed": true,
+                  "detail": {
+                    "cells": 64,
+                    "min_green": 255,
+                    "max_red": 0,
+                    "max_blue": 0
+                  }
+                },
+                {
+                  "name": "canvas_dimensions",
+                  "passed": true,
+                  "detail": {
+                    "font": [
+                      512,
+                      384
+                    ],
+                    "canvas_sdf": [
+                      512,
+                      384
+                    ],
+                    "ssr_off": [
+                      512,
+                      384
+                    ],
+                    "ssr_on": [
+                      512,
+                      384
+                    ],
+                    "dof_off": [
+                      512,
+                      384
+                    ],
+                    "dof_on": [
+                      512,
+                      384
+                    ]
+                  }
+                },
+                {
+                  "name": "font_mask",
+                  "passed": true,
+                  "detail": 1924
+                },
+                {
+                  "name": "font_lcd",
+                  "passed": true,
+                  "detail": 1796
+                },
+                {
+                  "name": "font_msdf",
+                  "passed": true,
+                  "detail": 2188
+                },
+                {
+                  "name": "font_svg_retains_blue_under_red_modulation",
+                  "passed": true,
+                  "detail": 5168
+                },
+                {
+                  "name": "canvas_sdf_inside",
+                  "passed": true
+                },
+                {
+                  "name": "canvas_sdf_outside",
+                  "passed": true
+                },
+                {
+                  "name": "ssr_visible_source",
+                  "passed": true
+                },
+                {
+                  "name": "ssr_red_reflection",
+                  "passed": true,
+                  "detail": {
+                    "pixels": 7020,
+                    "sum": 2146.5411764704463
+                  }
+                },
+                {
+                  "name": "dof_sharp_panels",
+                  "passed": true,
+                  "detail": [
+                    0.5,
+                    0.5,
+                    0.5
+                  ]
+                },
+                {
+                  "name": "dof_near_blurred",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "dof_focus_preserved",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "dof_far_blurred",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "rebind_lifetime_resource_cleanup",
+                  "passed": true
+                },
+                {
+                  "name": "explicit_forward_plus_webgpu",
+                  "passed": true
+                },
+                {
+                  "name": "float32_filtering_omitted",
+                  "passed": true
+                },
+                {
+                  "name": "wgsl_runtime_identity",
+                  "passed": true
+                },
+                {
+                  "name": "packaged_wgsl_seed_loaded",
+                  "passed": true
+                },
+                {
+                  "name": "wgsc_v4_persisted_identity",
+                  "passed": true
+                },
+                {
+                  "name": "warm_disk_cache_loaded",
+                  "passed": true
+                },
+                {
+                  "name": "workers_observed",
+                  "passed": true,
+                  "detail": 8
+                },
+                {
+                  "name": "clean_engine_exit",
+                  "passed": true,
+                  "detail": 0
+                }
+              ],
+              "rebindResult": {
+                "cells": 64,
+                "created": 64,
+                "dispatches": 64,
+                "native_readback": false,
+                "passed": true,
+                "retired": 64
+              },
+              "identity": "8b6f9216c8a1afd8144b4378d7efd917d0ac6dbec844391027b5e5ece3b46a10",
+              "cacheMessages": [
+                "[WGSLCACHE] translator/profile 8b6f9216c8a1afd8144b4378d7efd917d0ac6dbec844391027b5e5ece3b46a10",
+                "[WGSLCACHE] seeded 777 entries from bundled cache (777 with SPIR-V binding metadata)",
+                "[WGSLCACHE] loaded 40 entries (40 with SPIR-V binding metadata)"
+              ],
+              "persisted": [
+                {
+                  "key": "/userfs/godot/app_userdata/WebGPU candidate browser regressions/wgsl_cache/d773ff85e8f5-8b6f9216c8a1afd8144b-v4.bin",
+                  "bytes": 294066,
+                  "header": [
+                    87,
+                    71,
+                    83,
+                    67,
+                    4,
+                    0,
+                    0,
+                    0,
+                    139,
+                    111,
+                    146,
+                    22,
+                    200,
+                    161,
+                    175,
+                    216,
+                    20,
+                    75,
+                    67,
+                    120,
+                    215,
+                    239,
+                    217,
+                    23,
+                    208,
+                    172,
+                    109,
+                    190,
+                    200,
+                    68,
+                    57,
+                    16,
+                    39,
+                    181,
+                    229,
+                    236,
+                    227,
+                    180,
+                    106,
+                    16
+                  ]
+                }
+              ],
+              "runtimeErrors": [],
+              "runtimePassed": true,
+              "exitCode": 0,
+              "shutdownErrors": [],
+              "passed": true,
+              "worker_count": 8
+            }
+          ]
+        },
+        {
+          "browser": "firefox",
+          "host": "darwin",
+          "threads": true,
+          "templateSha256": "47faa306eb541236ff508b2c147b369d4cd1ab31f397eb614fcc628073e183d7",
+          "engineSha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
+          "forcedWebGPU": false,
+          "noFloat32Filterable": true,
+          "version": "firefox/155.0.1",
+          "passed": true,
+          "runs": [
+            {
+              "temperature": "cold",
+              "errors": [],
+              "warnings": [
+                "WARNING: WebGPU: float32-filterable feature NOT available \u2014 32F linear sampling will fall back to nearest.",
+                "   at: _check_capabilities (drivers/webgpu/rendering_device_driver_webgpu.cpp:1973)",
+                "WARNING: WebGPU: float32-blendable feature NOT available \u2014 blend on float32 targets will be disabled.",
+                "   at: _check_capabilities (drivers/webgpu/rendering_device_driver_webgpu.cpp:1989)",
+                "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+                "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)",
+                "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+                "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)"
+              ],
+              "phases": [
+                "font",
+                "canvas_sdf",
+                "ssr_off",
+                "ssr_on",
+                "dof_off",
+                "dof_on"
+              ],
+              "capabilities": {
+                "crossOriginIsolated": true,
+                "sharedArrayBuffer": true,
+                "offscreenCanvas": true,
+                "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:155.0) Gecko/20100101 Firefox/155.0",
+                "webgpu": true
+              },
+              "checks": [
+                {
+                  "name": "rebind_canvas_dimensions",
+                  "passed": true,
+                  "detail": [
+                    512,
+                    384
+                  ]
+                },
+                {
+                  "name": "rebind_64_lifetimes_gpu_values",
+                  "passed": true,
+                  "detail": {
+                    "cells": 64,
+                    "min_green": 255,
+                    "max_red": 0,
+                    "max_blue": 0
+                  }
+                },
+                {
+                  "name": "canvas_dimensions",
+                  "passed": true,
+                  "detail": {
+                    "font": [
+                      512,
+                      384
+                    ],
+                    "canvas_sdf": [
+                      512,
+                      384
+                    ],
+                    "ssr_off": [
+                      512,
+                      384
+                    ],
+                    "ssr_on": [
+                      512,
+                      384
+                    ],
+                    "dof_off": [
+                      512,
+                      384
+                    ],
+                    "dof_on": [
+                      512,
+                      384
+                    ]
+                  }
+                },
+                {
+                  "name": "font_mask",
+                  "passed": true,
+                  "detail": 1924
+                },
+                {
+                  "name": "font_lcd",
+                  "passed": true,
+                  "detail": 1796
+                },
+                {
+                  "name": "font_msdf",
+                  "passed": true,
+                  "detail": 2188
+                },
+                {
+                  "name": "font_svg_retains_blue_under_red_modulation",
+                  "passed": true,
+                  "detail": 5168
+                },
+                {
+                  "name": "canvas_sdf_inside",
+                  "passed": true
+                },
+                {
+                  "name": "canvas_sdf_outside",
+                  "passed": true
+                },
+                {
+                  "name": "ssr_visible_source",
+                  "passed": true
+                },
+                {
+                  "name": "ssr_red_reflection",
+                  "passed": true,
+                  "detail": {
+                    "pixels": 7043,
+                    "sum": 2149.3882352939722
+                  }
+                },
+                {
+                  "name": "dof_sharp_panels",
+                  "passed": true,
+                  "detail": [
+                    0.5,
+                    0.5,
+                    0.5
+                  ]
+                },
+                {
+                  "name": "dof_near_blurred",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "dof_focus_preserved",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "dof_far_blurred",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "rebind_lifetime_resource_cleanup",
+                  "passed": true
+                },
+                {
+                  "name": "explicit_forward_plus_webgpu",
+                  "passed": true
+                },
+                {
+                  "name": "float32_filtering_omitted",
+                  "passed": true
+                },
+                {
+                  "name": "wgsl_runtime_identity",
+                  "passed": true
+                },
+                {
+                  "name": "packaged_wgsl_seed_loaded",
+                  "passed": true
+                },
+                {
+                  "name": "wgsc_v4_persisted_identity",
+                  "passed": true
+                },
+                {
+                  "name": "workers_observed",
+                  "passed": true,
+                  "detail": 8
+                },
+                {
+                  "name": "clean_engine_exit",
+                  "passed": true,
+                  "detail": 0
+                }
+              ],
+              "rebindResult": {
+                "cells": 64,
+                "created": 64,
+                "dispatches": 64,
+                "native_readback": false,
+                "passed": true,
+                "retired": 64
+              },
+              "identity": "8b6f9216c8a1afd8144b4378d7efd917d0ac6dbec844391027b5e5ece3b46a10",
+              "cacheMessages": [
+                "[WGSLCACHE] translator/profile 8b6f9216c8a1afd8144b4378d7efd917d0ac6dbec844391027b5e5ece3b46a10",
+                "[WGSLCACHE] seeded 777 entries from bundled cache (777 with SPIR-V binding metadata)",
+                "[WGSLCACHE] flushed 8 new entries (session: cache=192 precompiled=6 tint=2)",
+                "[WGSLCACHE] flushed 2 new entries (session: cache=250 precompiled=7 tint=3)",
+                "[WGSLCACHE] flushed 8 new entries (session: cache=256 precompiled=7 tint=11)",
+                "[WGSLCACHE] flushed 18 new entries (session: cache=272 precompiled=7 tint=29)"
+              ],
+              "persisted": [
+                {
+                  "key": "/userfs/godot/app_userdata/WebGPU candidate browser regressions/wgsl_cache/d773ff85e8f5-8b6f9216c8a1afd8144b-v4.bin",
+                  "bytes": 272390,
+                  "header": [
+                    87,
+                    71,
+                    83,
+                    67,
+                    4,
+                    0,
+                    0,
+                    0,
+                    139,
+                    111,
+                    146,
+                    22,
+                    200,
+                    161,
+                    175,
+                    216,
+                    20,
+                    75,
+                    67,
+                    120,
+                    215,
+                    239,
+                    217,
+                    23,
+                    208,
+                    172,
+                    109,
+                    190,
+                    200,
+                    68,
+                    57,
+                    16,
+                    39,
+                    181,
+                    229,
+                    236,
+                    227,
+                    180,
+                    106,
+                    16
+                  ]
+                }
+              ],
+              "runtimeErrors": [],
+              "runtimePassed": true,
+              "exitCode": 0,
+              "shutdownErrors": [],
+              "passed": true,
+              "worker_count": 8
+            },
+            {
+              "temperature": "warm",
+              "errors": [],
+              "warnings": [
+                "WARNING: WebGPU: float32-filterable feature NOT available \u2014 32F linear sampling will fall back to nearest.",
+                "   at: _check_capabilities (drivers/webgpu/rendering_device_driver_webgpu.cpp:1973)",
+                "WARNING: WebGPU: float32-blendable feature NOT available \u2014 blend on float32 targets will be disabled.",
+                "   at: _check_capabilities (drivers/webgpu/rendering_device_driver_webgpu.cpp:1989)",
+                "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+                "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)",
+                "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+                "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)"
+              ],
+              "phases": [
+                "font",
+                "canvas_sdf",
+                "ssr_off",
+                "ssr_on",
+                "dof_off",
+                "dof_on"
+              ],
+              "capabilities": {
+                "crossOriginIsolated": true,
+                "sharedArrayBuffer": true,
+                "offscreenCanvas": true,
+                "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:155.0) Gecko/20100101 Firefox/155.0",
+                "webgpu": true
+              },
+              "checks": [
+                {
+                  "name": "rebind_canvas_dimensions",
+                  "passed": true,
+                  "detail": [
+                    512,
+                    384
+                  ]
+                },
+                {
+                  "name": "rebind_64_lifetimes_gpu_values",
+                  "passed": true,
+                  "detail": {
+                    "cells": 64,
+                    "min_green": 255,
+                    "max_red": 0,
+                    "max_blue": 0
+                  }
+                },
+                {
+                  "name": "canvas_dimensions",
+                  "passed": true,
+                  "detail": {
+                    "font": [
+                      512,
+                      384
+                    ],
+                    "canvas_sdf": [
+                      512,
+                      384
+                    ],
+                    "ssr_off": [
+                      512,
+                      384
+                    ],
+                    "ssr_on": [
+                      512,
+                      384
+                    ],
+                    "dof_off": [
+                      512,
+                      384
+                    ],
+                    "dof_on": [
+                      512,
+                      384
+                    ]
+                  }
+                },
+                {
+                  "name": "font_mask",
+                  "passed": true,
+                  "detail": 1924
+                },
+                {
+                  "name": "font_lcd",
+                  "passed": true,
+                  "detail": 1796
+                },
+                {
+                  "name": "font_msdf",
+                  "passed": true,
+                  "detail": 2188
+                },
+                {
+                  "name": "font_svg_retains_blue_under_red_modulation",
+                  "passed": true,
+                  "detail": 5168
+                },
+                {
+                  "name": "canvas_sdf_inside",
+                  "passed": true
+                },
+                {
+                  "name": "canvas_sdf_outside",
+                  "passed": true
+                },
+                {
+                  "name": "ssr_visible_source",
+                  "passed": true
+                },
+                {
+                  "name": "ssr_red_reflection",
+                  "passed": true,
+                  "detail": {
+                    "pixels": 7043,
+                    "sum": 2149.3882352939722
+                  }
+                },
+                {
+                  "name": "dof_sharp_panels",
+                  "passed": true,
+                  "detail": [
+                    0.5,
+                    0.5,
+                    0.5
+                  ]
+                },
+                {
+                  "name": "dof_near_blurred",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "dof_focus_preserved",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "dof_far_blurred",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "rebind_lifetime_resource_cleanup",
+                  "passed": true
+                },
+                {
+                  "name": "explicit_forward_plus_webgpu",
+                  "passed": true
+                },
+                {
+                  "name": "float32_filtering_omitted",
+                  "passed": true
+                },
+                {
+                  "name": "wgsl_runtime_identity",
+                  "passed": true
+                },
+                {
+                  "name": "packaged_wgsl_seed_loaded",
+                  "passed": true
+                },
+                {
+                  "name": "wgsc_v4_persisted_identity",
+                  "passed": true
+                },
+                {
+                  "name": "warm_disk_cache_loaded",
+                  "passed": true
+                },
+                {
+                  "name": "workers_observed",
+                  "passed": true,
+                  "detail": 8
+                },
+                {
+                  "name": "clean_engine_exit",
+                  "passed": true,
+                  "detail": 0
+                }
+              ],
+              "rebindResult": {
+                "cells": 64,
+                "created": 64,
+                "dispatches": 64,
+                "native_readback": false,
+                "passed": true,
+                "retired": 64
+              },
+              "identity": "8b6f9216c8a1afd8144b4378d7efd917d0ac6dbec844391027b5e5ece3b46a10",
+              "cacheMessages": [
+                "[WGSLCACHE] translator/profile 8b6f9216c8a1afd8144b4378d7efd917d0ac6dbec844391027b5e5ece3b46a10",
+                "[WGSLCACHE] seeded 777 entries from bundled cache (777 with SPIR-V binding metadata)",
+                "[WGSLCACHE] loaded 36 entries (36 with SPIR-V binding metadata)",
+                "[WGSLCACHE] flushed 2 new entries (session: cache=308 precompiled=0 tint=2)"
+              ],
+              "persisted": [
+                {
+                  "key": "/userfs/godot/app_userdata/WebGPU candidate browser regressions/wgsl_cache/d773ff85e8f5-8b6f9216c8a1afd8144b-v4.bin",
+                  "bytes": 280155,
+                  "header": [
+                    87,
+                    71,
+                    83,
+                    67,
+                    4,
+                    0,
+                    0,
+                    0,
+                    139,
+                    111,
+                    146,
+                    22,
+                    200,
+                    161,
+                    175,
+                    216,
+                    20,
+                    75,
+                    67,
+                    120,
+                    215,
+                    239,
+                    217,
+                    23,
+                    208,
+                    172,
+                    109,
+                    190,
+                    200,
+                    68,
+                    57,
+                    16,
+                    39,
+                    181,
+                    229,
+                    236,
+                    227,
+                    180,
+                    106,
+                    16
+                  ]
+                }
+              ],
+              "runtimeErrors": [],
+              "runtimePassed": true,
+              "exitCode": 0,
+              "shutdownErrors": [],
+              "passed": true,
+              "worker_count": 8
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "host": {
+    "os": "macOS",
+    "version": "26.5.2",
+    "build": "25F84",
+    "architecture": "arm64"
+  },
+  "browser_capabilities": "browser-capabilities-macos-arm64.json",
+  "firefox_backend": "unknown; browser adapter identity is redacted and no about:support backend capture was made"
+}

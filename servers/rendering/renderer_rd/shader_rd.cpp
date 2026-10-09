@@ -30,7 +30,6 @@
 
 #include "shader_rd.h"
 
-
 #include "core/config/engine.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
@@ -423,14 +422,61 @@ void ShaderRD::_compile_variant(uint32_t p_variant, CompileData p_data) {
 	}
 }
 
-Vector<String> ShaderRD::version_build_variant_stage_sources(RID p_version, int p_variant) {
-	Version *version = version_owner.get_or_null(p_version);
-	ERR_FAIL_NULL_V(version, Vector<String>());
+LocalVector<RID> ShaderRD::get_all_versions() const {
+	return version_owner.get_owned_list();
+}
 
-	if (version->dirty) {
-		_initialize_version(version);
+bool ShaderRD::version_get_source_snapshot(RID p_version, const String &p_api_name, const RBSet<String> &p_paths_processed, VersionSourceSnapshot &r_snapshot) {
+	// version_free removes the mutex entry under versions_mutex before
+	// destroying the version. Hold both locks until every source and cache
+	// key has been copied; workers retain no Version pointer or RID.
+	MutexLock versions_lock(versions_mutex);
+	Mutex **mutex = version_mutexes.getptr(p_version);
+	if (mutex == nullptr) {
+		return false;
 	}
+	MutexLock version_lock(**mutex);
+	Version *version = version_owner.get_or_null(p_version);
+	DEV_ASSERT(version != nullptr);
+	r_snapshot.groups.clear();
+	for (int group = 0; group < group_enabled.size(); group++) {
+		if (!group_enabled[group]) {
+			continue;
+		}
+		String cache_path = _get_cache_file_relative_path(version, group, p_api_name);
+		if (p_paths_processed.has(cache_path)) {
+			continue;
+		}
+		VersionSourceSnapshot::Group source_group;
+		source_group.cache_path = cache_path;
+		source_group.variants = group_to_variant_map[group];
+		CompileData compile_data;
+		compile_data.version = version;
+		compile_data.group = group;
+		for (int variant : source_group.variants) {
+			if (!variants_enabled[variant]) {
+				continue;
+			}
+			VersionSourceSnapshot::Variant source_variant;
+			source_variant.index = variant;
+			source_variant.stage_sources = _build_variant_stage_sources(variant, compile_data);
+			source_group.enabled_variants.push_back(source_variant);
+		}
+		r_snapshot.groups.push_back(source_group);
+	}
+	return true;
+}
 
+Vector<String> ShaderRD::version_build_variant_stage_sources(RID p_version, int p_variant) {
+	ERR_FAIL_INDEX_V(p_variant, variant_defines.size(), Vector<String>());
+	MutexLock versions_lock(versions_mutex);
+	Mutex **mutex = version_mutexes.getptr(p_version);
+	ERR_FAIL_NULL_V(mutex, Vector<String>());
+	MutexLock version_lock(**mutex);
+	Version *version = version_owner.get_or_null(p_version);
+	DEV_ASSERT(version != nullptr);
+	// Export only reads source strings. Initializing a dirty live version here
+	// would clear its runtime shaders and change deferred compilation state.
 	CompileData compile_data;
 	compile_data.version = version;
 	compile_data.group = variant_to_group[p_variant];
@@ -614,77 +660,84 @@ String ShaderRD::_get_cache_file_path(Version *p_version, int p_group, const Str
 
 bool ShaderRD::_load_from_cache(Version *p_version, int p_group) {
 	String api_safe_name = String(RD::get_singleton()->get_device_api_name()).validate_filename().to_lower();
-	Ref<FileAccess> f;
-	if (shader_cache_user_dir_valid) {
-		f = FileAccess::open(_get_cache_file_path(p_version, p_group, api_safe_name, true), FileAccess::READ);
+	// A shipped WebGPU bake may contain WGSL coverage missing from an older
+	// runtime cache. Prefer it, but an incomplete/corrupt file must not hide a
+	// usable user cache. Other drivers retain their existing user-first order.
+	const bool packaged_first = api_safe_name == "webgpu";
+	for (int attempt = 0; attempt < 2; attempt++) {
+		const bool user_dir = packaged_first ? attempt == 1 : attempt == 0;
+		if ((user_dir && !shader_cache_user_dir_valid) || (!user_dir && !shader_cache_res_dir_valid)) {
+			continue;
+		}
+		if (_load_from_cache_file(p_version, p_group, _get_cache_file_path(p_version, p_group, api_safe_name, user_dir))) {
+			return true;
+		}
 	}
+	print_verbose(vformat("Shader cache miss for %s", name.path_join(group_sha256[p_group]).path_join(_version_get_sha1(p_version))));
+	return false;
+}
 
-	if (f.is_null() && shader_cache_res_dir_valid) {
-		f = FileAccess::open(_get_cache_file_path(p_version, p_group, api_safe_name, false), FileAccess::READ);
-	}
-
+bool ShaderRD::_load_from_cache_file(Version *p_version, int p_group, const String &p_path) {
+	Ref<FileAccess> f = FileAccess::open(p_path, FileAccess::READ);
 	if (f.is_null()) {
-		const String &sha1 = _version_get_sha1(p_version);
-		print_verbose(vformat("Shader cache miss for %s", name.path_join(group_sha256[p_group]).path_join(sha1)));
 		return false;
 	}
-
-	char header[5] = { 0, 0, 0, 0, 0 };
-	f->get_buffer((uint8_t *)header, 4);
-	ERR_FAIL_COND_V(header != String(shader_file_header), false);
-
-	uint32_t file_version = f->get_32();
-	if (file_version != cache_file_version) {
-		return false; // wrong version
+	const uint64_t file_size = f->get_length();
+	char header[4];
+	if (file_size < 12 || f->get_buffer((uint8_t *)header, 4) != 4 || memcmp(header, shader_file_header, 4) != 0 || f->get_32() != cache_file_version) {
+		print_verbose(vformat("Ignoring incompatible shader cache %s", p_path));
+		return false;
 	}
-
-	uint32_t variant_count = f->get_32();
-
-	ERR_FAIL_COND_V(variant_count != (uint32_t)group_to_variant_map[p_group].size(), false); //should not happen but check
-
+	const LocalVector<int> &group_variants = group_to_variant_map[p_group];
+	const uint32_t variant_count = f->get_32();
+	if (variant_count != group_variants.size()) {
+		return false;
+	}
+	// Parse every required variant before changing runtime state. A partial
+	// bake is a cache miss, and a corrupt size must never allocate past EOF.
+	Vector<Vector<uint8_t>> variant_data;
+	variant_data.resize(variant_count);
 	for (uint32_t i = 0; i < variant_count; i++) {
-		int variant_id = group_to_variant_map[p_group][i];
-		uint32_t variant_size = f->get_32();
+		if (f->get_position() > file_size || file_size - f->get_position() < 4) {
+			return false;
+		}
+		const uint32_t variant_size = f->get_32();
+		if (variant_size > file_size - f->get_position() || variant_size > INT32_MAX) {
+			return false;
+		}
+		const int variant_id = group_variants[i];
 		if (!variants_enabled[variant_id]) {
 			f->seek(f->get_position() + variant_size);
 			continue;
 		}
 		if (variant_size == 0) {
-			// A new variant has been requested, failing the entire load will generate it
-			print_verbose(vformat("Shader cache miss for %s due to missing variant %d", name.path_join(group_sha256[p_group]).path_join(_version_get_sha1(p_version)), variant_id));
+			print_verbose(vformat("Shader cache %s is missing variant %d", p_path, variant_id));
 			return false;
 		}
-		Vector<uint8_t> variant_bytes;
-		variant_bytes.resize(variant_size);
-
-		uint32_t br = f->get_buffer(variant_bytes.ptrw(), variant_size);
-
-		ERR_FAIL_COND_V(br != variant_size, false);
-
-		p_version->variant_data.write[variant_id] = variant_bytes;
+		variant_data.write[i].resize(variant_size);
+		if (f->get_buffer(variant_data.write[i].ptrw(), variant_size) != variant_size) {
+			return false;
+		}
+	}
+	if (f->get_position() != file_size) {
+		return false;
 	}
 
+	Vector<RID> placeholders;
+	placeholders.resize(variant_count);
 	for (uint32_t i = 0; i < variant_count; i++) {
-		int variant_id = group_to_variant_map[p_group][i];
-		if (!variants_enabled[variant_id]) {
-			p_version->variants.write[variant_id] = RID();
-			continue;
-		}
-		print_verbose(vformat("Loading cache for shader %s, variant %d", name, i));
-		{
-			RID shader = RD::get_singleton()->shader_create_from_bytecode_with_samplers(p_version->variant_data[variant_id], p_version->variants[variant_id], immutable_samplers);
-			if (shader.is_null()) {
-				for (uint32_t j = 0; j < i; j++) {
-					int variant_free_id = group_to_variant_map[p_group][j];
-					RD::get_singleton()->free_rid(p_version->variants[variant_free_id]);
-				}
-				ERR_FAIL_COND_V(shader.is_null(), false);
-			}
-
-			p_version->variants.write[variant_id] = shader;
-		}
+		placeholders.write[i] = p_version->variants[group_variants[i]];
 	}
-
+	Vector<RID> shaders = RD::get_singleton()->shader_create_from_bytecode_batch(variant_data, placeholders, immutable_samplers);
+	if (shaders.size() != variant_count) {
+		return false;
+	}
+	for (uint32_t i = 0; i < variant_count; i++) {
+		const int variant_id = group_variants[i];
+		p_version->variants.write[variant_id] = shaders[i];
+		p_version->variant_data.write[variant_id] = variant_data[i];
+	}
+	print_verbose(vformat("Loaded shader cache file %s", p_path));
 	p_version->valid = true;
 	return true;
 }

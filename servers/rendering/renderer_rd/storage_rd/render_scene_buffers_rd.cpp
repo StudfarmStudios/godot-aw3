@@ -195,7 +195,7 @@ void RenderSceneBuffersRD::configure(const RenderSceneBuffersConfiguration *p_co
 	if (msaa_3d == RSE::VIEWPORT_MSAA_DISABLED) {
 		texture_samples = RD::TEXTURE_SAMPLES_1;
 	} else {
-		texture_samples = msaa_to_samples(msaa_3d);
+		texture_samples = RD::get_singleton()->get_effective_texture_samples(msaa_to_samples(msaa_3d));
 		create_texture(RB_SCOPE_BUFFERS, RB_TEX_COLOR_MSAA, get_base_data_format(), get_color_usage_bits(false, true, can_be_storage), texture_samples, Size2i(), 0, 1, true, true);
 		create_texture(RB_SCOPE_BUFFERS, RB_TEX_DEPTH_MSAA, get_depth_format(false, true, can_be_storage), get_depth_usage_bits(false, true, can_be_storage), texture_samples, Size2i(), 0, 1, true, true);
 	}
@@ -671,7 +671,7 @@ RID RenderSceneBuffersRD::get_color_msaa_subsampled() {
 	tf.width = internal_size.x;
 	tf.height = internal_size.y;
 	tf.array_layers = view_count;
-	tf.samples = msaa_to_samples(msaa_3d);
+	tf.samples = texture_samples;
 	tf.usage_bits = get_color_usage_bits(false, true, can_be_storage);
 	tf.is_discardable = true;
 	tf.is_subsampled = true;
@@ -707,7 +707,7 @@ RID RenderSceneBuffersRD::get_depth_msaa_subsampled() {
 	tf.width = internal_size.x;
 	tf.height = internal_size.y;
 	tf.array_layers = view_count;
-	tf.samples = msaa_to_samples(msaa_3d);
+	tf.samples = texture_samples;
 	tf.usage_bits = get_depth_usage_bits(false, true, can_be_storage);
 	tf.is_discardable = true;
 	tf.is_subsampled = true;

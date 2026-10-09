@@ -1,0 +1,796 @@
+{
+  "passed": false,
+  "purpose": "Exact Emscripten4.0.11 release artifact Closure controls: original and wrapper-only startup failures; wrapper plus internal-import diagnostic renders correctly but fails controlled shutdown.",
+  "host": {
+    "os": "macOS",
+    "version": "26.5.2",
+    "build": "25F84",
+    "architecture": "arm64"
+  },
+  "windows_d3d12_verified": false,
+  "firefox_backend": "unknown; not captured from about:support",
+  "capability_probe": "browser-capabilities-macos-arm64.json",
+  "matrices": [
+    {
+      "passed": false,
+      "source_result": "/private/tmp/aw3-browser-emscripten-4.0.11-e8ad-results/result.json",
+      "template_sha256": "04ffec1b6abd0ec82288f98abc7fd185ba6761cde7cd79fd9863d6b5bca4b505",
+      "engine_sha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+      "wgsl": {
+        "entries": 777,
+        "failed": 0,
+        "source_modules": 777,
+        "fingerprint": "3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce"
+      },
+      "threads": false,
+      "records": [
+        {
+          "browser": "chrome",
+          "host": "darwin",
+          "threads": false,
+          "templateSha256": "04ffec1b6abd0ec82288f98abc7fd185ba6761cde7cd79fd9863d6b5bca4b505",
+          "engineSha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+          "forcedWebGPU": false,
+          "noFloat32Filterable": false,
+          "runs": [
+            {
+              "temperature": "cold",
+              "errors": [
+                "Error: WebGPU is not supported in this browser."
+              ],
+              "warnings": [],
+              "phases": [],
+              "capabilities": {
+                "crossOriginIsolated": true,
+                "sharedArrayBuffer": true,
+                "offscreenCanvas": true,
+                "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+                "webgpu": true
+              },
+              "passed": false,
+              "worker_count": 0
+            }
+          ],
+          "version": "Chrome/154.0.8037.98",
+          "passed": false,
+          "error": "Error: Error: WebGPU is not supported in this browser.\n    at file:///private/tmp/aw3-browser-4.0.11-runner/run_browser.mjs:63:146"
+        },
+        {
+          "browser": "firefox",
+          "host": "darwin",
+          "threads": false,
+          "templateSha256": "04ffec1b6abd0ec82288f98abc7fd185ba6761cde7cd79fd9863d6b5bca4b505",
+          "engineSha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+          "forcedWebGPU": false,
+          "noFloat32Filterable": false,
+          "runs": [
+            {
+              "temperature": "cold",
+              "errors": [
+                "JSHandle@error"
+              ],
+              "warnings": [],
+              "phases": [],
+              "capabilities": {
+                "crossOriginIsolated": true,
+                "sharedArrayBuffer": true,
+                "offscreenCanvas": true,
+                "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:155.0) Gecko/20100101 Firefox/155.0",
+                "webgpu": true
+              },
+              "passed": false,
+              "worker_count": 0
+            }
+          ],
+          "version": "firefox/155.0.1",
+          "passed": false,
+          "error": "Error: JSHandle@error\n    at file:///private/tmp/aw3-browser-4.0.11-runner/run_browser.mjs:63:146"
+        }
+      ],
+      "control": "original",
+      "description": "Original separately compiled wrapper renames browser WebGPU API properties; both browsers reject startup despite navigator.gpu availability."
+    },
+    {
+      "passed": false,
+      "source_result": "/private/tmp/aw3-browser-emscripten-4.0.11-wrapper-fixed-results/result.json",
+      "template_sha256": "ebe7219b234ed80a4efbc657afa2497f302723756ab699cce16e63686d2e3f90",
+      "engine_sha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+      "wgsl": {
+        "entries": 777,
+        "failed": 0,
+        "source_modules": 777,
+        "fingerprint": "3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce"
+      },
+      "threads": false,
+      "records": [
+        {
+          "browser": "chrome",
+          "host": "darwin",
+          "threads": false,
+          "templateSha256": "ebe7219b234ed80a4efbc657afa2497f302723756ab699cce16e63686d2e3f90",
+          "engineSha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+          "forcedWebGPU": false,
+          "noFloat32Filterable": false,
+          "runs": [
+            {
+              "temperature": "cold",
+              "errors": [
+                "TypeError: M.importJsDevice is not a function"
+              ],
+              "warnings": [],
+              "phases": [],
+              "capabilities": {
+                "crossOriginIsolated": true,
+                "sharedArrayBuffer": true,
+                "offscreenCanvas": true,
+                "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+                "webgpu": true
+              },
+              "passed": false,
+              "worker_count": 0
+            }
+          ],
+          "version": "Chrome/154.0.8037.98",
+          "passed": false,
+          "error": "Error: TypeError: M.importJsDevice is not a function\n    at file:///private/tmp/aw3-browser-4.0.11-runner/run_browser.mjs:63:146"
+        },
+        {
+          "browser": "firefox",
+          "host": "darwin",
+          "threads": false,
+          "templateSha256": "ebe7219b234ed80a4efbc657afa2497f302723756ab699cce16e63686d2e3f90",
+          "engineSha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+          "forcedWebGPU": false,
+          "noFloat32Filterable": false,
+          "runs": [
+            {
+              "temperature": "cold",
+              "errors": [
+                "JSHandle@error"
+              ],
+              "warnings": [],
+              "phases": [],
+              "capabilities": {
+                "crossOriginIsolated": true,
+                "sharedArrayBuffer": true,
+                "offscreenCanvas": true,
+                "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:155.0) Gecko/20100101 Firefox/155.0",
+                "webgpu": true
+              },
+              "passed": false,
+              "worker_count": 0
+            }
+          ],
+          "version": "firefox/155.0.1",
+          "passed": false,
+          "error": "Error: JSHandle@error\n    at file:///private/tmp/aw3-browser-4.0.11-runner/run_browser.mjs:63:146"
+        }
+      ],
+      "control": "wrapper_externs_only",
+      "description": "Rebuilt wrapper with browser WebGPU externs; both browsers fail in the unchanged Emscripten module because quoted importJsDevice call does not match its renamed helper."
+    },
+    {
+      "passed": false,
+      "source_result": "/private/tmp/aw3-browser-emscripten-4.0.11-wrapper-module-fixed-results/result.json",
+      "template_sha256": "d1c07ee2ae93493909806356aedc11cd55e9278d8dfe173c5bb85aeb38fc98f9",
+      "engine_sha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+      "wgsl": {
+        "entries": 777,
+        "failed": 0,
+        "source_modules": 777,
+        "fingerprint": "3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce"
+      },
+      "threads": false,
+      "records": [
+        {
+          "browser": "chrome",
+          "host": "darwin",
+          "threads": false,
+          "templateSha256": "d1c07ee2ae93493909806356aedc11cd55e9278d8dfe173c5bb85aeb38fc98f9",
+          "engineSha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+          "forcedWebGPU": false,
+          "noFloat32Filterable": false,
+          "runs": [
+            {
+              "temperature": "cold",
+              "errors": [],
+              "warnings": [
+                "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+                "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)",
+                "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+                "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)"
+              ],
+              "phases": [
+                "font",
+                "canvas_sdf",
+                "ssr_off",
+                "ssr_on",
+                "dof_off",
+                "dof_on"
+              ],
+              "capabilities": {
+                "crossOriginIsolated": true,
+                "sharedArrayBuffer": true,
+                "offscreenCanvas": true,
+                "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+                "webgpu": true
+              },
+              "checks": [
+                {
+                  "name": "rebind_canvas_dimensions",
+                  "passed": true,
+                  "detail": [
+                    512,
+                    384
+                  ]
+                },
+                {
+                  "name": "rebind_64_lifetimes_gpu_values",
+                  "passed": true,
+                  "detail": {
+                    "count": 64,
+                    "first": [
+                      0,
+                      255,
+                      0,
+                      255
+                    ],
+                    "last": [
+                      0,
+                      255,
+                      0,
+                      255
+                    ]
+                  }
+                },
+                {
+                  "name": "canvas_dimensions",
+                  "passed": true,
+                  "detail": {
+                    "font": [
+                      512,
+                      384
+                    ],
+                    "canvas_sdf": [
+                      512,
+                      384
+                    ],
+                    "ssr_off": [
+                      512,
+                      384
+                    ],
+                    "ssr_on": [
+                      512,
+                      384
+                    ],
+                    "dof_off": [
+                      512,
+                      384
+                    ],
+                    "dof_on": [
+                      512,
+                      384
+                    ]
+                  }
+                },
+                {
+                  "name": "font_mask",
+                  "passed": true,
+                  "detail": 1924
+                },
+                {
+                  "name": "font_lcd",
+                  "passed": true,
+                  "detail": 1796
+                },
+                {
+                  "name": "font_msdf",
+                  "passed": true,
+                  "detail": 2188
+                },
+                {
+                  "name": "font_svg_retains_blue_under_red_modulation",
+                  "passed": true,
+                  "detail": 5168
+                },
+                {
+                  "name": "canvas_sdf_inside",
+                  "passed": true
+                },
+                {
+                  "name": "canvas_sdf_outside",
+                  "passed": true
+                },
+                {
+                  "name": "ssr_visible_source",
+                  "passed": true
+                },
+                {
+                  "name": "ssr_red_reflection",
+                  "passed": true,
+                  "detail": {
+                    "pixels": 7020,
+                    "sum": 2146.5411764704463
+                  }
+                },
+                {
+                  "name": "dof_sharp_panels",
+                  "passed": true,
+                  "detail": [
+                    0.5,
+                    0.5,
+                    0.5
+                  ]
+                },
+                {
+                  "name": "dof_near_blurred",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "dof_focus_preserved",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "dof_far_blurred",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "rebind_lifetime_resource_cleanup",
+                  "passed": true
+                },
+                {
+                  "name": "explicit_forward_plus_webgpu",
+                  "passed": true
+                },
+                {
+                  "name": "wgsl_runtime_identity",
+                  "passed": true
+                },
+                {
+                  "name": "packaged_wgsl_seed_loaded",
+                  "passed": true
+                },
+                {
+                  "name": "wgsc_v4_persisted_identity",
+                  "passed": true
+                }
+              ],
+              "rebindResult": {
+                "cells": 64,
+                "created": 64,
+                "dispatches": 64,
+                "native_readback": false,
+                "passed": true,
+                "retired": 64
+              },
+              "identity": "3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce",
+              "cacheMessages": [
+                "[WGSLCACHE] translator/profile 3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce",
+                "[WGSLCACHE] seeded 777 entries from bundled cache (777 with SPIR-V binding metadata)",
+                "[WGSLCACHE] flushed 59 new entries (session: cache=128 precompiled=24 tint=35)",
+                "[WGSLCACHE] flushed 1 new entries (session: cache=145 precompiled=24 tint=36)",
+                "[WGSLCACHE] flushed 1 new entries (session: cache=199 precompiled=24 tint=37)",
+                "[WGSLCACHE] flushed 18 new entries (session: cache=201 precompiled=24 tint=55)",
+                "[WGSLCACHE] flushed 20 new entries (session: cache=221 precompiled=24 tint=75)"
+              ],
+              "persisted": [
+                {
+                  "key": "/userfs/godot/app_userdata/WebGPU candidate browser regressions/wgsl_cache/e52cbe3e4345-3525def07f23b8da8501-v4.bin",
+                  "bytes": 533887,
+                  "header": [
+                    87,
+                    71,
+                    83,
+                    67,
+                    4,
+                    0,
+                    0,
+                    0,
+                    53,
+                    37,
+                    222,
+                    240,
+                    127,
+                    35,
+                    184,
+                    218,
+                    133,
+                    1,
+                    39,
+                    133,
+                    172,
+                    221,
+                    52,
+                    177,
+                    237,
+                    15,
+                    96,
+                    115,
+                    183,
+                    254,
+                    10,
+                    93,
+                    198,
+                    13,
+                    100,
+                    135,
+                    238,
+                    52,
+                    129,
+                    206
+                  ]
+                }
+              ],
+              "runtimeErrors": [],
+              "runtimePassed": true,
+              "passed": false,
+              "shutdownErrors": [],
+              "worker_count": 0
+            }
+          ],
+          "version": "Chrome/154.0.8037.98",
+          "passed": false,
+          "error": "TimeoutError: Waiting failed: 30000ms exceeded\n    at new WaitTask (file:///Users/jaakkolukkari/Development/aw3/website/node_modules/puppeteer-core/lib/puppeteer/common/WaitTask.js:46:34)\n    at IsolatedWorld.waitForFunction (file:///Users/jaakkolukkari/Development/aw3/website/node_modules/puppeteer-core/lib/puppeteer/api/Realm.js:49:26)\n    at CdpFrame.waitForFunction (file:///Users/jaakkolukkari/Development/aw3/website/node_modules/puppeteer-core/lib/puppeteer/api/Frame.js:580:43)\n    at CdpFrame.<anonymous> (file:///Users/jaakkolukkari/Development/aw3/website/node_modules/puppeteer-core/lib/puppeteer/util/decorators.js:101:27)\n    at CdpPage.waitForFunction (file:///Users/jaakkolukkari/Development/aw3/website/node_modules/puppeteer-core/lib/puppeteer/api/Page.js:1447:37)\n    at file:///private/tmp/aw3-browser-4.0.11-runner/run_browser.mjs:93:20"
+        },
+        {
+          "browser": "firefox",
+          "host": "darwin",
+          "threads": false,
+          "templateSha256": "d1c07ee2ae93493909806356aedc11cd55e9278d8dfe173c5bb85aeb38fc98f9",
+          "engineSha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+          "forcedWebGPU": false,
+          "noFloat32Filterable": false,
+          "runs": [
+            {
+              "temperature": "cold",
+              "errors": [],
+              "warnings": [
+                "WARNING: WebGPU: float32-blendable feature NOT available \u2014 blend on float32 targets will be disabled.",
+                "   at: _check_capabilities (drivers/webgpu/rendering_device_driver_webgpu.cpp:1997)",
+                "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+                "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)",
+                "WARNING: Image format LumAlpha8 not supported by hardware, converting to RGBA8.",
+                "   at: _validate_texture_format (servers/rendering/renderer_rd/storage_rd/texture_storage.cpp:2929)"
+              ],
+              "phases": [
+                "font",
+                "canvas_sdf",
+                "ssr_off",
+                "ssr_on",
+                "dof_off",
+                "dof_on"
+              ],
+              "capabilities": {
+                "crossOriginIsolated": true,
+                "sharedArrayBuffer": true,
+                "offscreenCanvas": true,
+                "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:155.0) Gecko/20100101 Firefox/155.0",
+                "webgpu": true
+              },
+              "checks": [
+                {
+                  "name": "rebind_canvas_dimensions",
+                  "passed": true,
+                  "detail": [
+                    512,
+                    384
+                  ]
+                },
+                {
+                  "name": "rebind_64_lifetimes_gpu_values",
+                  "passed": true,
+                  "detail": {
+                    "count": 64,
+                    "first": [
+                      0,
+                      255,
+                      0,
+                      255
+                    ],
+                    "last": [
+                      0,
+                      255,
+                      0,
+                      255
+                    ]
+                  }
+                },
+                {
+                  "name": "canvas_dimensions",
+                  "passed": true,
+                  "detail": {
+                    "font": [
+                      512,
+                      384
+                    ],
+                    "canvas_sdf": [
+                      512,
+                      384
+                    ],
+                    "ssr_off": [
+                      512,
+                      384
+                    ],
+                    "ssr_on": [
+                      512,
+                      384
+                    ],
+                    "dof_off": [
+                      512,
+                      384
+                    ],
+                    "dof_on": [
+                      512,
+                      384
+                    ]
+                  }
+                },
+                {
+                  "name": "font_mask",
+                  "passed": true,
+                  "detail": 1924
+                },
+                {
+                  "name": "font_lcd",
+                  "passed": true,
+                  "detail": 1796
+                },
+                {
+                  "name": "font_msdf",
+                  "passed": true,
+                  "detail": 2188
+                },
+                {
+                  "name": "font_svg_retains_blue_under_red_modulation",
+                  "passed": true,
+                  "detail": 5168
+                },
+                {
+                  "name": "canvas_sdf_inside",
+                  "passed": true
+                },
+                {
+                  "name": "canvas_sdf_outside",
+                  "passed": true
+                },
+                {
+                  "name": "ssr_visible_source",
+                  "passed": true
+                },
+                {
+                  "name": "ssr_red_reflection",
+                  "passed": true,
+                  "detail": {
+                    "pixels": 7043,
+                    "sum": 2149.3882352939722
+                  }
+                },
+                {
+                  "name": "dof_sharp_panels",
+                  "passed": true,
+                  "detail": [
+                    0.5,
+                    0.5,
+                    0.5
+                  ]
+                },
+                {
+                  "name": "dof_near_blurred",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "dof_focus_preserved",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "dof_far_blurred",
+                  "passed": true,
+                  "detail": {
+                    "sharp": [
+                      0.5,
+                      0.5,
+                      0.5
+                    ],
+                    "blur": [
+                      0.0017454349427978954,
+                      0.5,
+                      0.0017454349427978954
+                    ]
+                  }
+                },
+                {
+                  "name": "rebind_lifetime_resource_cleanup",
+                  "passed": true
+                },
+                {
+                  "name": "explicit_forward_plus_webgpu",
+                  "passed": true
+                },
+                {
+                  "name": "wgsl_runtime_identity",
+                  "passed": true
+                },
+                {
+                  "name": "packaged_wgsl_seed_loaded",
+                  "passed": true
+                },
+                {
+                  "name": "wgsc_v4_persisted_identity",
+                  "passed": true
+                }
+              ],
+              "rebindResult": {
+                "cells": 64,
+                "created": 64,
+                "dispatches": 64,
+                "native_readback": false,
+                "passed": true,
+                "retired": 64
+              },
+              "identity": "3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce",
+              "cacheMessages": [
+                "[WGSLCACHE] translator/profile 3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce",
+                "[WGSLCACHE] seeded 777 entries from bundled cache (777 with SPIR-V binding metadata)",
+                "[WGSLCACHE] flushed 59 new entries (session: cache=128 precompiled=24 tint=35)",
+                "[WGSLCACHE] flushed 1 new entries (session: cache=145 precompiled=24 tint=36)",
+                "[WGSLCACHE] flushed 1 new entries (session: cache=199 precompiled=24 tint=37)",
+                "[WGSLCACHE] flushed 16 new entries (session: cache=201 precompiled=24 tint=53)",
+                "[WGSLCACHE] flushed 18 new entries (session: cache=213 precompiled=24 tint=71)"
+              ],
+              "persisted": [
+                {
+                  "key": "/userfs/godot/app_userdata/WebGPU candidate browser regressions/wgsl_cache/e52cbe3e4345-3525def07f23b8da8501-v4.bin",
+                  "bytes": 512211,
+                  "header": [
+                    87,
+                    71,
+                    83,
+                    67,
+                    4,
+                    0,
+                    0,
+                    0,
+                    53,
+                    37,
+                    222,
+                    240,
+                    127,
+                    35,
+                    184,
+                    218,
+                    133,
+                    1,
+                    39,
+                    133,
+                    172,
+                    221,
+                    52,
+                    177,
+                    237,
+                    15,
+                    96,
+                    115,
+                    183,
+                    254,
+                    10,
+                    93,
+                    198,
+                    13,
+                    100,
+                    135,
+                    238,
+                    52,
+                    129,
+                    206
+                  ]
+                }
+              ],
+              "runtimeErrors": [],
+              "runtimePassed": true,
+              "passed": false,
+              "shutdownErrors": [],
+              "worker_count": 0
+            }
+          ],
+          "version": "firefox/155.0.1",
+          "passed": false,
+          "error": "TimeoutError: Waiting failed: 30000ms exceeded\n    at new WaitTask (file:///Users/jaakkolukkari/Development/aw3/website/node_modules/puppeteer-core/lib/puppeteer/common/WaitTask.js:46:34)\n    at BidiFrameRealm.waitForFunction (file:///Users/jaakkolukkari/Development/aw3/website/node_modules/puppeteer-core/lib/puppeteer/api/Realm.js:49:26)\n    at BidiFrame.waitForFunction (file:///Users/jaakkolukkari/Development/aw3/website/node_modules/puppeteer-core/lib/puppeteer/api/Frame.js:580:43)\n    at BidiFrame.<anonymous> (file:///Users/jaakkolukkari/Development/aw3/website/node_modules/puppeteer-core/lib/puppeteer/util/decorators.js:101:27)\n    at BidiPage.waitForFunction (file:///Users/jaakkolukkari/Development/aw3/website/node_modules/puppeteer-core/lib/puppeteer/api/Page.js:1447:37)\n    at file:///private/tmp/aw3-browser-4.0.11-runner/run_browser.mjs:93:20"
+        }
+      ],
+      "control": "wrapper_and_module_import_diagnostic",
+      "description": "Rebuilt wrapper plus one emitted call corrected from M.importJsDevice(a) to M.vj(a), matching the actual minified helper definition. Both browsers pass20 visual/cache checks and64 BGL cells with no runtime errors, but timeout30s awaiting onExit. Overall failed."
+    }
+  ],
+  "artifact_provenance": {
+    "source_commit": "e8ad3299937a1159bc4596865a2d43065288596c",
+    "github_run_id": 37848429540,
+    "github_job_id": 113555475099,
+    "github_artifact_id": 11582026861,
+    "github_artifact_name": "web-webgpu-template",
+    "emscripten": "4.0.11 (d3432e7a2a6585331c94b041973fb16c9f332ce4)",
+    "closure_compiler": "v20240317",
+    "repair": "Only separate engine wrapper recompiled with added WebGPU externs; input wrapper source byte-identical to downloaded CI substituted source. Emscripten JS, Wasm, shader identity and all other template entries unchanged.",
+    "original_template_sha256": "04ffec1b6abd0ec82288f98abc7fd185ba6761cde7cd79fd9863d6b5bca4b505",
+    "wrapper_fixed_template_sha256": "ebe7219b234ed80a4efbc657afa2497f302723756ab699cce16e63686d2e3f90",
+    "wasm_sha256": "13275ca11ee0ae4da5e08dda0bdc47ebf03dfc85d9e3d79dd36757409c20b2a6",
+    "original_engine_wrapper_sha256": "aca0b581d77d2d42c05cc63d28e5beb627d1fbfc4190356063f80d9a5c6f9443",
+    "fixed_engine_wrapper_sha256": "bfae84d0ac927e6188179636c946ca23d9a20b14fe166ec631e9eacb8c60e656",
+    "externs_sha256": "bd8e25fe789385bac4f93f7330ad85ca3b819c044ee132b2fdaad502aae8f826",
+    "strict_bake": {
+      "modules": 278,
+      "glsl_failures": 0,
+      "tint_failures": 0
+    },
+    "changed_zip_entries": [
+      "godot.js"
+    ],
+    "module_import_diagnostic_template_sha256": "d1c07ee2ae93493909806356aedc11cd55e9278d8dfe173c5bb85aeb38fc98f9",
+    "module_import_diagnostic_delta": "Only emitted call M.importJsDevice(a) -> M.vj(a), after verifying the exact helper definition in this artifact; production fix uses WebGPU.importJsDevice(d) before Closure."
+  },
+  "limitations": [
+    "Non-threaded, normal feature set, cold only; not the full matrix.",
+    "Wasm remains source e8ad329993/profile3525; not final source validation.",
+    "The third template includes a diagnostic emitted-JavaScript import-call correction, not a source-rebuilt Emscripten module.",
+    "No performance claim; Windows/D3D12 and Firefox backend remain unverified."
+  ]
+}

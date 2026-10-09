@@ -1,0 +1,72 @@
+{
+  "passed": true,
+  "errors": [],
+  "error_count": 0,
+  "returncode": 0,
+  "timed_out": false,
+  "seconds": 3.101857000030577,
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "engine_sha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
+  "driver": "webgpu",
+  "fallback": true,
+  "no_float32_filterable": true,
+  "cascades": 4,
+  "scroll_frames": 20,
+  "affected_pixels": 12857,
+  "red_increase_sum": 4288.102065,
+  "scroll_affected_pixels": 10308,
+  "command": [
+    "/private/tmp/aw3-webgpu-ordered-clear",
+    "--path",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration",
+    "--rendering-method",
+    "forward_plus",
+    "--rendering-driver",
+    "webgpu",
+    "--script",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration/scene.gd",
+    "--",
+    "--fixture-dir=/private/tmp/aw3-sdfgi-final-4-baseline",
+    "--cascades=4",
+    "--scroll-frames=20",
+    "--webgpu-force-fallbacks",
+    "--webgpu-no-float32-filterable"
+  ],
+  "scene_metrics": {
+    "disabled_memory": {
+      "buffer_bytes": 3787420,
+      "texture_bytes": null,
+      "texture_bytes_invalid_raw": "18446744073705338880.0",
+      "video_bytes": 0
+    },
+    "disabled_pipeline_settle": {
+      "milliseconds": 116,
+      "pending": 0,
+      "pipeline_count": 7,
+      "quiet_frames": 10
+    },
+    "enabled_memory": {
+      "buffer_bytes": 65920844,
+      "texture_bytes": 391740772,
+      "video_bytes": 0
+    },
+    "enabled_pipeline_settle": {
+      "milliseconds": 225,
+      "pending": 0,
+      "pipeline_count": 15,
+      "quiet_frames": 10
+    },
+    "freed_memory": {
+      "buffer_bytes": 6741324,
+      "texture_bytes": null,
+      "texture_bytes_invalid_raw": "18446744073705666560.0",
+      "video_bytes": 0
+    },
+    "scrolled_pipeline_settle": {
+      "milliseconds": 14,
+      "pending": 0,
+      "pipeline_count": 15,
+      "quiet_frames": 10
+    }
+  }
+}

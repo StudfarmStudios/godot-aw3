@@ -774,12 +774,18 @@ bool RenderingShaderContainer::from_bytes(const PackedByteArray &p_bytes) {
 	ERR_FAIL_COND_V_MSG(int64_t(bytes_offset + sizeof(ContainerHeader)) > p_bytes.size(), false, "Not enough bytes for a container header in shader container.");
 	const ContainerHeader &container_header = *(const ContainerHeader *)(&bytes_ptr[bytes_offset]);
 	bytes_offset += sizeof(ContainerHeader);
-	bytes_offset += _from_bytes_header_extra_data(&bytes_ptr[bytes_offset]);
 
 	ERR_FAIL_COND_V_MSG(container_header.magic_number != CONTAINER_MAGIC_NUMBER, false, "Incorrect magic number in shader container.");
 	ERR_FAIL_COND_V_MSG(container_header.version > CONTAINER_VERSION, false, "Unsupported version in shader container.");
 	ERR_FAIL_COND_V_MSG(container_header.format != _format(), false, "Incorrect format in shader container.");
 	ERR_FAIL_COND_V_MSG(container_header.format_version > _format_version(), false, "Unsupported format version in shader container.");
+
+	// WebGPU has a fixed header extension. Check its size before a backend
+	// hook reads it; a truncated cache is a miss, not an out-of-bounds read.
+	ERR_FAIL_COND_V_MSG(_to_bytes_header_extra_data(nullptr) > uint64_t(p_bytes.size()) - bytes_offset, false, "Not enough bytes for header extra data in shader container.");
+	bytes_offset += _from_bytes_header_extra_data(&bytes_ptr[bytes_offset]);
+	ERR_FAIL_COND_V_MSG(bytes_offset > uint64_t(p_bytes.size()), false, "Invalid header extra data size in shader container.");
+	ERR_FAIL_COND_V_MSG(container_header.shader_count > (uint64_t(p_bytes.size()) - bytes_offset) / sizeof(ShaderHeader), false, "Invalid shader count in shader container.");
 
 	// Adjust shaders to the size indicated by the container header.
 	shaders.resize(container_header.shader_count);
@@ -788,7 +794,10 @@ bool RenderingShaderContainer::from_bytes(const PackedByteArray &p_bytes) {
 	ERR_FAIL_COND_V_MSG(int64_t(bytes_offset + sizeof(ReflectionData)) > p_bytes.size(), false, "Not enough bytes for reflection data in shader container.");
 	reflection_data = *(const ReflectionData *)(&bytes_ptr[bytes_offset]);
 	bytes_offset += sizeof(ReflectionData);
+	ERR_FAIL_COND_V_MSG(reflection_data.set_count > (uint64_t(p_bytes.size()) - bytes_offset) / sizeof(uint32_t), false, "Invalid uniform set count in shader container.");
+	ERR_FAIL_COND_V_MSG(reflection_data.specialization_constants_count > (uint64_t(p_bytes.size()) - bytes_offset) / sizeof(ReflectionSpecializationData), false, "Invalid specialization count in shader container.");
 	bytes_offset += _from_bytes_reflection_extra_data(&bytes_ptr[bytes_offset]);
+	ERR_FAIL_COND_V_MSG(bytes_offset > uint64_t(p_bytes.size()), false, "Invalid reflection extra data size in shader container.");
 
 	// Read shader name.
 	ERR_FAIL_COND_V_MSG(int64_t(bytes_offset + reflection_data.shader_name_len) > p_bytes.size(), false, "Not enough bytes for shader name in shader container.");
@@ -801,6 +810,7 @@ bool RenderingShaderContainer::from_bytes(const PackedByteArray &p_bytes) {
 		shader_name = CharString();
 	}
 
+	ERR_FAIL_COND_V_MSG(bytes_offset > uint64_t(p_bytes.size()), false, "Invalid shader name padding in shader container.");
 	reflection_binding_set_uniforms_count.resize(reflection_data.set_count);
 	reflection_binding_set_uniforms_data.clear();
 
@@ -811,12 +821,14 @@ bool RenderingShaderContainer::from_bytes(const PackedByteArray &p_bytes) {
 		reflection_binding_set_uniforms_count.ptrw()[i] = uniforms_count;
 		bytes_offset += sizeof(uint32_t);
 
+		ERR_FAIL_COND_V_MSG(uniforms_count > (uint64_t(p_bytes.size()) - bytes_offset) / sizeof(ReflectionBindingData), false, "Invalid uniform count in shader container.");
 		reflection_binding_set_uniforms_data.resize(reflection_binding_set_uniforms_data.size() + uniforms_count);
 		bytes_offset += _from_bytes_reflection_binding_uniform_extra_data_start(&bytes_ptr[bytes_offset]);
 
 		for (uint32_t j = 0; j < uniforms_count; j++) {
 			ERR_FAIL_COND_V_MSG(int64_t(bytes_offset + sizeof(ReflectionBindingData)) > p_bytes.size(), false, "Not enough bytes for uniform in shader container.");
 			memcpy(&reflection_binding_set_uniforms_data.ptrw()[uniform_index], &bytes_ptr[bytes_offset], sizeof(ReflectionBindingData));
+			ERR_FAIL_COND_V_MSG(reflection_binding_set_uniforms_data[uniform_index].type >= RDC::UNIFORM_TYPE_MAX, false, "Invalid uniform type in shader container.");
 			bytes_offset += sizeof(ReflectionBindingData);
 			bytes_offset += _from_bytes_reflection_binding_uniform_extra_data(&bytes_ptr[bytes_offset], uniform_index);
 			uniform_index++;
@@ -835,11 +847,14 @@ bool RenderingShaderContainer::from_bytes(const PackedByteArray &p_bytes) {
 
 	const uint32_t stage_count = reflection_data.stage_count;
 	if (stage_count > 0) {
-		ERR_FAIL_COND_V_MSG(int64_t(bytes_offset + stage_count * sizeof(RDC::ShaderStage)) > p_bytes.size(), false, "Not enough bytes for stages in shader container.");
+		ERR_FAIL_COND_V_MSG(int64_t(bytes_offset + uint64_t(stage_count) * sizeof(RDC::ShaderStage)) > p_bytes.size(), false, "Not enough bytes for stages in shader container.");
 		reflection_shader_stages.resize(stage_count);
 		bytes_offset += _from_bytes_shader_extra_data_start(&bytes_ptr[bytes_offset]);
-		memcpy(reflection_shader_stages.ptrw(), &bytes_ptr[bytes_offset], stage_count * sizeof(RDC::ShaderStage));
-		bytes_offset += stage_count * sizeof(RDC::ShaderStage);
+		memcpy(reflection_shader_stages.ptrw(), &bytes_ptr[bytes_offset], uint64_t(stage_count) * sizeof(RDC::ShaderStage));
+		bytes_offset += uint64_t(stage_count) * sizeof(RDC::ShaderStage);
+		for (RDC::ShaderStage stage : reflection_shader_stages) {
+			ERR_FAIL_COND_V_MSG(uint32_t(stage) >= RDC::SHADER_STAGE_MAX, false, "Invalid reflected shader stage in shader container.");
+		}
 	}
 
 	// Read shaders.
@@ -847,6 +862,7 @@ bool RenderingShaderContainer::from_bytes(const PackedByteArray &p_bytes) {
 		ERR_FAIL_COND_V_MSG(int64_t(bytes_offset + sizeof(ShaderHeader)) > p_bytes.size(), false, "Not enough bytes for shader header in shader container.");
 		const ShaderHeader &header = *(const ShaderHeader *)(&bytes_ptr[bytes_offset]);
 		bytes_offset += sizeof(ShaderHeader);
+		ERR_FAIL_COND_V_MSG(header.shader_stage >= RDC::SHADER_STAGE_MAX, false, "Invalid shader stage in shader container.");
 
 		ERR_FAIL_COND_V_MSG(int64_t(bytes_offset + header.code_compressed_size) > p_bytes.size(), false, "Not enough bytes for a shader in shader container.");
 		Shader &shader = shaders.ptrw()[i];

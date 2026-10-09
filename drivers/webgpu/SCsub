@@ -3,6 +3,7 @@ from misc.utility.scons_hints import *
 
 Import("env")
 
+import cache_identity
 import wgsl_precompile
 
 env_webgpu = env.Clone()
@@ -733,6 +734,17 @@ env_webgpu.add_source_files(env.drivers_sources, webgpu_sources)
 env.drivers_sources += spirv_tools_obj
 env.drivers_sources += tint_obj
 
+# Runtime, CLI and persisted cache all identify the actual translation sources,
+# including local edits to vendored Tint. Commit hashes are insufficient.
+identity_header = env.CommandNoCache(
+    "#drivers/webgpu/generated/wgsl_cache_identity.gen.h",
+    # C++ File nodes would recursively scan #include wgsl_precompiled.gen.h,
+    # creating a cycle. The Value records all actual input bytes without
+    # importing their compilation dependency graph.
+    [env.Value(cache_identity.fingerprint(env.Dir("#").abspath))],
+    env.Run(cache_identity.build_header),
+)
+
 # Generate precompiled SPIR-V → WGSL lookup table at build time.
 # The generated header is #included by rendering_device_driver_webgpu.cpp.
 # The table is only as good as the converter that produced it: if the
@@ -742,6 +754,7 @@ env.CommandNoCache(
     "#drivers/webgpu/wgsl_precompiled.gen.h",
     [
         "#drivers/webgpu/wgsl_precompile.py",
+        identity_header,
         "#drivers/webgpu/spirv_preprocess.cpp",
         "#drivers/webgpu/spirv_preprocess.h",
         "#drivers/webgpu/tint_wrapper.cpp",

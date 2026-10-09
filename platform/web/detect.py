@@ -10,9 +10,9 @@ from emscripten_helpers import (
     add_js_pre,
     create_engine_file,
     create_template_zip,
+    erase_dotnet_setup,
     get_template_zip_path,
     run_closure_compiler,
-    erase_dotnet_setup,
 )
 from SCons.Util import WhereIs
 
@@ -135,6 +135,14 @@ def configure(env: "SConsEnvironment"):
     # Minimum emscripten requirements.
     if cc_semver < (4, 0, 0):
         print_error("The minimum Emscripten version to build Godot is 4.0.0, detected: %s.%s.%s" % cc_semver)
+        sys.exit(255)
+
+    # Older emdawn ports can drain their last async callback without maybeExit,
+    # leaving WebGPU exports alive after the engine has completed shutdown.
+    if env["webgpu"] and cc_semver < (4, 0, 20):
+        print_error(
+            "WebGPU requires Emscripten 4.0.20 or newer for correct async shutdown, detected: %s.%s.%s" % cc_semver
+        )
         sys.exit(255)
 
     env.Append(LIBEMITTER=[library_emitter])
@@ -380,13 +388,15 @@ def configure(env: "SConsEnvironment"):
     # The game demands WebGPU + SharedArrayBuffer, so the default browser floors
     # (Chrome 85 / Firefox 79 / Safari 15) only buy dead legacy-support code.
     # POLYFILL/TEXTDECODER: no polyfills, TextDecoder assumed present.
-    env.Append(LINKFLAGS=[
-        "-sMIN_CHROME_VERSION=119",
-        "-sMIN_FIREFOX_VERSION=120",
-        "-sMIN_SAFARI_VERSION=170000",
-        "-sPOLYFILL=0",
-        "-sTEXTDECODER=2",
-    ])
+    env.Append(
+        LINKFLAGS=[
+            "-sMIN_CHROME_VERSION=119",
+            "-sMIN_FIREFOX_VERSION=120",
+            "-sMIN_SAFARI_VERSION=170000",
+            "-sPOLYFILL=0",
+            "-sTEXTDECODER=2",
+        ]
+    )
 
     # Wrap the JavaScript support code around a closure named Godot.
     env.Append(LINKFLAGS=["-sMODULARIZE=1", "-sEXPORT_NAME='Godot'"])

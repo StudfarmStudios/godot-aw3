@@ -193,6 +193,10 @@
 #include "editor/shader/shader_baker/shader_baker_export_plugin_platform_metal.h"
 #endif
 
+#if defined(WEBGPU_ENABLED) && !defined(WEB_ENABLED)
+#include "editor/shader/shader_baker/shader_baker_export_plugin_platform_webgpu.h"
+#endif
+
 #ifndef PHYSICS_2D_DISABLED
 #include "servers/physics_2d/physics_server_2d.h"
 #endif // PHYSICS_2D_DISABLED
@@ -210,6 +214,7 @@
 #include <cstdlib>
 
 EditorNode *EditorNode::singleton = nullptr;
+bool EditorNode::cmdline_mode = false;
 
 static const String EDITOR_NODE_CONFIG_SECTION = "EditorNode";
 
@@ -6615,8 +6620,9 @@ bool EditorNode::immediate_confirmation_dialog(const String &p_text, const Strin
 }
 
 bool EditorNode::is_cmdline_mode() {
-	ERR_FAIL_NULL_V(singleton, false);
-	return singleton->cmdline_mode;
+	// EditorHelp must not start interactive script-doc loading during headless
+	// teardown after the editor/file-system singletons have been destroyed.
+	return cmdline_mode;
 }
 
 void EditorNode::cleanup() {
@@ -8357,9 +8363,7 @@ EditorNode::EditorNode() {
 	singleton = this;
 
 	// Detecting headless mode, that means the editor is running in command line.
-	if (!DisplayServer::get_singleton()->window_can_draw()) {
-		cmdline_mode = true;
-	}
+	cmdline_mode = !DisplayServer::get_singleton()->window_can_draw();
 
 	Resource::_get_local_scene_func = _resource_get_edited_scene;
 
@@ -9516,6 +9520,12 @@ EditorNode::EditorNode() {
 	Ref<ShaderBakerExportPluginPlatformMetal> shader_baker_export_plugin_platform_metal;
 	shader_baker_export_plugin_platform_metal.instantiate();
 	shader_baker_export_plugin->add_platform(shader_baker_export_plugin_platform_metal);
+#endif
+
+#if defined(WEBGPU_ENABLED) && !defined(WEB_ENABLED)
+	Ref<ShaderBakerExportPluginPlatformWebGPU> shader_baker_export_plugin_platform_webgpu;
+	shader_baker_export_plugin_platform_webgpu.instantiate();
+	shader_baker_export_plugin->add_platform(shader_baker_export_plugin_platform_webgpu);
 #endif
 
 	EditorExport::get_singleton()->add_export_plugin(shader_baker_export_plugin);

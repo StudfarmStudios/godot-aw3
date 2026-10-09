@@ -372,12 +372,18 @@ void EditorExportPlatformWeb::get_preset_features(const Ref<EditorExportPreset> 
 	} else {
 		r_features->push_back("web_noextensions");
 	}
+	if (bool(p_preset->get("shader_baker/enabled"))) {
+		r_features->push_back("shader_baker");
+	}
 	r_features->push_back("wasm32");
 }
 
 void EditorExportPlatformWeb::get_export_options(List<ExportOption> *r_options) const {
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_template/debug", PROPERTY_HINT_GLOBAL_FILE, "*.zip"), ""));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_template/release", PROPERTY_HINT_GLOBAL_FILE, "*.zip"), ""));
+
+	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "shader_baker/enabled"), false));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "shader_baker/tint_cli", PROPERTY_HINT_GLOBAL_FILE), ""));
 
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "variant/extensions_support"), false)); // GDExtension support.
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "variant/thread_support"), false, true)); // Thread support (i.e. run with or without COEP/COOP headers).
@@ -406,6 +412,9 @@ void EditorExportPlatformWeb::get_export_options(List<ExportOption> *r_options) 
 
 bool EditorExportPlatformWeb::get_export_option_visibility(const EditorExportPreset *p_preset, const String &p_option) const {
 	bool advanced_options_enabled = p_preset->are_advanced_options_enabled();
+	if (p_option == "shader_baker/tint_cli") {
+		return p_preset->get("shader_baker/enabled").operator bool();
+	}
 	if (p_option == "custom_template/debug" || p_option == "custom_template/release") {
 		return advanced_options_enabled;
 	}

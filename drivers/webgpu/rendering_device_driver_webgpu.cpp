@@ -31,26 +31,30 @@
 #ifdef WEBGPU_ENABLED
 
 #include "rendering_device_driver_webgpu.h"
-#include "drivers/webgpu/rendering_context_driver_webgpu.h"
-#include "drivers/webgpu/rendering_shader_container_webgpu.h"
-#include "drivers/webgpu/pixel_formats_webgpu.h"
-#include "drivers/webgpu/spirv_preprocess.h"
 
 #include "core/crypto/crypto_core.h"
-#include "core/os/os.h"
 #include "core/io/compression.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/marshalls.h"
-#include "core/templates/hash_set.h"
-#include "core/version.h"
+#include "core/os/os.h"
 #include "core/templates/hash_map.h"
+#include "core/templates/hash_set.h"
 #include "core/templates/hashfuncs.h"
 #include "core/templates/safe_refcount.h"
-
+#include "core/version.h"
+#include "drivers/webgpu/generated/wgsl_cache_identity.gen.h"
+#include "drivers/webgpu/pixel_formats_webgpu.h"
+#include "drivers/webgpu/rendering_context_driver_webgpu.h"
+#include "drivers/webgpu/rendering_shader_container_webgpu.h"
+#include "drivers/webgpu/sampled_texture_usage.h"
+#include "drivers/webgpu/spirv_preprocess.h"
+#include "drivers/webgpu/storage_format_remap.h"
+#include "drivers/webgpu/texture_format_conversion.h"
 #include "drivers/webgpu/tint_wrapper.h"
 
 #include <thirdparty/misc/smolv.h>
+
 #include <webgpu/webgpu.h>
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
@@ -99,6 +103,17 @@ static void _pipeline_wrapper_destroy(WGPipelineWrapper *pw) {
 	}
 	delete pw;
 }
+
+// Native Dawn's implicit device synchronization holds the device mutex during
+// its last external release while waiting for pipeline workers. A spontaneous
+// completion on those workers also needs that mutex, which deadlocks shutdown.
+// Deliver native completions through the per-frame event pump instead. Pipeline
+// compilation itself remains asynchronous; browser callbacks retain their mode.
+#ifdef __EMSCRIPTEN__
+static constexpr WGPUCallbackMode PIPELINE_CALLBACK_MODE = WGPUCallbackMode_AllowSpontaneous;
+#else
+static constexpr WGPUCallbackMode PIPELINE_CALLBACK_MODE = WGPUCallbackMode_AllowProcessEvents;
+#endif
 
 // Asynchronous render pipeline creation lands here, once per requested variant
 // (a strip pipeline asks for two). The wrapper only becomes usable when every
@@ -195,23 +210,31 @@ static void _compute_pipeline_async_callback(WGPUCreatePipelineAsyncStatus p_sta
 }
 
 // Fence work-done callback: fires when wgpuQueueSubmit work completes on GPU.
-// The message parameter arrived in Emscripten 4.0.13's webgpu.h; earlier
-// headers declared this callback without it.
-static void _fence_work_done_callback(WGPUQueueWorkDoneStatus p_status, WGPUStringView p_message, void *p_userdata1, void *p_userdata2) {
+static void _fence_work_done_callback(WGPUQueueWorkDoneStatus p_status, void *p_userdata1, void *p_userdata2) {
 	WGFence *fence = (WGFence *)p_userdata1;
 	if (!fence) {
 		return;
 	}
 
-	fence->work_done_pending = false;
+	DEV_ASSERT(fence->pending_work_done_callbacks > 0);
+	fence->pending_work_done_callbacks--;
+	if (fence->pending_work_done_callbacks > 0) {
+		return;
+	}
 
-	// Fence was freed while this callback was in flight — clean up.
+	// All registered completions have drained; no callback retains this fence.
 	if (fence->freed) {
 		delete fence;
 		return;
 	}
 
 	fence->signaled = true;
+}
+
+// Older emdawnwebgpu headers omit the message parameter. Overload resolution
+// follows the installed callback type, including when the port is overridden.
+[[maybe_unused]] static void _fence_work_done_callback(WGPUQueueWorkDoneStatus p_status, WGPUStringView p_message, void *p_userdata1, void *p_userdata2) {
+	_fence_work_done_callback(p_status, p_userdata1, p_userdata2);
 }
 
 // Parse "@group(G[u]) @binding(B[u])" from a WGSL string.
@@ -280,58 +303,14 @@ static const char *_find_before(const char *p_begin, const char *p_limit, const 
 	return nullptr;
 }
 
-static bool _wgsl_has_unsupported_8bit_storage_format(const char *p_wgsl) {
-	const char *p = p_wgsl;
-	while ((p = strchr(p, 'r')) != nullptr) {
-		if (p[1] == 'g') {
-			if (strncmp(p, "rg8unorm", 8) == 0 || strncmp(p, "rg8snorm", 8) == 0 ||
-					strncmp(p, "rg8uint", 7) == 0 || strncmp(p, "rg8sint", 7) == 0) {
-				return true;
-			}
-		} else if (p[1] == '8') {
-			if (strncmp(p, "r8unorm", 7) == 0 || strncmp(p, "r8snorm", 7) == 0 ||
-					strncmp(p, "r8uint", 6) == 0 || strncmp(p, "r8sint", 6) == 0) {
-				return true;
-			}
-		}
-		p++;
-	}
-	return false;
-}
-
-static void _wgsl_remap_unsupported_16bit_storage_formats(char *p_wgsl) {
-	char *p = p_wgsl;
-	while ((p = strchr(p, 'r')) != nullptr) {
-		if (p[1] == 'g' && p[2] == 'b' && p[3] == 'a') {
-			if (strncmp(p, "rgba16snorm", 11) == 0 || strncmp(p, "rgba16unorm", 11) == 0) {
-				memcpy(p, "rgba16float", 11);
-				p += 11;
-				continue;
-			}
-		} else if (p[1] == 'g') {
-			if (strncmp(p, "rg16float", 9) == 0 || strncmp(p, "rg16snorm", 9) == 0 || strncmp(p, "rg16unorm", 9) == 0) {
-				memcpy(p, "rg32float", 9);
-				p += 9;
-				continue;
-			}
-			if (strncmp(p, "rg16uint", 8) == 0 || strncmp(p, "rg16sint", 8) == 0) {
-				memcpy(p, p[4] == 'u' ? "rg32uint" : "rg32sint", 8);
-				p += 8;
-				continue;
-			}
-		} else if (p[1] == '1' && p[2] == '6') {
-			if (strncmp(p, "r16float", 8) == 0 || strncmp(p, "r16snorm", 8) == 0 || strncmp(p, "r16unorm", 8) == 0) {
-				memcpy(p, "r32float", 8);
-				p += 8;
-				continue;
-			}
-			if (strncmp(p, "r16uint", 7) == 0 || strncmp(p, "r16sint", 7) == 0) {
-				memcpy(p, p[3] == 'u' ? "r32uint" : "r32sint", 7);
-				p += 7;
-				continue;
-			}
-		}
-		p++;
+void RenderingDeviceDriverWebGPU::_remap_unsupported_wgsl_storage_formats(char *&r_wgsl) const {
+	const std::string remapped = WebGPUStorageFormats::remap_wgsl(r_wgsl, has_texture_formats_tier1, has_texture_formats_tier2);
+	if (!remapped.empty()) {
+		char *replacement = (char *)malloc(remapped.size() + 1);
+		ERR_FAIL_NULL(replacement);
+		memcpy(replacement, remapped.c_str(), remapped.size() + 1);
+		free(r_wgsl);
+		r_wgsl = replacement;
 	}
 }
 
@@ -356,6 +335,10 @@ struct SpvStageAnalysis {
 
 // WebGPU consumes UTF-8. Keeping generated WGSL in String expands its mostly
 // ASCII source to UTF-32 and can exhaust the WASM heap during Forward+ warmup.
+// Shared by main/local rendering devices. RD instance locks do not protect
+// another device or a frame's timed disk flush. Never hold this through Tint,
+// SPIR-V analysis or GPU calls; cached pointers only live inside this lock.
+static Mutex _wgsl_cache_mutex;
 static HashMap<uint64_t, CharString> _spv_to_wgsl_cache;
 static HashMap<uint64_t, SpvStageAnalysis> _spv_stage_analysis_cache;
 static uint32_t _spv_to_wgsl_cache_hits = 0;
@@ -374,7 +357,7 @@ static uint64_t _spv_cache_hash(const uint8_t *p_spv_ptr, int p_spv_size) {
 
 // Binary search the precompiled table for a matching SPIR-V hash.
 static const char *_lookup_precompiled_wgsl(uint64_t p_spv_hash) {
-	if (_wgsl_precompiled_count == 0) {
+	if (_wgsl_precompiled_count == 0 || strcmp(_wgsl_precompiled_fingerprint, WEBGPU_TRANSLATOR_FINGERPRINT) != 0) {
 		return nullptr;
 	}
 	uint32_t lo = 0;
@@ -630,12 +613,10 @@ static char *_translate_spirv_to_wgsl(const uint8_t *p_spv_ptr, int p_spv_size) 
 				String b64 = CryptoCore::b64_encode_str(failed_bytes.ptr(), failed_bytes.size());
 				CharString b64_cs = b64.utf8();
 				EM_ASM({
-					globalThis.__webgpu_failed_spirv = globalThis.__webgpu_failed_spirv || [];
-					if (globalThis.__webgpu_failed_spirv.length < 8) {
-						globalThis.__webgpu_failed_spirv.push(UTF8ToString($0));
-					}
-				},
-						b64_cs.get_data());
+					globalThis['__webgpu_failed_spirv'] = globalThis['__webgpu_failed_spirv'] || [];
+					if (globalThis['__webgpu_failed_spirv'].length < 8) {
+						globalThis['__webgpu_failed_spirv'].push(UTF8ToString($0));
+					} }, b64_cs.get_data());
 #endif
 			}
 		} else {
@@ -653,16 +634,15 @@ static char *_translate_spirv_to_wgsl(const uint8_t *p_spv_ptr, int p_spv_size) 
 // on web) and preloaded. The file is keyed by the engine version hash: a new
 // engine build starts a fresh cache and deletes stale ones.
 //
-// v3 starts with [u32 magic][u32 version]. Each record remains
-// [u64 spv_hash][u32 comp_size][u32 raw_size][u32 checksum][zstd bytes], but its
-// uncompressed payload contains the WGSL and the source SPIR-V binding analysis.
-// Keeping that analysis in the deploy-time seed avoids repeatedly parsing the
-// same SPIR-V solely to build WebGPU bind group layouts. The loader also accepts
-// legacy v2 records (which have no file header or analysis) and computes the
-// missing metadata on first use.
+// v4 starts with [u32 magic][u32 version][32-byte translator/profile SHA-256].
+// Each record remains [u64 spv_hash][u32 comp_size][u32 raw_size][u32 checksum]
+// [zstd bytes]. The payload keeps the v3 WGSL + analysis v1 layout. Source
+// identity covers preprocessing, Tint, runtime layout code and target profile,
+// including edits made without a new engine commit. Legacy v2/v3 files are
+// ignored because they cannot prove translation compatibility.
 
 static constexpr uint32_t WGSL_CACHE_MAGIC = 0x43534757; // "WGSC" in little endian.
-static constexpr uint32_t WGSL_CACHE_VERSION = 3;
+static constexpr uint32_t WGSL_CACHE_VERSION = 4;
 static constexpr uint32_t WGSL_ANALYSIS_VERSION = 1;
 static constexpr uint32_t WGSL_CACHE_MAX_WGSL_SIZE = 16 * 1024 * 1024;
 static constexpr uint32_t WGSL_CACHE_MAX_PAYLOAD_SIZE = 32 * 1024 * 1024;
@@ -682,7 +662,7 @@ static String _wgsl_disk_cache_dir() {
 static String _wgsl_disk_cache_file() {
 	// The format tag is part of the name so that
 	// caches written by other builds/formats are purged rather than parsed.
-	return _wgsl_disk_cache_dir().path_join(String(GODOT_VERSION_HASH).left(12) + "-v3.bin");
+	return _wgsl_disk_cache_dir().path_join(String(GODOT_VERSION_HASH).left(12) + "-" + String(WEBGPU_TRANSLATOR_FINGERPRINT).left(20) + "-v4.bin");
 }
 
 static void _wgsl_disk_cache_nuke() {
@@ -787,14 +767,13 @@ static bool _wgsl_cache_build_v3_payload(const CharString &p_wgsl, const SpvStag
 	if (wgsl_size == 0 || wgsl_size > WGSL_CACHE_MAX_WGSL_SIZE) {
 		return false;
 	}
-	if (p_analysis && (p_analysis->reachable_binding_keys.size() > WGSL_CACHE_MAX_BINDING_COUNT ||
-				p_analysis->binding_images.size() > WGSL_CACHE_MAX_BINDING_COUNT)) {
+	if (p_analysis && (p_analysis->reachable_binding_keys.size() > WGSL_CACHE_MAX_BINDING_COUNT || p_analysis->binding_images.size() > WGSL_CACHE_MAX_BINDING_COUNT)) {
 		return false;
 	}
 	const uint64_t payload_size = 4 + (uint64_t)wgsl_size + 4 +
 			(p_analysis ? 4 + (uint64_t)p_analysis->reachable_binding_keys.size() * 4 +
-						4 + (uint64_t)p_analysis->binding_images.size() * 20
-					: 0);
+									4 + (uint64_t)p_analysis->binding_images.size() * 20
+						: 0);
 	if (payload_size > WGSL_CACHE_MAX_PAYLOAD_SIZE) {
 		return false;
 	}
@@ -859,17 +838,13 @@ static int _wgsl_cache_parse_file(const String &p_path) {
 		return -1;
 	}
 
-	bool is_v3 = false;
-	if (len >= 4) {
-		const uint32_t magic = f->get_32();
-		if (magic == WGSL_CACHE_MAGIC) {
-			if (len < 8 || f->get_32() != WGSL_CACHE_VERSION) {
-				return -1;
-			}
-			is_v3 = true;
-		} else {
-			f->seek(0);
-		}
+	// Legacy records have no translator identity. They cannot be promoted just
+	// because their SPIR-V hash matches: preprocessing and Tint may have changed.
+	uint8_t fingerprint[32];
+	if (len < 40 || f->get_32() != WGSL_CACHE_MAGIC || f->get_32() != WGSL_CACHE_VERSION ||
+			f->get_buffer(fingerprint, sizeof(fingerprint)) != sizeof(fingerprint) ||
+			memcmp(fingerprint, WEBGPU_TRANSLATOR_FINGERPRINT_BYTES, sizeof(fingerprint)) != 0) {
+		return -2; // Incompatible source/profile identity, not damaged records.
 	}
 
 	Vector<uint8_t> comp;
@@ -892,7 +867,7 @@ static int _wgsl_cache_parse_file(const String &p_path) {
 		const uint32_t comp_size = f->get_32();
 		const uint32_t raw_size = f->get_32();
 		const uint32_t checksum = f->get_32();
-		const uint32_t max_raw_size = is_v3 ? WGSL_CACHE_MAX_PAYLOAD_SIZE : WGSL_CACHE_MAX_WGSL_SIZE;
+		const uint32_t max_raw_size = WGSL_CACHE_MAX_PAYLOAD_SIZE;
 		if (comp_size == 0 || raw_size == 0 || raw_size > max_raw_size || comp_size > len - f->get_position()) {
 			return -1;
 		}
@@ -903,39 +878,40 @@ static int _wgsl_cache_parse_file(const String &p_path) {
 		if (hash_murmur3_buffer(comp.ptr(), comp_size) != checksum) {
 			return -1;
 		}
-		raw.resize(raw_size + (is_v3 ? 0 : 1));
+		raw.resize(raw_size);
 		int r = Compression::decompress(raw.ptrw(), raw_size, comp.ptr(), comp_size, Compression::MODE_ZSTD);
 		if (r != (int)raw_size) {
 			return -1;
 		}
-		if (is_v3) {
-			if (!_wgsl_cache_parse_v3_payload(raw, entry)) {
-				return -1;
-			}
-		} else {
-			if (memchr(raw.ptr(), 0, raw_size) != nullptr) {
-				return -1;
-			}
-			raw.write[raw_size] = 0;
-			entry.wgsl = CharString((const char *)raw.ptr());
+		if (!_wgsl_cache_parse_v3_payload(raw, entry)) {
+			return -1;
 		}
 		pending.push_back(entry);
 	}
+	uint32_t inserted = 0;
 	for (const WgslCachePendingEntry &entry : pending) {
+		// Bundled entries are loaded first. A user cache may fill missing
+		// hashes, but must not overwrite the shipped WGSL or its analysis.
+		if (_spv_to_wgsl_cache.has(entry.hash)) {
+			continue;
+		}
+		inserted++;
 		_spv_to_wgsl_cache[entry.hash] = entry.wgsl;
 		if (entry.has_analysis) {
 			_spv_stage_analysis_cache[entry.hash] = entry.analysis;
 		}
 		_wgsl_disk_cache_persisted.insert(entry.hash);
 	}
-	return pending.size();
+	return inserted;
 }
 
 static void _wgsl_disk_cache_load() {
+	MutexLock lock(_wgsl_cache_mutex);
 	if (_wgsl_disk_cache_loaded) {
 		return;
 	}
 	_wgsl_disk_cache_loaded = true;
+	print_line(String("[WGSLCACHE] translator/profile ") + WEBGPU_TRANSLATOR_FINGERPRINT);
 
 	// Deploy-time seed: shipped as a plain HTTP asset and copied into MEMFS by
 	// the shell page before start. Lives outside the IndexedDB-persisted mount
@@ -943,7 +919,15 @@ static void _wgsl_disk_cache_load() {
 	// the boot-time IDBFS restore small. Corruption cannot happen mid-write
 	// here (the file is read-only), so a bad seed is just ignored.
 	const uint32_t seed_analysis_before = _spv_stage_analysis_cache.size();
-	int seeded = _wgsl_cache_parse_file("/tmp/wgsl_seed.bin");
+	int seeded = 0;
+	for (const String &path : { String("/tmp/wgsl_seed.bin"), String("res://.godot/shader_cache/wgsl_seed.bin") }) {
+		const int parsed = _wgsl_cache_parse_file(path);
+		if (parsed > 0) {
+			seeded += parsed;
+		} else if (parsed < 0) {
+			print_verbose(vformat("[WGSLCACHE] ignored %s bundled cache %s; regenerate with the matching translator/profile", parsed == -2 ? "incompatible" : "corrupt", path));
+		}
+	}
 	if (seeded > 0) {
 		print_verbose(vformat("[WGSLCACHE] seeded %d entries from bundled cache (%d with SPIR-V binding metadata)",
 				seeded, _spv_stage_analysis_cache.size() - seed_analysis_before));
@@ -973,7 +957,11 @@ static void _wgsl_disk_cache_load() {
 		// scene renders error-magenta) - self-heal by refusing all of it. The next
 		// boot repopulates from Tint (or the seed).
 		_wgsl_disk_cache_nuke();
-		WARN_PRINT("[WGSLCACHE] corrupt cache discarded");
+		if (loaded == -2) {
+			print_verbose("[WGSLCACHE] incompatible translator/profile cache discarded");
+		} else {
+			WARN_PRINT("[WGSLCACHE] corrupt cache discarded");
+		}
 		return;
 	}
 	if (loaded > 0) {
@@ -982,8 +970,9 @@ static void _wgsl_disk_cache_load() {
 	}
 }
 
-static void _wgsl_disk_cache_flush() {
-	if (_wgsl_disk_cache_pending == 0) {
+static void _wgsl_disk_cache_flush(bool p_force = true) {
+	MutexLock lock(_wgsl_cache_mutex);
+	if (_wgsl_disk_cache_pending == 0 || (!p_force && OS::get_singleton()->get_ticks_usec() - _wgsl_disk_cache_last_flush_usec <= 2000000)) {
 		return;
 	}
 	Ref<FileAccess> f = FileAccess::open(_wgsl_disk_cache_file(), FileAccess::READ_WRITE);
@@ -994,7 +983,8 @@ static void _wgsl_disk_cache_flush() {
 		return;
 	}
 	if (f->get_length() == 0) {
-		if (!f->store_32(WGSL_CACHE_MAGIC) || !f->store_32(WGSL_CACHE_VERSION)) {
+		if (!f->store_32(WGSL_CACHE_MAGIC) || !f->store_32(WGSL_CACHE_VERSION) ||
+				!f->store_buffer(WEBGPU_TRANSLATOR_FINGERPRINT_BYTES, sizeof(WEBGPU_TRANSLATOR_FINGERPRINT_BYTES))) {
 			return;
 		}
 	}
@@ -1055,46 +1045,56 @@ static char *_copy_wgsl_for_module(const char *p_wgsl, size_t p_length) {
 // failure. Checks: (1) in-memory cache, (2) precompiled table, (3) Tint fallback.
 static char *_spv_to_wgsl_cached_hashed(const uint8_t *p_spv_ptr, int p_spv_size, uint64_t p_spv_hash) {
 	_wgsl_disk_cache_load();
-
-	// 1. Check in-memory cache (hits on repeated calls within same session).
-	const CharString *cached = _spv_to_wgsl_cache.getptr(p_spv_hash);
-	if (cached) {
-		_spv_to_wgsl_cache_hits++;
-		return _copy_wgsl_for_module(cached->get_data(), (size_t)cached->length());
+	uint32_t precompiled_hits = 0;
+	{
+		MutexLock lock(_wgsl_cache_mutex);
+		// Copy while protected: another rendering device can grow the map.
+		const CharString *cached = _spv_to_wgsl_cache.getptr(p_spv_hash);
+		if (cached) {
+			_spv_to_wgsl_cache_hits++;
+			return _copy_wgsl_for_module(cached->get_data(), (size_t)cached->length());
+		}
+		const char *precompiled = _lookup_precompiled_wgsl(p_spv_hash);
+		if (precompiled) {
+			precompiled_hits = ++_spv_to_wgsl_precompiled_hits;
+			_spv_to_wgsl_cache[p_spv_hash] = CharString(precompiled);
+		} else {
+			_spv_to_wgsl_cache_misses++;
+		}
 	}
-
-	// 2. Check build-time precompiled table (eliminates runtime translation for ubershaders).
-	const char *precompiled = _lookup_precompiled_wgsl(p_spv_hash);
-	if (precompiled) {
-		_spv_to_wgsl_precompiled_hits++;
+	if (precompiled_hits != 0) {
 		WEBGPU_DIAG({
 			if ($0 <= 5 || ($0 % 50) === 0) {
 				console.log('[SHADER] Precompiled WGSL hit #' + $0);
-			}
-		}, _spv_to_wgsl_precompiled_hits);
-		_spv_to_wgsl_cache[p_spv_hash] = CharString(precompiled);
+			} }, precompiled_hits);
+		const char *precompiled = _lookup_precompiled_wgsl(p_spv_hash);
 		return _copy_wgsl_for_module(precompiled, strlen(precompiled));
 	}
 
-	// 3. Fall back to Tint (for specialized shaders and shaders not in the table).
-	_spv_to_wgsl_cache_misses++;
-
+	// A duplicate concurrent translation is harmless; holding a shared cache
+	// lock through Tint or callbacks would serialize unrelated devices.
 	char *wgsl_str = _translate_spirv_to_wgsl(p_spv_ptr, p_spv_size);
-
-	if (wgsl_str) {
-		_spv_to_wgsl_cache[p_spv_hash] = CharString(wgsl_str);
-		_wgsl_disk_cache_pending++;
-		if (_wgsl_disk_cache_pending >= 64) {
-			_wgsl_disk_cache_flush();
+	bool flush = false;
+	[[maybe_unused]] uint32_t cache_hits = 0;
+	[[maybe_unused]] uint32_t cache_misses = 0;
+	{
+		MutexLock lock(_wgsl_cache_mutex);
+		if (wgsl_str && !_spv_to_wgsl_cache.has(p_spv_hash)) {
+			_spv_to_wgsl_cache[p_spv_hash] = CharString(wgsl_str);
+			_wgsl_disk_cache_pending++;
+			flush = _wgsl_disk_cache_pending >= 64;
 		}
+		precompiled_hits = _spv_to_wgsl_precompiled_hits;
+		cache_hits = _spv_to_wgsl_cache_hits;
+		cache_misses = _spv_to_wgsl_cache_misses;
 	}
-
+	if (flush) {
+		_wgsl_disk_cache_flush();
+	}
 	WEBGPU_DIAG({
 		if ($2 <= 5 || ($2 % 50) === 0) {
 			console.log('[SHADER] WGSL stats: precompiled_hits=' + $0 + ' cache_hits=' + $1 + ' tint_misses=' + $2);
-		}
-	}, _spv_to_wgsl_precompiled_hits, _spv_to_wgsl_cache_hits, _spv_to_wgsl_cache_misses);
-
+		} }, precompiled_hits, cache_hits, cache_misses);
 	return wgsl_str;
 }
 
@@ -1230,7 +1230,7 @@ static WGPUTextureView _create_depth_sample_view(WGTexture *p_texture, WGPUTextu
 // later use of that pipeline re-emits the error as cascade noise.
 static WGPUTextureSampleType _resolve_texture_sample_type(
 		const HashMap<uint32_t, WGPUTextureSampleType> &p_declared,
-		uint32_t p_key, bool p_is_depth, bool p_is_ms) {
+		uint32_t p_key, bool p_is_depth, bool p_is_ms, bool p_requires_filtering) {
 	if (p_is_depth) {
 		return WGPUTextureSampleType_Depth;
 	}
@@ -1242,9 +1242,9 @@ static WGPUTextureSampleType _resolve_texture_sample_type(
 			return declared;
 		}
 	}
-	// Multisampled float textures must use UnfilterableFloat, not Float
-	// (filtering is illegal for MSAA textures in WebGPU).
-	return p_is_ms ? WGPUTextureSampleType_UnfilterableFloat : WGPUTextureSampleType_Float;
+	// Exact fetches and dimensions also accept unfilterable float32 textures.
+	// Filtering image operations keep the stricter Float contract.
+	return (p_is_ms || !p_requires_filtering) ? WGPUTextureSampleType_UnfilterableFloat : WGPUTextureSampleType_Float;
 }
 
 // Sample type for a storage texture that the preprocessor rewrote into a sampled
@@ -1267,11 +1267,101 @@ static WGPUTextureSampleType _resolve_storage_sampled_type(
 // to its WGPUTextureFormat. p_name points at the first character of the name inside
 // the type parameter list; the name ends at the first ',', '>' or space.
 //
-// Returns Undefined for an unrecognised name, so callers can warn rather than
+// Returns Undefined for an unrecognized name, so callers can warn rather than
 // silently substitute a format the shader never declared: a wrong format here
 // fails pipeline creation with "the layout's binding format (X) doesn't match the
 // shader's binding format (Y)", and the poisoned pipeline then re-emits a
 // validation error on every frame that binds it.
+// Image-format fallback for declarations eliminated by constant folding. These
+// numeric values are the SPIR-V ImageFormat enumeration, not Godot DataFormat.
+static WGPUTextureFormat _spirv_storage_format(uint32_t p_format) {
+	switch (p_format) {
+		case 1:
+			return WGPUTextureFormat_RGBA32Float;
+		case 2:
+			return WGPUTextureFormat_RGBA16Float;
+		case 3:
+			return WGPUTextureFormat_R32Float;
+		case 4:
+			return WGPUTextureFormat_RGBA8Unorm;
+		case 5:
+			return WGPUTextureFormat_RGBA8Snorm;
+		case 6:
+			return WGPUTextureFormat_RG32Float;
+		case 7:
+			return WGPUTextureFormat_RG16Float;
+		case 8:
+			return WGPUTextureFormat_RG11B10Ufloat;
+		case 9:
+			return WGPUTextureFormat_R16Float;
+		// Match the normalized-16 shader lowering. Resource allocation must use
+		// an actual floating-point fallback (as Canvas SDF does), never reinterpret
+		// normalized input bytes as floats.
+		case 10:
+			return WGPUTextureFormat_RGBA16Float;
+		case 12:
+			return WGPUTextureFormat_RG16Float;
+		case 14:
+			return WGPUTextureFormat_R16Float;
+		case 16:
+			return WGPUTextureFormat_RGBA16Float;
+		case 17:
+			return WGPUTextureFormat_RG16Float;
+		case 19:
+			return WGPUTextureFormat_R16Float;
+		case 11:
+			return WGPUTextureFormat_RGB10A2Unorm;
+		case 13:
+			return WGPUTextureFormat_RG8Unorm;
+		case 15:
+			return WGPUTextureFormat_R8Unorm;
+		case 18:
+			return WGPUTextureFormat_RG8Snorm;
+		case 20:
+			return WGPUTextureFormat_R8Snorm;
+		case 21:
+			return WGPUTextureFormat_RGBA32Sint;
+		case 22:
+			return WGPUTextureFormat_RGBA16Sint;
+		case 23:
+			return WGPUTextureFormat_RGBA8Sint;
+		case 24:
+			return WGPUTextureFormat_R32Sint;
+		case 25:
+			return WGPUTextureFormat_RG32Sint;
+		case 26:
+			return WGPUTextureFormat_RG16Sint;
+		case 27:
+			return WGPUTextureFormat_RG8Sint;
+		case 28:
+			return WGPUTextureFormat_R16Sint;
+		case 29:
+			return WGPUTextureFormat_R8Sint;
+		case 30:
+			return WGPUTextureFormat_RGBA32Uint;
+		case 31:
+			return WGPUTextureFormat_RGBA16Uint;
+		case 32:
+			return WGPUTextureFormat_RGBA8Uint;
+		case 33:
+			return WGPUTextureFormat_R32Uint;
+		case 34:
+			return WGPUTextureFormat_RGB10A2Uint;
+		case 35:
+			return WGPUTextureFormat_RG32Uint;
+		case 36:
+			return WGPUTextureFormat_RG16Uint;
+		case 37:
+			return WGPUTextureFormat_RG8Uint;
+		case 38:
+			return WGPUTextureFormat_R16Uint;
+		case 39:
+			return WGPUTextureFormat_R8Uint;
+		default:
+			return WGPUTextureFormat_Undefined;
+	}
+}
+
 static WGPUTextureFormat _wgsl_storage_format_from_name(const char *p_name, const char *p_limit) {
 	const char *end = p_name;
 	while (end < p_limit && *end != ',' && *end != '>' && *end != ' ') {
@@ -1344,6 +1434,13 @@ RenderingDeviceDriverWebGPU::RenderingDeviceDriverWebGPU(RenderingContextDriverW
 }
 
 RenderingDeviceDriverWebGPU::~RenderingDeviceDriverWebGPU() {
+	for (const KeyValue<String, WGPURenderPipeline> &entry : region_clear_pipelines) {
+		wgpuRenderPipelineRelease(entry.value);
+	}
+	for (const KeyValue<WGPUTextureFormat, ResolveComputePipeline> &entry : resolve_compute_pipelines) {
+		wgpuComputePipelineRelease(entry.value.pipeline);
+		wgpuBindGroupLayoutRelease(entry.value.bind_group_layout);
+	}
 	for (const KeyValue<uint64_t, WGPURenderPipeline> &entry : depth_rect_clear_pipelines) {
 		wgpuRenderPipelineRelease(entry.value);
 	}
@@ -1355,6 +1452,11 @@ RenderingDeviceDriverWebGPU::~RenderingDeviceDriverWebGPU() {
 	if (push_constant_bind_group_layout) {
 		wgpuBindGroupLayoutRelease(push_constant_bind_group_layout);
 		push_constant_bind_group_layout = nullptr;
+	}
+	if (texture_clear_zero_buffer) {
+		wgpuBufferDestroy(texture_clear_zero_buffer);
+		wgpuBufferRelease(texture_clear_zero_buffer);
+		texture_clear_zero_buffer = nullptr;
 	}
 	if (upload_ring) {
 		wgpuBufferDestroy(upload_ring);
@@ -1440,7 +1542,7 @@ RenderingDeviceDriverWebGPU::~RenderingDeviceDriverWebGPU() {
 		ReadbackEntry *entry = kv.value;
 		if (entry->staging) {
 			wgpuBufferDestroy(entry->staging); // See buffer_free: released-only buffers wait on a GC that never runs.
-				wgpuBufferRelease(entry->staging);
+			wgpuBufferRelease(entry->staging);
 		}
 		if (entry->shadow) {
 			memfree(entry->shadow);
@@ -1480,8 +1582,10 @@ Error RenderingDeviceDriverWebGPU::initialize(uint32_t p_device_index, uint32_t 
 #ifdef __EMSCRIPTEN__
 	perf.enabled = EM_ASM_INT({
 		try {
-			return (globalThis.__aw3_perf ||
-					(globalThis.location && location.search.indexOf('aw3_perf') >= 0)) ? 1 : 0;
+			return (globalThis['__aw3_perf'] ||
+						   (globalThis.location && location.search.indexOf('aw3_perf') >= 0))
+					? 1
+					: 0;
 		} catch (e) {
 			return 0;
 		}
@@ -1690,9 +1794,7 @@ Error RenderingDeviceDriverWebGPU::initialize(uint32_t p_device_index, uint32_t 
 	MAIN_THREAD_EM_ASM({
 		var d = Module['preinitializedWebGPUDevice'];
 		if (d && !d._uncapturedPatched) {
-			d.addEventListener('uncapturederror', function(e) {
-				console.error('[Godot-WebGPU] uncaptured error: ' + e.error.constructor.name + ' | ' + e.error.message);
-			});
+			d.addEventListener('uncapturederror', function(e) { console.error('[Godot-WebGPU] uncaptured error: ' + e.error.constructor.name + ' | ' + e.error.message); });
 			d._uncapturedPatched = true;
 		}
 		if (d && d.lost && !d._lostPatched) {
@@ -1714,17 +1816,20 @@ Error RenderingDeviceDriverWebGPU::initialize(uint32_t p_device_index, uint32_t 
 	// doubles every render-pipeline compile, and the per-module getCompilationInfo()
 	// forces a sync compile path. On shiny_gen with ~383 shaders, leaving these on
 	// adds ~12s to startup. Re-enable by uncommenting #define WEBGPU_VERBOSE above.
+	// clang-format off
 #if defined(WEBGPU_VERBOSE) && defined(__EMSCRIPTEN__)
 	MAIN_THREAD_EM_ASM({
 		var d = Module['preinitializedWebGPUDevice'];
-		if (!d) { console.error('[DIAG-PATCH] preinitializedWebGPUDevice missing'); return; }
+		if (!d) {
+			console.error('[DIAG-PATCH] preinitializedWebGPUDevice missing');
+			return;
+		}
 
 		// Always-on uncaptured error logger.
 		if (!d._uncapturedPatched) {
 			d.addEventListener('uncapturederror', function(e) {
 				console.error('[Godot] WebGPU uncaptured error: ' + e.error.constructor.name);
-				console.error(e.error.message);
-			});
+				console.error(e.error.message); });
 			d._uncapturedPatched = true;
 		}
 
@@ -1744,16 +1849,16 @@ Error RenderingDeviceDriverWebGPU::initialize(uint32_t p_device_index, uint32_t 
 					}
 				});
 				// Parallel async path (authoritative — catches all validation errors).
-				origCreateAsync(desc).then(function(_p) {
-					// Success — no-op.
-				}, function(err) {
+				origCreateAsync(desc).then(function(_p){
+												   // Success — no-op.
+										   },
+						function(err) {
 					var msg = (err && err.message) ? err.message : String(err);
-					console.error('[JS-PCREATE-ASYNC-FAIL#' + myId + '] label="' + label + '" | ' + msg.substring(0, 2000));
-				});
+					console.error('[JS-PCREATE-ASYNC-FAIL#' + myId + '] label="' + label + '" | ' + msg.substring(0, 2000)); });
 				// Log every ENTER so we can correlate JS IDs with Godot pipe#N.
 				console.log('[JS-PCREATE-ENTER#' + myId + '] label="' + label + '"');
 				return pipeline;
-			};
+			}
 			d._pipelinePatched = true;
 			console.log('[DIAG-PATCH] createRenderPipeline patched on main thread (initialize)');
 		}
@@ -1773,7 +1878,9 @@ Error RenderingDeviceDriverWebGPU::initialize(uint32_t p_device_index, uint32_t 
 				});
 				if (mod && mod.getCompilationInfo) {
 					mod.getCompilationInfo().then(function(info) {
-						if (!info || !info.messages || info.messages.length === 0) return;
+						if (!info || !info.messages || info.messages.length === 0) {
+							return;
+						}
 						for (var i = 0; i < info.messages.length; i++) {
 							var m = info.messages[i];
 							if (m.type === 'error') {
@@ -1783,7 +1890,7 @@ Error RenderingDeviceDriverWebGPU::initialize(uint32_t p_device_index, uint32_t 
 					});
 				}
 				return mod;
-			};
+			}
 			d._shaderModPatched = true;
 			console.log('[DIAG-PATCH] createShaderModule patched on main thread (initialize)');
 		}
@@ -1800,7 +1907,7 @@ Error RenderingDeviceDriverWebGPU::initialize(uint32_t p_device_index, uint32_t 
 					}
 				});
 				return layout;
-			};
+			}
 			d._bglPatched = true;
 		}
 
@@ -1816,11 +1923,12 @@ Error RenderingDeviceDriverWebGPU::initialize(uint32_t p_device_index, uint32_t 
 					}
 				});
 				return layout;
-			};
+			}
 			d._plytPatched = true;
 		}
 	});
 #endif // WEBGPU_VERBOSE
+	// clang-format on
 
 	return OK;
 }
@@ -1865,7 +1973,8 @@ void RenderingDeviceDriverWebGPU::_check_capabilities() {
 	// float32-filterable: required for linear sampling of R32Float / RG32Float / RGBA32Float.
 	// Forward Mobile's HDR post-processing path samples 32F render targets with linear
 	// samplers, so without this feature those samplers must fall back to NEAREST.
-	float32_filterable_supported = wgpuDeviceHasFeature(device, WGPUFeatureName_Float32Filterable);
+	const bool disable_float32_filtering = (OS::get_singleton()->get_cmdline_user_args().find("--webgpu-no-float32-filterable") != nullptr);
+	float32_filterable_supported = !disable_float32_filtering && wgpuDeviceHasFeature(device, WGPUFeatureName_Float32Filterable);
 	if (float32_filterable_supported) {
 		print_verbose("WebGPU: float32-filterable feature is available.");
 	} else {
@@ -1888,16 +1997,35 @@ void RenderingDeviceDriverWebGPU::_check_capabilities() {
 		WARN_PRINT("WebGPU: float32-blendable feature NOT available — blend on float32 targets will be disabled.");
 	}
 
+	// Test-only opt-in, usable on capable hardware to exercise fallback paths.
+	const bool force_fallbacks = (OS::get_singleton()->get_cmdline_user_args().find("--webgpu-force-fallbacks") != nullptr);
+	// Emscripten 4.0.11's emdawnwebgpu header predates the tier feature enums.
+	// Query the imported device's enabled features, not adapter support, so
+	// newer browsers can expose the tiers with that supported older SDK.
+#ifdef __EMSCRIPTEN__
+	const uint32_t texture_format_tiers = EM_ASM_INT({
+		var js_device = WebGPU.getJsObject($0);
+		return (js_device.features.has("texture-formats-tier1") ? 1 : 0) |
+				(js_device.features.has("texture-formats-tier2") ? 2 : 0); }, device);
+	has_texture_formats_tier1 = !force_fallbacks && (texture_format_tiers & 1);
+	has_texture_formats_tier2 = !force_fallbacks && (texture_format_tiers & 2);
+#else
+	has_texture_formats_tier1 = !force_fallbacks && wgpuDeviceHasFeature(device, WGPUFeatureName_TextureFormatsTier1);
+	has_texture_formats_tier2 = !force_fallbacks && wgpuDeviceHasFeature(device, WGPUFeatureName_TextureFormatsTier2);
+#endif
 	// texture-formats-tier1 adds storage binding support for r8unorm, rg8unorm, etc.
-	has_texture_formats_tier1 = wgpuDeviceHasFeature(device, WGPUFeatureName_TextureFormatsTier1);
 	if (has_texture_formats_tier1) {
 		print_verbose("WebGPU: texture-formats-tier1 feature is available — r8/rg8 storage formats supported natively.");
+	}
+
+	if (has_texture_formats_tier2) {
+		print_verbose("WebGPU: texture-formats-tier2 feature is available.");
 	}
 
 	// readonly-and-readwrite-storage-textures: allows read and read_write access
 	// modes on storage textures. Without this, only write-only is valid.
 	WGPUInstance webgpu_instance = context_driver ? context_driver->get_instance() : nullptr;
-	has_rw_storage_textures = webgpu_instance && wgpuInstanceHasWGSLLanguageFeature(webgpu_instance, WGPUWGSLLanguageFeatureName_ReadonlyAndReadwriteStorageTextures);
+	has_rw_storage_textures = !force_fallbacks && webgpu_instance && wgpuInstanceHasWGSLLanguageFeature(webgpu_instance, WGPUWGSLLanguageFeatureName_ReadonlyAndReadwriteStorageTextures);
 	if (has_rw_storage_textures) {
 		print_verbose("WebGPU: readonly-and-readwrite-storage-textures feature is available.");
 	} else {
@@ -2100,7 +2228,9 @@ uint64_t RenderingDeviceDriverWebGPU::buffer_get_allocation_size(BufferID p_buff
 // Copies GPU buffer data into the WGBuffer shadow_map when the async map resolves.
 static void _buffer_deferred_map_cb(WGPUMapAsyncStatus p_status, WGPUStringView p_message, void *p_userdata1, void *p_userdata2) {
 	WGBuffer *buf = (WGBuffer *)p_userdata1;
-	if (!buf) return;
+	if (!buf) {
+		return;
+	}
 
 	buf->map_pending = false;
 
@@ -2365,175 +2495,184 @@ uint32_t RenderingDeviceDriverWebGPU::texture_get_gpu_pixel_size(TextureID p_tex
 	return (gpu_size != rd_size) ? gpu_size : 0;
 }
 
+static WebGPUTextureConversion::Format _conversion_format(RDD::DataFormat p_format) {
+	using E = WebGPUTextureConversion::Encoding;
+	switch (p_format) {
+		case RDD::DATA_FORMAT_R8_UNORM:
+			return { E::UNORM8, 1 };
+		case RDD::DATA_FORMAT_R8_SNORM:
+			return { E::SNORM8, 1 };
+		case RDD::DATA_FORMAT_R8_UINT:
+			return { E::UINT8, 1 };
+		case RDD::DATA_FORMAT_R8_SINT:
+			return { E::SINT8, 1 };
+		case RDD::DATA_FORMAT_R8G8_UNORM:
+			return { E::UNORM8, 2 };
+		case RDD::DATA_FORMAT_R8G8_SNORM:
+			return { E::SNORM8, 2 };
+		case RDD::DATA_FORMAT_R8G8_UINT:
+			return { E::UINT8, 2 };
+		case RDD::DATA_FORMAT_R8G8_SINT:
+			return { E::SINT8, 2 };
+		case RDD::DATA_FORMAT_R8G8B8A8_UNORM:
+			return { E::UNORM8, 4 };
+		case RDD::DATA_FORMAT_R8G8B8A8_SNORM:
+			return { E::SNORM8, 4 };
+		case RDD::DATA_FORMAT_R8G8B8A8_UINT:
+			return { E::UINT8, 4 };
+		case RDD::DATA_FORMAT_R8G8B8A8_SINT:
+			return { E::SINT8, 4 };
+		case RDD::DATA_FORMAT_R16_SFLOAT:
+			return { E::FLOAT16, 1 };
+		case RDD::DATA_FORMAT_R16_UINT:
+			return { E::UINT16, 1 };
+		case RDD::DATA_FORMAT_R16_SINT:
+			return { E::SINT16, 1 };
+		case RDD::DATA_FORMAT_R16G16_SFLOAT:
+			return { E::FLOAT16, 2 };
+		case RDD::DATA_FORMAT_R16G16_UINT:
+			return { E::UINT16, 2 };
+		case RDD::DATA_FORMAT_R16G16_SINT:
+			return { E::SINT16, 2 };
+		case RDD::DATA_FORMAT_R16G16B16A16_SFLOAT:
+			return { E::FLOAT16, 4 };
+		case RDD::DATA_FORMAT_R16G16B16A16_UINT:
+			return { E::UINT16, 4 };
+		case RDD::DATA_FORMAT_R16G16B16A16_SINT:
+			return { E::SINT16, 4 };
+		case RDD::DATA_FORMAT_R32_SFLOAT:
+			return { E::FLOAT32, 1 };
+		case RDD::DATA_FORMAT_R32_UINT:
+			return { E::UINT32, 1 };
+		case RDD::DATA_FORMAT_R32_SINT:
+			return { E::SINT32, 1 };
+		case RDD::DATA_FORMAT_R32G32_SFLOAT:
+			return { E::FLOAT32, 2 };
+		case RDD::DATA_FORMAT_R32G32_UINT:
+			return { E::UINT32, 2 };
+		case RDD::DATA_FORMAT_R32G32_SINT:
+			return { E::SINT32, 2 };
+		case RDD::DATA_FORMAT_R32G32B32A32_SFLOAT:
+			return { E::FLOAT32, 4 };
+		case RDD::DATA_FORMAT_R32G32B32A32_UINT:
+			return { E::UINT32, 4 };
+		case RDD::DATA_FORMAT_R32G32B32A32_SINT:
+			return { E::SINT32, 4 };
+		case RDD::DATA_FORMAT_A2B10G10R10_UNORM_PACK32:
+			return { E::RGB10A2_UNORM, 4 };
+		case RDD::DATA_FORMAT_A2B10G10R10_UINT_PACK32:
+			return { E::RGB10A2_UINT, 4 };
+		case RDD::DATA_FORMAT_B10G11R11_UFLOAT_PACK32:
+			return { E::RG11B10_UFLOAT, 3 };
+		default:
+			return {};
+	}
+}
+
+static WebGPUTextureConversion::Format _conversion_format(WGPUTextureFormat p_format) {
+	using E = WebGPUTextureConversion::Encoding;
+	switch (p_format) {
+		case WGPUTextureFormat_R8Unorm:
+			return { E::UNORM8, 1 };
+		case WGPUTextureFormat_R8Snorm:
+			return { E::SNORM8, 1 };
+		case WGPUTextureFormat_R8Uint:
+			return { E::UINT8, 1 };
+		case WGPUTextureFormat_R8Sint:
+			return { E::SINT8, 1 };
+		case WGPUTextureFormat_RG8Unorm:
+			return { E::UNORM8, 2 };
+		case WGPUTextureFormat_RG8Snorm:
+			return { E::SNORM8, 2 };
+		case WGPUTextureFormat_RG8Uint:
+			return { E::UINT8, 2 };
+		case WGPUTextureFormat_RG8Sint:
+			return { E::SINT8, 2 };
+		case WGPUTextureFormat_RGBA8Unorm:
+			return { E::UNORM8, 4 };
+		case WGPUTextureFormat_RGBA8Snorm:
+			return { E::SNORM8, 4 };
+		case WGPUTextureFormat_RGBA8Uint:
+			return { E::UINT8, 4 };
+		case WGPUTextureFormat_RGBA8Sint:
+			return { E::SINT8, 4 };
+		case WGPUTextureFormat_R16Uint:
+			return { E::UINT16, 1 };
+		case WGPUTextureFormat_R16Sint:
+			return { E::SINT16, 1 };
+		case WGPUTextureFormat_R16Float:
+			return { E::FLOAT16, 1 };
+		case WGPUTextureFormat_RG16Uint:
+			return { E::UINT16, 2 };
+		case WGPUTextureFormat_RG16Sint:
+			return { E::SINT16, 2 };
+		case WGPUTextureFormat_RG16Float:
+			return { E::FLOAT16, 2 };
+		case WGPUTextureFormat_RGBA16Uint:
+			return { E::UINT16, 4 };
+		case WGPUTextureFormat_RGBA16Sint:
+			return { E::SINT16, 4 };
+		case WGPUTextureFormat_RGBA16Float:
+			return { E::FLOAT16, 4 };
+		case WGPUTextureFormat_R32Uint:
+			return { E::UINT32, 1 };
+		case WGPUTextureFormat_R32Sint:
+			return { E::SINT32, 1 };
+		case WGPUTextureFormat_R32Float:
+			return { E::FLOAT32, 1 };
+		case WGPUTextureFormat_RG32Uint:
+			return { E::UINT32, 2 };
+		case WGPUTextureFormat_RG32Sint:
+			return { E::SINT32, 2 };
+		case WGPUTextureFormat_RG32Float:
+			return { E::FLOAT32, 2 };
+		case WGPUTextureFormat_RGBA32Uint:
+			return { E::UINT32, 4 };
+		case WGPUTextureFormat_RGBA32Sint:
+			return { E::SINT32, 4 };
+		case WGPUTextureFormat_RGBA32Float:
+			return { E::FLOAT32, 4 };
+		default:
+			return {};
+	}
+}
+
 void RenderingDeviceDriverWebGPU::texture_readback_convert(TextureID p_texture,
 		const uint8_t *p_src, uint32_t p_src_pitch,
 		uint8_t *p_dst, uint32_t p_dst_pitch,
 		uint32_t p_width, uint32_t p_height) {
-	WGTexture *tex = (WGTexture *)(p_texture.id);
-	if (!tex) {
-		return;
-	}
-	uint32_t gpu_size = wgpu_format_pixel_size(tex->format);
-	uint32_t rd_size = get_image_format_pixel_size(tex->rd_format);
+	WGTexture *tex = (WGTexture *)p_texture.id;
+	ERR_FAIL_NULL(tex);
+	const uint32_t gpu_size = wgpu_format_pixel_size(tex->format);
+	const uint32_t rd_size = get_image_format_pixel_size(tex->rd_format);
 	if (gpu_size == rd_size) {
-		// No conversion needed — straight copy.
 		for (uint32_t y = 0; y < p_height; y++) {
-			memcpy(p_dst + y * p_dst_pitch, p_src + y * p_src_pitch, p_width * rd_size);
+			memcpy(p_dst + uint64_t(y) * p_dst_pitch, p_src + uint64_t(y) * p_src_pitch, uint64_t(p_width) * rd_size);
 		}
 		return;
 	}
-
-	// Float16 → Float32 readback: reverse of the float32→float16 downgrade.
-	bool is_f16_to_f32 = false;
-	uint32_t f16_channels = 0;
-	if (tex->format == WGPUTextureFormat_R16Float &&
-			tex->rd_format == DATA_FORMAT_R32_SFLOAT) {
-		is_f16_to_f32 = true;
-		f16_channels = 1;
-	} else if (tex->format == WGPUTextureFormat_RG16Float &&
-			tex->rd_format == DATA_FORMAT_R32G32_SFLOAT) {
-		is_f16_to_f32 = true;
-		f16_channels = 2;
-	} else if (tex->format == WGPUTextureFormat_RGBA16Float &&
-			tex->rd_format == DATA_FORMAT_R32G32B32A32_SFLOAT) {
-		is_f16_to_f32 = true;
-		f16_channels = 4;
-	}
-
-	if (is_f16_to_f32) {
-		for (uint32_t y = 0; y < p_height; y++) {
-			const uint16_t *src_row = (const uint16_t *)(p_src + y * p_src_pitch);
-			float *dst_row = (float *)(p_dst + y * p_dst_pitch);
-			for (uint32_t x = 0; x < p_width; x++) {
-				for (uint32_t c = 0; c < f16_channels; c++) {
-					dst_row[x * f16_channels + c] = Math::half_to_float(src_row[x * f16_channels + c]);
-				}
-			}
-		}
-		return;
-	}
-
-	// R8/RG8 promoted to R32Float/RG32Float: convert float [0,1] → uint8 [0,255]
-	// R8/RG8 promoted to R32Uint/RG32Uint: convert uint32 → uint8
-	uint32_t channels = rd_size; // For R8 = 1 channel, RG8 = 2 channels, etc.
-	bool is_float = (tex->format == WGPUTextureFormat_R32Float ||
-			tex->format == WGPUTextureFormat_RG32Float);
-	bool is_uint = (tex->format == WGPUTextureFormat_R32Uint ||
-			tex->format == WGPUTextureFormat_RG32Uint);
-	bool is_sint = (tex->format == WGPUTextureFormat_R32Sint ||
-			tex->format == WGPUTextureFormat_RG32Sint);
-
-	for (uint32_t y = 0; y < p_height; y++) {
-		const uint8_t *src_row = p_src + y * p_src_pitch;
-		uint8_t *dst_row = p_dst + y * p_dst_pitch;
-		for (uint32_t x = 0; x < p_width; x++) {
-			for (uint32_t c = 0; c < channels; c++) {
-				uint32_t src_offset = (x * channels + c) * 4; // 4 bytes per component (32-bit)
-				uint32_t dst_offset = x * channels + c;
-				if (is_float) {
-					float f;
-					memcpy(&f, src_row + src_offset, 4);
-					f = CLAMP(f, 0.0f, 1.0f);
-					dst_row[dst_offset] = (uint8_t)(f * 255.0f + 0.5f);
-				} else if (is_uint) {
-					uint32_t u;
-					memcpy(&u, src_row + src_offset, 4);
-					dst_row[dst_offset] = (uint8_t)MIN(u, 255u);
-				} else if (is_sint) {
-					int32_t s;
-					memcpy(&s, src_row + src_offset, 4);
-					dst_row[dst_offset] = (uint8_t)CLAMP(s, 0, 127);
-				}
-			}
-		}
-	}
+	ERR_FAIL_COND_MSG(!WebGPUTextureConversion::convert(_conversion_format(tex->format), _conversion_format(tex->rd_format),
+							  p_src, p_src_pitch, p_dst, p_dst_pitch, p_width, p_height),
+			"WebGPU: unsupported texture readback conversion or invalid row pitch.");
 }
 
 void RenderingDeviceDriverWebGPU::texture_upload_convert(TextureID p_texture,
 		const uint8_t *p_src, uint32_t p_src_pitch,
 		uint8_t *p_dst, uint32_t p_dst_pitch,
 		uint32_t p_width, uint32_t p_height) {
-	WGTexture *tex = (WGTexture *)(p_texture.id);
-	if (!tex) {
-		return;
-	}
-	uint32_t gpu_size = wgpu_format_pixel_size(tex->format);
-	uint32_t rd_size = get_image_format_pixel_size(tex->rd_format);
+	WGTexture *tex = (WGTexture *)p_texture.id;
+	ERR_FAIL_NULL(tex);
+	const uint32_t gpu_size = wgpu_format_pixel_size(tex->format);
+	const uint32_t rd_size = get_image_format_pixel_size(tex->rd_format);
 	if (gpu_size == rd_size) {
 		for (uint32_t y = 0; y < p_height; y++) {
-			memcpy(p_dst + y * p_dst_pitch, p_src + y * p_src_pitch, p_width * rd_size);
+			memcpy(p_dst + uint64_t(y) * p_dst_pitch, p_src + uint64_t(y) * p_src_pitch, uint64_t(p_width) * rd_size);
 		}
 		return;
 	}
-
-	// Float32 → Float16 downgrade: convert f32 data to f16 for devices
-	// lacking float32-filterable (e.g. CurveTextures on Adreno).
-	bool is_f32_to_f16 = false;
-	uint32_t f16_channels = 0;
-	if (tex->format == WGPUTextureFormat_R16Float &&
-			tex->rd_format == DATA_FORMAT_R32_SFLOAT) {
-		is_f32_to_f16 = true;
-		f16_channels = 1;
-	} else if (tex->format == WGPUTextureFormat_RG16Float &&
-			tex->rd_format == DATA_FORMAT_R32G32_SFLOAT) {
-		is_f32_to_f16 = true;
-		f16_channels = 2;
-	} else if (tex->format == WGPUTextureFormat_RGBA16Float &&
-			tex->rd_format == DATA_FORMAT_R32G32B32A32_SFLOAT) {
-		is_f32_to_f16 = true;
-		f16_channels = 4;
-	}
-
-	if (is_f32_to_f16) {
-		WEBGPU_DIAG({ console.log('[F32-UPLOAD] f32→f16 ch=' + $0 + ' w=' + $1 + ' h=' + $2 + ' src_pitch=' + $3 + ' dst_pitch=' + $4 + ' gpu_fmt=' + $5 + ' rd_fmt=' + $6); },
-				(int)f16_channels, (int)p_width, (int)p_height, (int)p_src_pitch, (int)p_dst_pitch, (int)tex->format, (int)tex->rd_format);
-		for (uint32_t y = 0; y < p_height; y++) {
-			const float *src_row = (const float *)(p_src + y * p_src_pitch);
-			uint16_t *dst_row = (uint16_t *)(p_dst + y * p_dst_pitch);
-			for (uint32_t x = 0; x < p_width; x++) {
-				for (uint32_t c = 0; c < f16_channels; c++) {
-					dst_row[x * f16_channels + c] = Math::make_half_float(src_row[x * f16_channels + c]);
-				}
-			}
-		}
-		return;
-	}
-
-	// Log if we reach here unexpectedly for a format-downgraded texture.
-	if (tex->format == WGPUTextureFormat_R16Float || tex->format == WGPUTextureFormat_RG16Float || tex->format == WGPUTextureFormat_RGBA16Float) {
-		WEBGPU_DIAG({ console.error('[F32-UPLOAD-MISS] NO conversion for gpu_fmt=' + $0 + ' rd_fmt=' + $1 + ' gpu_size=' + $2 + ' rd_size=' + $3); },
-				(int)tex->format, (int)tex->rd_format, (int)gpu_size, (int)rd_size);
-	}
-
-	// R8/RG8 promoted to R32Float/RG32Float: convert uint8 [0,255] → float [0,1]
-	uint32_t channels = rd_size;
-	bool is_float = (tex->format == WGPUTextureFormat_R32Float ||
-			tex->format == WGPUTextureFormat_RG32Float);
-	bool is_uint = (tex->format == WGPUTextureFormat_R32Uint ||
-			tex->format == WGPUTextureFormat_RG32Uint);
-	bool is_sint = (tex->format == WGPUTextureFormat_R32Sint ||
-			tex->format == WGPUTextureFormat_RG32Sint);
-
-	for (uint32_t y = 0; y < p_height; y++) {
-		const uint8_t *src_row = p_src + y * p_src_pitch;
-		uint8_t *dst_row = p_dst + y * p_dst_pitch;
-		for (uint32_t x = 0; x < p_width; x++) {
-			for (uint32_t c = 0; c < channels; c++) {
-				uint32_t src_offset = x * channels + c;
-				uint32_t dst_offset = (x * channels + c) * 4;
-				if (is_float) {
-					float f = (float)src_row[src_offset] / 255.0f;
-					memcpy(dst_row + dst_offset, &f, 4);
-				} else if (is_uint) {
-					uint32_t u = src_row[src_offset];
-					memcpy(dst_row + dst_offset, &u, 4);
-				} else if (is_sint) {
-					int32_t s = (int32_t)src_row[src_offset];
-					memcpy(dst_row + dst_offset, &s, 4);
-				}
-			}
-		}
-	}
+	ERR_FAIL_COND_MSG(!WebGPUTextureConversion::convert(_conversion_format(tex->rd_format), _conversion_format(tex->format),
+							  p_src, p_src_pitch, p_dst, p_dst_pitch, p_width, p_height),
+			"WebGPU: unsupported texture upload conversion or invalid row pitch.");
 }
 
 // =============================================================================
@@ -2542,7 +2681,9 @@ void RenderingDeviceDriverWebGPU::texture_upload_convert(TextureID p_texture,
 
 void RenderingDeviceDriverWebGPU::_readback_map_cb(WGPUMapAsyncStatus p_status, WGPUStringView p_message, void *p_userdata1, void *p_userdata2) {
 	ReadbackEntry *entry = (ReadbackEntry *)p_userdata1;
-	if (!entry) return;
+	if (!entry) {
+		return;
+	}
 
 	// Source was freed while the async map was in flight. Clean up the
 	// orphaned entry that was kept alive specifically for this callback.
@@ -2552,7 +2693,7 @@ void RenderingDeviceDriverWebGPU::_readback_map_cb(WGPUMapAsyncStatus p_status, 
 				wgpuBufferUnmap(entry->staging);
 			}
 			wgpuBufferDestroy(entry->staging); // See buffer_free: released-only buffers wait on a GC that never runs.
-				wgpuBufferRelease(entry->staging);
+			wgpuBufferRelease(entry->staging);
 		}
 		if (entry->shadow) {
 			memfree(entry->shadow);
@@ -2561,7 +2702,9 @@ void RenderingDeviceDriverWebGPU::_readback_map_cb(WGPUMapAsyncStatus p_status, 
 		return;
 	}
 
-	if (!entry->staging) return;
+	if (!entry->staging) {
+		return;
+	}
 
 	if (p_status == WGPUMapAsyncStatus_Success) {
 		const void *mapped = wgpuBufferGetConstMappedRange(entry->staging, 0, entry->size);
@@ -2725,23 +2868,72 @@ WGPUBufferUsage RenderingDeviceDriverWebGPU::_buffer_usage_to_wgpu(BitField<Buff
 // Returns the sRGB counterpart format for view compatibility, or Undefined if none.
 static WGPUTextureFormat _get_srgb_view_format(WGPUTextureFormat p_format) {
 	switch (p_format) {
-		case WGPUTextureFormat_RGBA8Unorm: return WGPUTextureFormat_RGBA8UnormSrgb;
-		case WGPUTextureFormat_RGBA8UnormSrgb: return WGPUTextureFormat_RGBA8Unorm;
-		case WGPUTextureFormat_BGRA8Unorm: return WGPUTextureFormat_BGRA8UnormSrgb;
-		case WGPUTextureFormat_BGRA8UnormSrgb: return WGPUTextureFormat_BGRA8Unorm;
-		case WGPUTextureFormat_BC1RGBAUnorm: return WGPUTextureFormat_BC1RGBAUnormSrgb;
-		case WGPUTextureFormat_BC1RGBAUnormSrgb: return WGPUTextureFormat_BC1RGBAUnorm;
-		case WGPUTextureFormat_BC2RGBAUnorm: return WGPUTextureFormat_BC2RGBAUnormSrgb;
-		case WGPUTextureFormat_BC2RGBAUnormSrgb: return WGPUTextureFormat_BC2RGBAUnorm;
-		case WGPUTextureFormat_BC3RGBAUnorm: return WGPUTextureFormat_BC3RGBAUnormSrgb;
-		case WGPUTextureFormat_BC3RGBAUnormSrgb: return WGPUTextureFormat_BC3RGBAUnorm;
-		case WGPUTextureFormat_ETC2RGB8Unorm: return WGPUTextureFormat_ETC2RGB8UnormSrgb;
-		case WGPUTextureFormat_ETC2RGB8UnormSrgb: return WGPUTextureFormat_ETC2RGB8Unorm;
-		case WGPUTextureFormat_ETC2RGB8A1Unorm: return WGPUTextureFormat_ETC2RGB8A1UnormSrgb;
-		case WGPUTextureFormat_ETC2RGB8A1UnormSrgb: return WGPUTextureFormat_ETC2RGB8A1Unorm;
-		case WGPUTextureFormat_ETC2RGBA8Unorm: return WGPUTextureFormat_ETC2RGBA8UnormSrgb;
-		case WGPUTextureFormat_ETC2RGBA8UnormSrgb: return WGPUTextureFormat_ETC2RGBA8Unorm;
-		default: return WGPUTextureFormat_Undefined;
+		case WGPUTextureFormat_RGBA8Unorm:
+			return WGPUTextureFormat_RGBA8UnormSrgb;
+		case WGPUTextureFormat_RGBA8UnormSrgb:
+			return WGPUTextureFormat_RGBA8Unorm;
+		case WGPUTextureFormat_BGRA8Unorm:
+			return WGPUTextureFormat_BGRA8UnormSrgb;
+		case WGPUTextureFormat_BGRA8UnormSrgb:
+			return WGPUTextureFormat_BGRA8Unorm;
+		case WGPUTextureFormat_BC1RGBAUnorm:
+			return WGPUTextureFormat_BC1RGBAUnormSrgb;
+		case WGPUTextureFormat_BC1RGBAUnormSrgb:
+			return WGPUTextureFormat_BC1RGBAUnorm;
+		case WGPUTextureFormat_BC2RGBAUnorm:
+			return WGPUTextureFormat_BC2RGBAUnormSrgb;
+		case WGPUTextureFormat_BC2RGBAUnormSrgb:
+			return WGPUTextureFormat_BC2RGBAUnorm;
+		case WGPUTextureFormat_BC3RGBAUnorm:
+			return WGPUTextureFormat_BC3RGBAUnormSrgb;
+		case WGPUTextureFormat_BC3RGBAUnormSrgb:
+			return WGPUTextureFormat_BC3RGBAUnorm;
+		case WGPUTextureFormat_ETC2RGB8Unorm:
+			return WGPUTextureFormat_ETC2RGB8UnormSrgb;
+		case WGPUTextureFormat_ETC2RGB8UnormSrgb:
+			return WGPUTextureFormat_ETC2RGB8Unorm;
+		case WGPUTextureFormat_ETC2RGB8A1Unorm:
+			return WGPUTextureFormat_ETC2RGB8A1UnormSrgb;
+		case WGPUTextureFormat_ETC2RGB8A1UnormSrgb:
+			return WGPUTextureFormat_ETC2RGB8A1Unorm;
+		case WGPUTextureFormat_ETC2RGBA8Unorm:
+			return WGPUTextureFormat_ETC2RGBA8UnormSrgb;
+		case WGPUTextureFormat_ETC2RGBA8UnormSrgb:
+			return WGPUTextureFormat_ETC2RGBA8Unorm;
+		default:
+			return WGPUTextureFormat_Undefined;
+	}
+}
+
+bool RenderingDeviceDriverWebGPU::_supports_rw_storage_format(WGPUTextureFormat p_format) const {
+	if (!has_rw_storage_textures) {
+		return false;
+	}
+	// The WGSL language feature does not grant read-write access to every
+	// storage format. Core WebGPU has R32; tier 2 adds this specific subset.
+	switch (p_format) {
+		case WGPUTextureFormat_R32Float:
+		case WGPUTextureFormat_R32Uint:
+		case WGPUTextureFormat_R32Sint:
+			return true;
+		case WGPUTextureFormat_R8Unorm:
+		case WGPUTextureFormat_R8Uint:
+		case WGPUTextureFormat_R8Sint:
+		case WGPUTextureFormat_R16Float:
+		case WGPUTextureFormat_R16Uint:
+		case WGPUTextureFormat_R16Sint:
+		case WGPUTextureFormat_RGBA8Unorm:
+		case WGPUTextureFormat_RGBA8Uint:
+		case WGPUTextureFormat_RGBA8Sint:
+		case WGPUTextureFormat_RGBA16Float:
+		case WGPUTextureFormat_RGBA16Uint:
+		case WGPUTextureFormat_RGBA16Sint:
+		case WGPUTextureFormat_RGBA32Float:
+		case WGPUTextureFormat_RGBA32Uint:
+		case WGPUTextureFormat_RGBA32Sint:
+			return has_texture_formats_tier2;
+		default:
+			return false;
 	}
 }
 
@@ -2769,7 +2961,7 @@ RDD::TextureID RenderingDeviceDriverWebGPU::texture_create(const TextureFormat &
 		// shader. We need CopySrc (for read_write shadow copies) and
 		// TextureBinding (so the texture can be bound as a sampled texture
 		// for read-only storage textures converted to texture_2d).
-		if (!has_rw_storage_textures) {
+		if (!_supports_rw_storage_format(tex->format)) {
 			tex->usage |= WGPUTextureUsage_CopySrc | WGPUTextureUsage_TextureBinding;
 		}
 	}
@@ -2786,16 +2978,13 @@ RDD::TextureID RenderingDeviceDriverWebGPU::texture_create(const TextureFormat &
 			tex->sample_count == 1) {
 		if (tex->format == WGPUTextureFormat_RGBA32Float) {
 			tex->format = WGPUTextureFormat_RGBA16Float;
-			WEBGPU_DIAG({ console.log('[F32-DOWNGRADE] RGBA32Float→RGBA16Float size=' + $0 + 'x' + $1 + ' usage=0x' + ($2).toString(16)); },
-					(int)tex->width, (int)tex->height, (int)tex->usage);
+			WEBGPU_DIAG({ console.log('[F32-DOWNGRADE] RGBA32Float→RGBA16Float size=' + $0 + 'x' + $1 + ' usage=0x' + ($2).toString(16)); }, (int)tex->width, (int)tex->height, (int)tex->usage);
 		} else if (tex->format == WGPUTextureFormat_RG32Float) {
 			tex->format = WGPUTextureFormat_RG16Float;
-			WEBGPU_DIAG({ console.log('[F32-DOWNGRADE] RG32Float→RG16Float size=' + $0 + 'x' + $1 + ' usage=0x' + ($2).toString(16)); },
-					(int)tex->width, (int)tex->height, (int)tex->usage);
+			WEBGPU_DIAG({ console.log('[F32-DOWNGRADE] RG32Float→RG16Float size=' + $0 + 'x' + $1 + ' usage=0x' + ($2).toString(16)); }, (int)tex->width, (int)tex->height, (int)tex->usage);
 		} else if (tex->format == WGPUTextureFormat_R32Float) {
 			tex->format = WGPUTextureFormat_R16Float;
-			WEBGPU_DIAG({ console.log('[F32-DOWNGRADE] R32Float→R16Float size=' + $0 + 'x' + $1 + ' usage=0x' + ($2).toString(16)); },
-					(int)tex->width, (int)tex->height, (int)tex->usage);
+			WEBGPU_DIAG({ console.log('[F32-DOWNGRADE] R32Float→R16Float size=' + $0 + 'x' + $1 + ' usage=0x' + ($2).toString(16)); }, (int)tex->width, (int)tex->height, (int)tex->usage);
 		}
 	}
 
@@ -2898,6 +3087,9 @@ RDD::TextureID RenderingDeviceDriverWebGPU::texture_create_shared(TextureID p_or
 	WGPUTextureViewDescriptor view_desc = {};
 	if (p_view.format != DATA_FORMAT_MAX) {
 		view_desc.format = _data_format_to_wgpu(p_view.format);
+		if (orig->usage & WGPUTextureUsage_StorageBinding) {
+			view_desc.format = _promote_storage_format(view_desc.format);
+		}
 		tex->format = view_desc.format;
 		tex->rd_format = p_view.format;
 	} else {
@@ -2941,6 +3133,10 @@ RDD::TextureID RenderingDeviceDriverWebGPU::texture_create_shared_from_slice(Tex
 
 	WGPUTextureViewDescriptor view_desc = {};
 	view_desc.format = (p_view.format != DATA_FORMAT_MAX) ? _data_format_to_wgpu(p_view.format) : orig->format;
+	if (orig->usage & WGPUTextureUsage_StorageBinding) {
+		view_desc.format = _promote_storage_format(view_desc.format);
+	}
+	tex->format = view_desc.format;
 	if (p_view.format != DATA_FORMAT_MAX) {
 		tex->rd_format = p_view.format;
 	}
@@ -3044,7 +3240,7 @@ void RenderingDeviceDriverWebGPU::texture_free(TextureID p_texture) {
 				} else {
 					if (entry->staging) {
 						wgpuBufferDestroy(entry->staging); // See buffer_free: released-only buffers wait on a GC that never runs.
-				wgpuBufferRelease(entry->staging);
+						wgpuBufferRelease(entry->staging);
 					}
 					if (entry->shadow) {
 						memfree(entry->shadow);
@@ -3057,12 +3253,6 @@ void RenderingDeviceDriverWebGPU::texture_free(TextureID p_texture) {
 		for (uint64_t k : to_remove) {
 			_readback_cache.erase(k);
 		}
-	}
-
-	// Remove any rw_shadow_copy_map entries keyed on this texture's handle,
-	// so stale handles can't match a recycled WGPUTexture later.
-	if (tex->handle) {
-		rw_shadow_copy_map.erase(tex->handle);
 	}
 
 	if (tex->default_view) {
@@ -3144,41 +3334,60 @@ Vector<uint8_t> RenderingDeviceDriverWebGPU::texture_get_data(TextureID p_textur
 		entry = _readback_cache[key];
 	}
 
-	// Two pixel sizes: the original Godot format (rd_bpp) for the output
-	// Vector, and the actual GPU format (gpu_bpp) for staging buffer sizing
-	// and the CopyTextureToBuffer stride. These diverge when the driver
-	// promotes storage formats (R8→R32Float) or downgrades float32→float16.
-	uint32_t rd_bpp = (tex->rd_format != DATA_FORMAT_MAX) ? get_image_format_pixel_size(tex->rd_format) : 4;
-	if (rd_bpp == 0) {
-		rd_bpp = 4;
+	// A texture read returns the view's complete mip chain and 3D depth, in
+	// Godot's tightly packed format. Stage all subresources in one buffer/map.
+	uint32_t block_w = 1, block_h = 1;
+	uint32_t rd_bpp = 4;
+	if (tex->rd_format != DATA_FORMAT_MAX) {
+		get_compressed_image_format_block_dimensions(tex->rd_format, block_w, block_h);
+		rd_bpp = get_image_format_pixel_size(tex->rd_format);
 	}
-	uint32_t gpu_bpp = wgpu_format_pixel_size(tex->format);
-	if (gpu_bpp == 0) {
-		gpu_bpp = rd_bpp;
-	}
-	uint32_t mip_w = tex->width;
-	uint32_t mip_h = tex->height;
-	uint32_t row_pitch = ((mip_w * gpu_bpp + 255) / 256) * 256; // 256-byte aligned
-	uint64_t buffer_size = (uint64_t)row_pitch * mip_h;
+	const bool compressed = block_w > 1 || block_h > 1;
+	const uint32_t block_bytes = compressed ? get_compressed_image_format_block_byte_size(tex->rd_format) : 0;
+	const uint32_t gpu_bpp = compressed ? 0 : wgpu_format_pixel_size(tex->format);
+	ERR_FAIL_COND_V(!compressed && (!rd_bpp || !gpu_bpp), Vector<uint8_t>());
 
-	// A completed readback's pixels: un-padded to tightly packed rows, and converted back
-	// where the driver promoted or downgraded the format. Marks the entry consumed.
+	struct ReadbackMip {
+		uint32_t width, height, depth, rows, row_pitch, tight_row_pitch;
+		uint64_t staging_offset, output_offset;
+	};
+	LocalVector<ReadbackMip> mips;
+	uint64_t buffer_size = 0;
+	uint64_t output_size = 0;
+	for (uint32_t mip = 0; mip < tex->mipmaps; mip++) {
+		ReadbackMip layout;
+		layout.width = MAX(1u, tex->width >> mip);
+		layout.height = MAX(1u, tex->height >> mip);
+		layout.depth = MAX(1u, tex->depth >> mip);
+		layout.rows = (layout.height + block_h - 1) / block_h;
+		const uint32_t blocks_wide = (layout.width + block_w - 1) / block_w;
+		const uint32_t gpu_row_bytes = compressed ? blocks_wide * block_bytes : layout.width * gpu_bpp;
+		layout.row_pitch = (gpu_row_bytes + 255) & ~255u;
+		layout.tight_row_pitch = compressed ? blocks_wide * block_bytes : layout.width * rd_bpp;
+		layout.staging_offset = buffer_size;
+		layout.output_offset = output_size;
+		buffer_size += uint64_t(layout.row_pitch) * layout.rows * layout.depth;
+		output_size += uint64_t(layout.tight_row_pitch) * layout.rows * layout.depth;
+		mips.push_back(layout);
+	}
+	ERR_FAIL_COND_V(buffer_size == 0 || buffer_size > device_limits.maxBufferSize || output_size > INT32_MAX, Vector<uint8_t>());
+
+	// Convert promoted formats per depth plane, or remove block-row padding.
 	auto deliver = [&](ReadbackEntry *p_entry) {
 		Vector<uint8_t> result;
-		result.resize(mip_w * mip_h * rd_bpp);
-		uint8_t *dst = result.ptrw();
-
-		if (gpu_bpp != rd_bpp) {
-			// Format was promoted or downgraded — convert GPU data back to
-			// the original Godot format (e.g. R32Float→R8, Float16→Float32).
-			uint32_t dst_pitch = mip_w * rd_bpp;
-			texture_readback_convert(p_texture, p_entry->shadow, row_pitch,
-					dst, dst_pitch, mip_w, mip_h);
-		} else {
-			// No format divergence — un-pad from staging to tightly packed output.
-			uint32_t tight_row = mip_w * rd_bpp;
-			for (uint32_t y = 0; y < mip_h; y++) {
-				memcpy(dst + y * tight_row, p_entry->shadow + y * row_pitch, tight_row);
+		result.resize(output_size);
+		for (const ReadbackMip &mip : mips) {
+			const uint8_t *src = p_entry->shadow + mip.staging_offset;
+			uint8_t *dst = result.ptrw() + mip.output_offset;
+			if (!compressed && gpu_bpp != rd_bpp) {
+				for (uint32_t z = 0; z < mip.depth; z++) {
+					texture_readback_convert(p_texture, src + uint64_t(z) * mip.row_pitch * mip.rows, mip.row_pitch,
+							dst + uint64_t(z) * mip.tight_row_pitch * mip.rows, mip.tight_row_pitch, mip.width, mip.height);
+				}
+			} else {
+				for (uint32_t row = 0; row < mip.rows * mip.depth; row++) {
+					memcpy(dst + uint64_t(row) * mip.tight_row_pitch, src + uint64_t(row) * mip.row_pitch, mip.tight_row_pitch);
+				}
 			}
 		}
 		p_entry->has_data = false;
@@ -3206,7 +3415,9 @@ Vector<uint8_t> RenderingDeviceDriverWebGPU::texture_get_data(TextureID p_textur
 	// trick as buffer_map). If mapped, copy data into shadow and mark complete.
 	if (entry && !entry->map_complete && entry->map_pending) {
 		WGPUInstance inst = context_driver ? context_driver->get_instance() : nullptr;
-		if (inst) wgpuInstanceProcessEvents(inst);
+		if (inst) {
+			wgpuInstanceProcessEvents(inst);
+		}
 		if (!entry->map_complete) {
 			WGPUBufferMapState state = wgpuBufferGetMapState(entry->staging);
 			if (state == WGPUBufferMapState_Mapped) {
@@ -3277,17 +3488,22 @@ Vector<uint8_t> RenderingDeviceDriverWebGPU::texture_get_data(TextureID p_textur
 	// Copy texture to staging buffer.
 	WGPUCommandEncoderDescriptor enc_desc = {};
 	WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device, &enc_desc);
-	WGPUTexelCopyTextureInfo src_info = {};
-	src_info.texture = tex->gpu_handle();
-	src_info.mipLevel = 0;
-	src_info.origin = { 0, 0, p_layer };
-	WGPUTexelCopyBufferInfo dst_info = {};
-	dst_info.buffer = entry->staging;
-	dst_info.layout.offset = 0;
-	dst_info.layout.bytesPerRow = row_pitch;
-	dst_info.layout.rowsPerImage = mip_h;
-	WGPUExtent3D extent = { mip_w, mip_h, 1 };
-	wgpuCommandEncoderCopyTextureToBuffer(encoder, &src_info, &dst_info, &extent);
+	for (uint32_t mip_index = 0; mip_index < mips.size(); mip_index++) {
+		const ReadbackMip &mip = mips[mip_index];
+		WGPUTexelCopyTextureInfo src_info = {};
+		src_info.texture = tex->gpu_handle();
+		src_info.mipLevel = tex->base_mipmap + mip_index;
+		src_info.origin = { 0, 0, tex->view_dimension == WGPUTextureViewDimension_3D ? 0 : tex->base_layer + p_layer };
+		WGPUTexelCopyBufferInfo dst_info = {};
+		dst_info.buffer = entry->staging;
+		dst_info.layout.offset = mip.staging_offset;
+		dst_info.layout.bytesPerRow = mip.row_pitch;
+		dst_info.layout.rowsPerImage = mip.rows;
+		// Compressed mip tails occupy a whole physical block even below 4x4.
+		WGPUExtent3D extent = { ((mip.width + block_w - 1) / block_w) * block_w,
+			((mip.height + block_h - 1) / block_h) * block_h, mip.depth };
+		wgpuCommandEncoderCopyTextureToBuffer(encoder, &src_info, &dst_info, &extent);
+	}
 	WGPUCommandBuffer cmd = wgpuCommandEncoderFinish(encoder, nullptr);
 	wgpuQueueSubmit(queue, 1, &cmd);
 	wgpuCommandBufferRelease(cmd);
@@ -3316,6 +3532,21 @@ BitField<RDD::TextureUsageBits> RenderingDeviceDriverWebGPU::texture_get_usages_
 	// If there's no WebGPU equivalent, the format is unsupported.
 	if (_data_format_to_wgpu(p_format) == WGPUTextureFormat_Undefined) {
 		return 0;
+	}
+
+	// A normalized 16-bit integer and a half float have equal byte sizes but
+	// different numerical representations. Let callers choose their actual
+	// float fallback instead of claiming a raw bit reinterpretation is valid.
+	switch (p_format) {
+		case DATA_FORMAT_R16_UNORM:
+		case DATA_FORMAT_R16_SNORM:
+		case DATA_FORMAT_R16G16_UNORM:
+		case DATA_FORMAT_R16G16_SNORM:
+		case DATA_FORMAT_R16G16B16A16_UNORM:
+		case DATA_FORMAT_R16G16B16A16_SNORM:
+			return 0;
+		default:
+			break;
 	}
 
 	// These bits apply to every supported format.
@@ -3447,13 +3678,19 @@ BitField<RDD::TextureUsageBits> RenderingDeviceDriverWebGPU::texture_get_usages_
 	switch (p_format) {
 		case DATA_FORMAT_R8_UNORM:
 		case DATA_FORMAT_R8_SNORM:
+		case DATA_FORMAT_R8_UINT:
+		case DATA_FORMAT_R8_SINT:
 		case DATA_FORMAT_R8G8_UNORM:
 		case DATA_FORMAT_R8G8_SNORM:
+		case DATA_FORMAT_R8G8_UINT:
+		case DATA_FORMAT_R8G8_SINT:
 		case DATA_FORMAT_R8G8B8A8_UNORM:
 		case DATA_FORMAT_R8G8B8A8_SNORM:
 		case DATA_FORMAT_R8G8B8A8_UINT:
 		case DATA_FORMAT_R8G8B8A8_SINT:
 		case DATA_FORMAT_R16_SFLOAT:
+		case DATA_FORMAT_R16_UINT:
+		case DATA_FORMAT_R16_SINT:
 		case DATA_FORMAT_R16_SNORM:
 		case DATA_FORMAT_R16_UNORM:
 		case DATA_FORMAT_R16G16_SFLOAT:
@@ -3473,6 +3710,9 @@ BitField<RDD::TextureUsageBits> RenderingDeviceDriverWebGPU::texture_get_usages_
 		case DATA_FORMAT_R32G32B32A32_SFLOAT:
 		case DATA_FORMAT_R32G32B32A32_UINT:
 		case DATA_FORMAT_R32G32B32A32_SINT:
+		case DATA_FORMAT_A2B10G10R10_UNORM_PACK32:
+		case DATA_FORMAT_A2B10G10R10_UINT_PACK32:
+		case DATA_FORMAT_B10G11R11_UFLOAT_PACK32:
 			flags.set_flag(TEXTURE_USAGE_STORAGE_BIT);
 			break;
 		default:
@@ -3553,13 +3793,17 @@ WGPUTextureFormat RenderingDeviceDriverWebGPU::_data_format_to_wgpu(DataFormat p
 	switch (p_format) {
 		// R16/RG16/RGBA16 Unorm/Snorm: not in emdawnwebgpu 4.0.10, use float fallback.
 		case DATA_FORMAT_R16_UNORM:
-		case DATA_FORMAT_R16_SNORM: return WGPUTextureFormat_R16Float;
+		case DATA_FORMAT_R16_SNORM:
+			return WGPUTextureFormat_R16Float;
 		case DATA_FORMAT_R16G16_UNORM:
-		case DATA_FORMAT_R16G16_SNORM: return WGPUTextureFormat_RG16Float;
+		case DATA_FORMAT_R16G16_SNORM:
+			return WGPUTextureFormat_RG16Float;
 		case DATA_FORMAT_R16G16B16A16_UNORM:
-		case DATA_FORMAT_R16G16B16A16_SNORM: return WGPUTextureFormat_RGBA16Float;
+		case DATA_FORMAT_R16G16B16A16_SNORM:
+			return WGPUTextureFormat_RGBA16Float;
 		// No depth16+stencil8 in WebGPU; use depth24plus-stencil8 as nearest approximation.
-		case DATA_FORMAT_D16_UNORM_S8_UINT: return WGPUTextureFormat_Depth24PlusStencil8;
+		case DATA_FORMAT_D16_UNORM_S8_UINT:
+			return WGPUTextureFormat_Depth24PlusStencil8;
 		// 3-component (RGB) formats don't exist as WebGPU *texture* formats, only as
 		// vertex attribute formats (handled by _data_format_to_wgpu_vertex). Return
 		// Undefined silently here — texture_get_usages_supported_by_format probes every
@@ -3583,7 +3827,10 @@ WGPUTextureFormat RenderingDeviceDriverWebGPU::_data_format_to_wgpu(DataFormat p
 			int ifmt = (int)p_format;
 			bool already_warned = false;
 			for (uint32_t i = 0; i < warned_formats.size(); i++) {
-				if (warned_formats[i] == ifmt) { already_warned = true; break; }
+				if (warned_formats[i] == ifmt) {
+					already_warned = true;
+					break;
+				}
 			}
 			if (!already_warned) {
 				warned_formats.push_back(ifmt);
@@ -3610,35 +3857,54 @@ WGPUTextureFormat RenderingDeviceDriverWebGPU::_promote_storage_format(WGPUTextu
 		// formats stay in sync.
 		case WGPUTextureFormat_R8Unorm:
 		case WGPUTextureFormat_R8Snorm:
-			if (has_texture_formats_tier1) { return p_format; }
+			if (has_texture_formats_tier1) {
+				return p_format;
+			}
 			return WGPUTextureFormat_R32Float;
 		case WGPUTextureFormat_R8Uint:
-			if (has_texture_formats_tier1) { return p_format; }
+			if (has_texture_formats_tier1) {
+				return p_format;
+			}
 			return WGPUTextureFormat_R32Uint;
 		case WGPUTextureFormat_R8Sint:
-			if (has_texture_formats_tier1) { return p_format; }
+			if (has_texture_formats_tier1) {
+				return p_format;
+			}
 			return WGPUTextureFormat_R32Sint;
 		case WGPUTextureFormat_RG8Unorm:
 		case WGPUTextureFormat_RG8Snorm:
-			if (has_texture_formats_tier1) { return p_format; }
+			if (has_texture_formats_tier1) {
+				return p_format;
+			}
 			return WGPUTextureFormat_RG32Float;
 		case WGPUTextureFormat_RG8Uint:
-			if (has_texture_formats_tier1) { return p_format; }
+			if (has_texture_formats_tier1) {
+				return p_format;
+			}
 			return WGPUTextureFormat_RG32Uint;
 		case WGPUTextureFormat_RG8Sint:
-			if (has_texture_formats_tier1) { return p_format; }
+			if (has_texture_formats_tier1) {
+				return p_format;
+			}
 			return WGPUTextureFormat_RG32Sint;
+		// The device may lack packed storage formats even when they are valid
+		// sampled textures. Match the WGSL declaration and all shared views.
+		case WGPUTextureFormat_RGB10A2Unorm:
+		case WGPUTextureFormat_RG11B10Ufloat:
+			return has_texture_formats_tier2 ? p_format : WGPUTextureFormat_RGBA16Float;
+		case WGPUTextureFormat_RGB10A2Uint:
+			return has_texture_formats_tier2 ? p_format : WGPUTextureFormat_RGBA16Uint;
 		// 16-bit formats: always promote. Shaders reference the 32-bit version
 		// and there is no matching WGSL replacement for these.
 		case WGPUTextureFormat_R16Float:
-		// R16Snorm/R16Unorm not in base emdawnwebgpu 4.0.10 headers
+			// R16Snorm/R16Unorm not in base emdawnwebgpu 4.0.10 headers
 			return WGPUTextureFormat_R32Float;
 		case WGPUTextureFormat_R16Uint:
 			return WGPUTextureFormat_R32Uint;
 		case WGPUTextureFormat_R16Sint:
 			return WGPUTextureFormat_R32Sint;
 		case WGPUTextureFormat_RG16Float:
-		// RG16Snorm/RG16Unorm not in base emdawnwebgpu 4.0.10 headers
+			// RG16Snorm/RG16Unorm not in base emdawnwebgpu 4.0.10 headers
 			return WGPUTextureFormat_RG32Float;
 		case WGPUTextureFormat_RG16Uint:
 			return WGPUTextureFormat_RG32Uint;
@@ -3653,45 +3919,79 @@ WGPUTextureFormat RenderingDeviceDriverWebGPU::_promote_storage_format(WGPUTextu
 RDD::DataFormat RenderingDeviceDriverWebGPU::_wgpu_to_data_format(WGPUTextureFormat p_format) const {
 	// TODO: Full reverse mapping. For now, handle common cases.
 	switch (p_format) {
-		case WGPUTextureFormat_BGRA8Unorm: return DATA_FORMAT_B8G8R8A8_UNORM;
-		case WGPUTextureFormat_RGBA8Unorm: return DATA_FORMAT_R8G8B8A8_UNORM;
-		default: return DATA_FORMAT_MAX;
+		case WGPUTextureFormat_BGRA8Unorm:
+			return DATA_FORMAT_B8G8R8A8_UNORM;
+		case WGPUTextureFormat_RGBA8Unorm:
+			return DATA_FORMAT_R8G8B8A8_UNORM;
+		default:
+			return DATA_FORMAT_MAX;
 	}
 }
 
 WGPUVertexFormat RenderingDeviceDriverWebGPU::_data_format_to_wgpu_vertex(DataFormat p_format) {
 	switch (p_format) {
-		case DATA_FORMAT_R32_SFLOAT: return WGPUVertexFormat_Float32;
-		case DATA_FORMAT_R32G32_SFLOAT: return WGPUVertexFormat_Float32x2;
-		case DATA_FORMAT_R32G32B32_SFLOAT: return WGPUVertexFormat_Float32x3;
-		case DATA_FORMAT_R32G32B32A32_SFLOAT: return WGPUVertexFormat_Float32x4;
-		case DATA_FORMAT_R32_UINT: return WGPUVertexFormat_Uint32;
-		case DATA_FORMAT_R32G32_UINT: return WGPUVertexFormat_Uint32x2;
-		case DATA_FORMAT_R32G32B32_UINT: return WGPUVertexFormat_Uint32x3;
-		case DATA_FORMAT_R32G32B32A32_UINT: return WGPUVertexFormat_Uint32x4;
-		case DATA_FORMAT_R32_SINT: return WGPUVertexFormat_Sint32;
-		case DATA_FORMAT_R32G32_SINT: return WGPUVertexFormat_Sint32x2;
-		case DATA_FORMAT_R32G32B32_SINT: return WGPUVertexFormat_Sint32x3;
-		case DATA_FORMAT_R32G32B32A32_SINT: return WGPUVertexFormat_Sint32x4;
-		case DATA_FORMAT_R16G16_SFLOAT: return WGPUVertexFormat_Float16x2;
-		case DATA_FORMAT_R16G16B16A16_SFLOAT: return WGPUVertexFormat_Float16x4;
-		case DATA_FORMAT_R16G16_UINT: return WGPUVertexFormat_Uint16x2;
-		case DATA_FORMAT_R16G16B16A16_UINT: return WGPUVertexFormat_Uint16x4;
-		case DATA_FORMAT_R16G16_SINT: return WGPUVertexFormat_Sint16x2;
-		case DATA_FORMAT_R16G16B16A16_SINT: return WGPUVertexFormat_Sint16x4;
-		case DATA_FORMAT_R16G16_UNORM: return WGPUVertexFormat_Unorm16x2;
-		case DATA_FORMAT_R16G16B16A16_UNORM: return WGPUVertexFormat_Unorm16x4;
-		case DATA_FORMAT_R16G16_SNORM: return WGPUVertexFormat_Snorm16x2;
-		case DATA_FORMAT_R16G16B16A16_SNORM: return WGPUVertexFormat_Snorm16x4;
-		case DATA_FORMAT_R8G8_UNORM: return WGPUVertexFormat_Unorm8x2;
-		case DATA_FORMAT_R8G8B8A8_UNORM: return WGPUVertexFormat_Unorm8x4;
-		case DATA_FORMAT_R8G8_SNORM: return WGPUVertexFormat_Snorm8x2;
-		case DATA_FORMAT_R8G8B8A8_SNORM: return WGPUVertexFormat_Snorm8x4;
-		case DATA_FORMAT_R8G8_UINT: return WGPUVertexFormat_Uint8x2;
-		case DATA_FORMAT_R8G8B8A8_UINT: return WGPUVertexFormat_Uint8x4;
-		case DATA_FORMAT_R8G8_SINT: return WGPUVertexFormat_Sint8x2;
-		case DATA_FORMAT_R8G8B8A8_SINT: return WGPUVertexFormat_Sint8x4;
-		case DATA_FORMAT_A2B10G10R10_UNORM_PACK32: return WGPUVertexFormat_Unorm10_10_10_2;
+		case DATA_FORMAT_R32_SFLOAT:
+			return WGPUVertexFormat_Float32;
+		case DATA_FORMAT_R32G32_SFLOAT:
+			return WGPUVertexFormat_Float32x2;
+		case DATA_FORMAT_R32G32B32_SFLOAT:
+			return WGPUVertexFormat_Float32x3;
+		case DATA_FORMAT_R32G32B32A32_SFLOAT:
+			return WGPUVertexFormat_Float32x4;
+		case DATA_FORMAT_R32_UINT:
+			return WGPUVertexFormat_Uint32;
+		case DATA_FORMAT_R32G32_UINT:
+			return WGPUVertexFormat_Uint32x2;
+		case DATA_FORMAT_R32G32B32_UINT:
+			return WGPUVertexFormat_Uint32x3;
+		case DATA_FORMAT_R32G32B32A32_UINT:
+			return WGPUVertexFormat_Uint32x4;
+		case DATA_FORMAT_R32_SINT:
+			return WGPUVertexFormat_Sint32;
+		case DATA_FORMAT_R32G32_SINT:
+			return WGPUVertexFormat_Sint32x2;
+		case DATA_FORMAT_R32G32B32_SINT:
+			return WGPUVertexFormat_Sint32x3;
+		case DATA_FORMAT_R32G32B32A32_SINT:
+			return WGPUVertexFormat_Sint32x4;
+		case DATA_FORMAT_R16G16_SFLOAT:
+			return WGPUVertexFormat_Float16x2;
+		case DATA_FORMAT_R16G16B16A16_SFLOAT:
+			return WGPUVertexFormat_Float16x4;
+		case DATA_FORMAT_R16G16_UINT:
+			return WGPUVertexFormat_Uint16x2;
+		case DATA_FORMAT_R16G16B16A16_UINT:
+			return WGPUVertexFormat_Uint16x4;
+		case DATA_FORMAT_R16G16_SINT:
+			return WGPUVertexFormat_Sint16x2;
+		case DATA_FORMAT_R16G16B16A16_SINT:
+			return WGPUVertexFormat_Sint16x4;
+		case DATA_FORMAT_R16G16_UNORM:
+			return WGPUVertexFormat_Unorm16x2;
+		case DATA_FORMAT_R16G16B16A16_UNORM:
+			return WGPUVertexFormat_Unorm16x4;
+		case DATA_FORMAT_R16G16_SNORM:
+			return WGPUVertexFormat_Snorm16x2;
+		case DATA_FORMAT_R16G16B16A16_SNORM:
+			return WGPUVertexFormat_Snorm16x4;
+		case DATA_FORMAT_R8G8_UNORM:
+			return WGPUVertexFormat_Unorm8x2;
+		case DATA_FORMAT_R8G8B8A8_UNORM:
+			return WGPUVertexFormat_Unorm8x4;
+		case DATA_FORMAT_R8G8_SNORM:
+			return WGPUVertexFormat_Snorm8x2;
+		case DATA_FORMAT_R8G8B8A8_SNORM:
+			return WGPUVertexFormat_Snorm8x4;
+		case DATA_FORMAT_R8G8_UINT:
+			return WGPUVertexFormat_Uint8x2;
+		case DATA_FORMAT_R8G8B8A8_UINT:
+			return WGPUVertexFormat_Uint8x4;
+		case DATA_FORMAT_R8G8_SINT:
+			return WGPUVertexFormat_Sint8x2;
+		case DATA_FORMAT_R8G8B8A8_SINT:
+			return WGPUVertexFormat_Sint8x4;
+		case DATA_FORMAT_A2B10G10R10_UNORM_PACK32:
+			return WGPUVertexFormat_Unorm10_10_10_2;
 		default:
 			WARN_PRINT(vformat("WebGPU: Unsupported vertex DataFormat %d", (int)p_format));
 			return (WGPUVertexFormat)0;
@@ -3736,22 +4036,34 @@ RDD::SamplerID RenderingDeviceDriverWebGPU::sampler_create(const SamplerState &p
 	};
 	auto map_address = [](SamplerRepeatMode m) -> WGPUAddressMode {
 		switch (m) {
-			case SAMPLER_REPEAT_MODE_REPEAT: return WGPUAddressMode_Repeat;
-			case SAMPLER_REPEAT_MODE_MIRRORED_REPEAT: return WGPUAddressMode_MirrorRepeat;
-			default: return WGPUAddressMode_ClampToEdge;
+			case SAMPLER_REPEAT_MODE_REPEAT:
+				return WGPUAddressMode_Repeat;
+			case SAMPLER_REPEAT_MODE_MIRRORED_REPEAT:
+				return WGPUAddressMode_MirrorRepeat;
+			default:
+				return WGPUAddressMode_ClampToEdge;
 		}
 	};
 	auto map_compare = [](CompareOperator op) -> WGPUCompareFunction {
 		switch (op) {
-			case COMPARE_OP_NEVER: return WGPUCompareFunction_Never;
-			case COMPARE_OP_LESS: return WGPUCompareFunction_Less;
-			case COMPARE_OP_EQUAL: return WGPUCompareFunction_Equal;
-			case COMPARE_OP_LESS_OR_EQUAL: return WGPUCompareFunction_LessEqual;
-			case COMPARE_OP_GREATER: return WGPUCompareFunction_Greater;
-			case COMPARE_OP_NOT_EQUAL: return WGPUCompareFunction_NotEqual;
-			case COMPARE_OP_GREATER_OR_EQUAL: return WGPUCompareFunction_GreaterEqual;
-			case COMPARE_OP_ALWAYS: return WGPUCompareFunction_Always;
-			default: return WGPUCompareFunction_Undefined;
+			case COMPARE_OP_NEVER:
+				return WGPUCompareFunction_Never;
+			case COMPARE_OP_LESS:
+				return WGPUCompareFunction_Less;
+			case COMPARE_OP_EQUAL:
+				return WGPUCompareFunction_Equal;
+			case COMPARE_OP_LESS_OR_EQUAL:
+				return WGPUCompareFunction_LessEqual;
+			case COMPARE_OP_GREATER:
+				return WGPUCompareFunction_Greater;
+			case COMPARE_OP_NOT_EQUAL:
+				return WGPUCompareFunction_NotEqual;
+			case COMPARE_OP_GREATER_OR_EQUAL:
+				return WGPUCompareFunction_GreaterEqual;
+			case COMPARE_OP_ALWAYS:
+				return WGPUCompareFunction_Always;
+			default:
+				return WGPUCompareFunction_Undefined;
 		}
 	};
 
@@ -4023,7 +4335,7 @@ Error RenderingDeviceDriverWebGPU::fence_wait(FenceID p_fence) {
 	// Native Dawn provides an actual waitable future. Waiting here is required:
 	// force-signaling (the browser fallback below) can let Godot recycle GPU
 	// resources before Metal has completed the preceding frame.
-	if (fence->work_done_pending) {
+	if (fence->pending_work_done_callbacks > 0) {
 		WGPUInstance inst = context_driver ? context_driver->get_instance() : nullptr;
 		ERR_FAIL_NULL_V(inst, ERR_CANT_ACQUIRE_RESOURCE);
 		WGPUFutureWaitInfo wait_info = WGPU_FUTURE_WAIT_INFO_INIT;
@@ -4067,15 +4379,15 @@ void RenderingDeviceDriverWebGPU::fence_free(FenceID p_fence) {
 #ifndef __EMSCRIPTEN__
 	// WaitAnyOnly callbacks are delivered by fence_wait, so drain an outstanding
 	// future before releasing its userdata.
-	if (fence->work_done_pending && fence_wait(p_fence) != OK) {
+	if (fence->pending_work_done_callbacks > 0 && fence_wait(p_fence) != OK) {
 		ERR_PRINT("WebGPU: Could not drain Dawn queue completion before freeing a fence.");
 		return;
 	}
 	delete fence;
 #else
-	// If an async work-done callback is in flight, mark freed and let
-	// the callback handle deletion (use-after-free prevention).
-	if (fence->work_done_pending) {
+	// The nonblocking browser wait permits reuse with several callbacks in
+	// flight. Keep their shared userdata until the last completion drains.
+	if (fence->pending_work_done_callbacks > 0) {
 		fence->freed = true;
 		return;
 	}
@@ -4151,8 +4463,7 @@ Error RenderingDeviceDriverWebGPU::command_queue_execute_and_present(CommandQueu
 #if defined(WEBGPU_VERBOSE) && defined(__EMSCRIPTEN__)
 		static int _submit_log = 0;
 		if (_submit_log < 10) {
-			EM_ASM({ console.log('[DIAG-SUBMIT] frame=' + $0 + ' cmds=' + $1); },
-					_submit_log, (int)wgpu_cmd_buffers.size());
+			EM_ASM({ console.log('[DIAG-SUBMIT] frame=' + $0 + ' cmds=' + $1); }, _submit_log, (int)wgpu_cmd_buffers.size());
 			_submit_log++;
 		}
 #endif // WEBGPU_VERBOSE
@@ -4163,7 +4474,7 @@ Error RenderingDeviceDriverWebGPU::command_queue_execute_and_present(CommandQueu
 		WGFence *fence = (WGFence *)(p_cmd_fence.id);
 		if (fence) {
 			fence->signaled = false;
-			fence->work_done_pending = true;
+			fence->pending_work_done_callbacks++;
 			WGPUQueueWorkDoneCallbackInfo cb = {};
 #ifdef __EMSCRIPTEN__
 			cb.mode = WGPUCallbackMode_AllowSpontaneous;
@@ -4204,9 +4515,7 @@ Error RenderingDeviceDriverWebGPU::command_queue_execute_and_present(CommandQueu
 
 	// Flush any WGSL cache entries that did not reach a full batch (the tail of
 	// boot compilation); rate-limited to one file write per 2 s.
-	if (_wgsl_disk_cache_pending > 0 && OS::get_singleton()->get_ticks_usec() - _wgsl_disk_cache_last_flush_usec > 2000000) {
-		_wgsl_disk_cache_flush();
-	}
+	_wgsl_disk_cache_flush(false);
 
 	// Clear finished command buffers (they are consumed by submit).
 	for (uint32_t i = 0; i < p_cmd_buffers.size(); i++) {
@@ -4224,11 +4533,15 @@ Error RenderingDeviceDriverWebGPU::command_queue_execute_and_present(CommandQueu
 					}
 					pool->map_generation++;
 					WGPUBufferMapCallbackInfo cb_info = {};
+#ifdef __EMSCRIPTEN__
 					cb_info.mode = WGPUCallbackMode_AllowSpontaneous;
+#else
+					cb_info.mode = WGPUCallbackMode_WaitAnyOnly;
+#endif
 					cb_info.callback = _timestamp_readback_callback;
 					cb_info.userdata1 = pool;
 					cb_info.userdata2 = (void *)(uintptr_t)pool->map_generation;
-					wgpuBufferMapAsync(pool->readback_buffer, WGPUMapMode_Read, 0, sizeof(uint64_t) * pool->count, cb_info);
+					pool->map_future = wgpuBufferMapAsync(pool->readback_buffer, WGPUMapMode_Read, 0, sizeof(uint64_t) * pool->count, cb_info);
 				}
 			}
 			cmd->written_query_pools.clear();
@@ -4470,8 +4783,7 @@ RDD::FramebufferID RenderingDeviceDriverWebGPU::swap_chain_acquire_framebuffer(C
 	// Diagnostic: log surface texture status for the first few frames.
 	static int _st_log = 0;
 	if (_st_log < 10) {
-		WEBGPU_DIAG({ console.log('[SURFACE] status=' + $0 + ' texture=' + ($1 ? 'valid' : 'NULL')); },
-				(int)surface_texture.status, (int)(surface_texture.texture != nullptr));
+		WEBGPU_DIAG({ console.log('[SURFACE] status=' + $0 + ' texture=' + ($1 ? 'valid' : 'NULL')); }, (int)surface_texture.status, (int)(surface_texture.texture != nullptr));
 		_st_log++;
 	}
 
@@ -4604,8 +4916,7 @@ void RenderingDeviceDriverWebGPU::framebuffer_free(FramebufferID p_framebuffer) 
 // shader that uses either stage. Compute stays separate.
 static WGPUShaderStage _stages_to_wgpu_visibility(uint32_t p_stage_mask) {
 	WGPUShaderStage vis = WGPUShaderStage_None;
-	bool has_render = (p_stage_mask & ((1u << RDD::SHADER_STAGE_VERTEX) | (1u << RDD::SHADER_STAGE_FRAGMENT) |
-			(1u << RDD::SHADER_STAGE_TESSELATION_CONTROL) | (1u << RDD::SHADER_STAGE_TESSELATION_EVALUATION))) != 0;
+	bool has_render = (p_stage_mask & ((1u << RDD::SHADER_STAGE_VERTEX) | (1u << RDD::SHADER_STAGE_FRAGMENT) | (1u << RDD::SHADER_STAGE_TESSELATION_CONTROL) | (1u << RDD::SHADER_STAGE_TESSELATION_EVALUATION))) != 0;
 	if (has_render) {
 		vis = (WGPUShaderStage)(WGPUShaderStage_Vertex | WGPUShaderStage_Fragment);
 	}
@@ -4626,6 +4937,227 @@ RDD::ShaderID RenderingDeviceDriverWebGPU::shader_create_from_container(const Re
 	// pipeline; translating all of them defeats the renderer's pipeline warmup.
 	shader->pending_container = p_shader_container;
 	return ShaderID(shader);
+}
+
+// A layout is shared by every specialization. Derive storage access from source
+// qualifiers before Tint freezes constants and prunes inactive declarations.
+// Unqualified images conservatively remain read/write; explicit writeonly images
+// never acquire a sampled shadow merely because another binding needs one.
+static void _collect_storage_access_contract(const PackedByteArray &p_spirv, const HashSet<uint32_t> &p_storage_bindings, HashMap<uint32_t, WGPUStorageTextureAccess> &r_access) {
+	struct Decorations {
+		uint32_t set = UINT32_MAX;
+		uint32_t binding = UINT32_MAX;
+		bool nonreadable = false;
+		bool nonwritable = false;
+	};
+	HashMap<uint32_t, Decorations> decorations;
+	HashMap<uint32_t, uint32_t> underlying_type;
+	struct GroupTarget {
+		uint32_t group;
+		uint32_t target;
+	};
+	LocalVector<GroupTarget> groups;
+	const uint32_t words = p_spirv.size() / 4;
+	auto word = [&](uint32_t p_index) { return decode_uint32(p_spirv.ptr() + p_index * 4); };
+	for (uint32_t pos = 5; pos < words;) {
+		const uint32_t count = word(pos) >> 16;
+		const uint32_t op = word(pos) & 0xffff;
+		if (!count || count > words - pos) {
+			break;
+		}
+		if (op == 71 /* OpDecorate */ && count >= 3) {
+			Decorations &d = decorations[word(pos + 1)];
+			const uint32_t decoration = word(pos + 2);
+			if (decoration == 24 /* NonWritable */) {
+				d.nonwritable = true;
+			}
+			if (decoration == 25 /* NonReadable */) {
+				d.nonreadable = true;
+			}
+			if (count >= 4 && decoration == 33 /* Binding */) {
+				d.binding = word(pos + 3);
+			}
+			if (count >= 4 && decoration == 34 /* DescriptorSet */) {
+				d.set = word(pos + 3);
+			}
+		} else if (op == 74 /* OpGroupDecorate */ && count >= 3) {
+			for (uint32_t i = 2; i < count; i++) {
+				groups.push_back({ word(pos + 1), word(pos + i) });
+			}
+		} else if (op == 59 /* OpVariable */ && count >= 4) {
+			underlying_type[word(pos + 2)] = word(pos + 1);
+		} else if (op == 32 /* OpTypePointer */ && count >= 4) {
+			underlying_type[word(pos + 1)] = word(pos + 3);
+		} else if ((op == 28 /* OpTypeArray */ || op == 29 /* OpTypeRuntimeArray */) && count >= 3) {
+			underlying_type[word(pos + 1)] = word(pos + 2);
+		}
+		pos += count;
+	}
+	for (const GroupTarget &group : groups) {
+		const Decorations *source = decorations.getptr(group.group);
+		if (!source) {
+			continue;
+		}
+		const Decorations copy = *source;
+		Decorations &target = decorations[group.target];
+		if (copy.set != UINT32_MAX) {
+			target.set = copy.set;
+		}
+		if (copy.binding != UINT32_MAX) {
+			target.binding = copy.binding;
+		}
+		target.nonreadable |= copy.nonreadable;
+		target.nonwritable |= copy.nonwritable;
+	}
+	for (const KeyValue<uint32_t, Decorations> &entry : decorations) {
+		const Decorations &d = entry.value;
+		if (d.set == UINT32_MAX || d.binding == UINT32_MAX) {
+			continue;
+		}
+		const uint32_t godot_key = (d.set << 16) | d.binding;
+		if (!p_storage_bindings.has(godot_key)) {
+			continue;
+		}
+		bool nonreadable = d.nonreadable;
+		bool nonwritable = d.nonwritable;
+		uint32_t type = entry.key;
+		for (uint32_t depth = 0; depth < 16; depth++) {
+			const uint32_t *next = underlying_type.getptr(type);
+			if (!next) {
+				break;
+			}
+			type = *next;
+			const Decorations *type_decorations = decorations.getptr(type);
+			if (type_decorations) {
+				nonreadable |= type_decorations->nonreadable;
+				nonwritable |= type_decorations->nonwritable;
+			}
+		}
+		WGPUStorageTextureAccess access = nonwritable ? WGPUStorageTextureAccess_ReadOnly : (nonreadable ? WGPUStorageTextureAccess_WriteOnly : WGPUStorageTextureAccess_ReadWrite);
+		const uint32_t key = (d.set << 16) | (d.binding * 2);
+		const WGPUStorageTextureAccess *previous = r_access.getptr(key);
+		if (previous && *previous != access) {
+			access = WGPUStorageTextureAccess_ReadWrite;
+		}
+		r_access[key] = access;
+	}
+}
+
+void RenderingDeviceDriverWebGPU::_lower_storage_texture_access(char *&r_wgsl, const HashMap<uint32_t, WGPUStorageTextureAccess> &p_contract,
+		HashMap<uint32_t, uint32_t> *r_splits, HashSet<uint32_t> *r_sampled_reads, HashMap<uint32_t, WGPUTextureFormat> *r_formats) const {
+	if (!strstr(r_wgsl, "texture_storage_")) {
+		return;
+	}
+	struct StorageDeclaration {
+		uint32_t group, binding;
+		String declaration, variable, dimension, format;
+		WGPUStorageTextureAccess access;
+		WGPUTextureFormat texture_format;
+	};
+	LocalVector<StorageDeclaration> declarations;
+	const char *scan = r_wgsl;
+	while ((scan = strstr(scan, "@group("))) {
+		unsigned int group = 0, binding = 0;
+		if (!parse_group_binding(scan, group, binding)) {
+			scan++;
+			continue;
+		}
+		const char *end = strchr(scan, ';');
+		if (!end) {
+			break;
+		}
+		const char *type = _find_before(scan, end, "texture_storage_");
+		const char *variable = type ? _find_before(scan, type, "var ") : nullptr;
+		const char *colon = variable ? strchr(variable, ':') : nullptr;
+		const char *angle = type ? _find_before(type, end, "<") : nullptr;
+		const char *comma = angle ? _find_before(angle, end, ",") : nullptr;
+		const char *close = comma ? _find_before(comma, end, ">") : nullptr;
+		if (variable && colon && colon < type && comma && close) {
+			StorageDeclaration declaration;
+			declaration.group = group;
+			declaration.binding = binding;
+			declaration.declaration = String::utf8(scan, end + 1 - scan);
+			declaration.variable = String::utf8(variable + 4, colon - variable - 4).strip_edges();
+			declaration.dimension = String::utf8(type, angle - type);
+			declaration.format = String::utf8(angle + 1, comma - angle - 1).strip_edges();
+			declaration.texture_format = _wgsl_storage_format_from_name(angle + 1, comma);
+			const String access = String::utf8(comma + 1, close - comma - 1).strip_edges();
+			declaration.access = access == "read_write" ? WGPUStorageTextureAccess_ReadWrite : (access == "read" ? WGPUStorageTextureAccess_ReadOnly : WGPUStorageTextureAccess_WriteOnly);
+			const WGPUStorageTextureAccess original_access = declaration.access;
+			if (const WGPUStorageTextureAccess *contract = p_contract.getptr((group << 16) | binding)) {
+				declaration.access = *contract;
+			}
+			if (declaration.access != original_access ||
+					(declaration.access == WGPUStorageTextureAccess_ReadWrite && !_supports_rw_storage_format(declaration.texture_format)) ||
+					(declaration.access == WGPUStorageTextureAccess_ReadOnly && !has_rw_storage_textures)) {
+				declarations.push_back(declaration);
+			}
+		}
+		scan = end + 1;
+	}
+	if (declarations.is_empty()) {
+		return;
+	}
+	String source(r_wgsl);
+	for (const StorageDeclaration &declaration : declarations) {
+		const uint32_t key = (declaration.group << 16) | declaration.binding;
+		const bool split = declaration.access == WGPUStorageTextureAccess_ReadWrite && !_supports_rw_storage_format(declaration.texture_format);
+		const bool sampled = declaration.access == WGPUStorageTextureAccess_ReadOnly && !has_rw_storage_textures;
+		const String component = declaration.format.contains("uint") ? "u32" : (declaration.format.contains("sint") ? "i32" : "f32");
+		const String sampled_type = declaration.dimension.replace("texture_storage_", "texture_") + "<" + component + ">";
+		const String access = split || declaration.access == WGPUStorageTextureAccess_WriteOnly ? "write" : (declaration.access == WGPUStorageTextureAccess_ReadOnly ? "read" : "read_write");
+		String replacement = "@group(" + itos(declaration.group) + ") @binding(" + itos(declaration.binding) + ") var " + declaration.variable + ": ";
+		replacement += sampled ? sampled_type : declaration.dimension + "<" + declaration.format + ", " + access + ">";
+		replacement += ";";
+		String read_variable = declaration.variable;
+		if (split) {
+			read_variable += "_rw_in";
+			replacement += "\n@group(" + itos(declaration.group) + ") @binding(" + itos(declaration.binding + 1) + ") var " + read_variable + ": " + sampled_type + ";";
+			if (r_splits) {
+				(*r_splits)[key] = declaration.binding + 1;
+			}
+			if (r_formats) {
+				(*r_formats)[key + 1] = declaration.texture_format;
+			}
+		}
+		if (sampled && r_sampled_reads) {
+			r_sampled_reads->insert(key);
+		}
+		if (r_formats) {
+			(*r_formats)[key] = declaration.texture_format;
+		}
+		source = source.replace(declaration.declaration, replacement);
+		if (!split && !sampled) {
+			continue;
+		}
+		// Match the complete first argument, not an identifier prefix. Only
+		// textureLoad needs the extra mip argument; dimensions/store stay valid.
+		const String search = "textureLoad(" + declaration.variable + ",";
+		int64_t pos = 0;
+		while ((pos = source.find(search, pos)) != -1) {
+			const int64_t begin = pos + String("textureLoad(").length();
+			source = source.substr(0, begin) + read_variable + source.substr(begin + declaration.variable.length());
+			int nesting = 1;
+			int64_t end = begin + read_variable.length();
+			for (; end < source.length(); end++) {
+				if (source[end] == '(') {
+					nesting++;
+				}
+				if (source[end] == ')' && --nesting == 0) {
+					break;
+				}
+			}
+			if (end == source.length()) {
+				break;
+			}
+			source = source.substr(0, end) + ", 0" + source.substr(end);
+			pos = end + 4;
+		}
+	}
+	const CharString converted = source.utf8();
+	free(r_wgsl);
+	r_wgsl = (char *)malloc(converted.length() + 1);
+	memcpy(r_wgsl, converted.get_data(), converted.length() + 1);
 }
 
 bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
@@ -4715,6 +5247,9 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 	// Image types per binding, also from the pre-specialization SPIR-V.
 	HashMap<uint32_t, spirv_preprocess::ImageBindingInfo> godot_binding_images;
 	bool any_stage_analyzed = false;
+	bool source_image_formats_loaded = false;
+	HashSet<uint32_t> sampled_usage_analyzed;
+	HashSet<uint32_t> sampled_usage_filtering;
 
 	// Read-write storage texture splits: maps (set << 16 | write_binding) → shadow_read_binding.
 	// Populated when readonly-and-readwrite-storage-textures is unavailable.
@@ -4805,17 +5340,22 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 			// seeds and unseeded shaders compute it once per distinct stage and add it
 			// to the same process cache before WGSL persistence can flush a record.
 			_wgsl_disk_cache_load();
-			const SpvStageAnalysis *analysis = _spv_stage_analysis_cache.getptr(spv_hash);
-			if (!analysis) {
-				SpvStageAnalysis new_analysis;
-				Vector<uint8_t> raw;
-				raw.resize(spv_bytes.size());
-				memcpy(raw.ptrw(), spv_bytes.ptr(), (size_t)spv_bytes.size());
-				raw = spirv_preprocess::alias_anisotropic_samplers(raw);
-				spirv_preprocess::binding_image_info(raw, &new_analysis.binding_images);
-				spirv_preprocess::reachable_binding_keys(raw, &new_analysis.reachable_binding_keys);
-				_spv_stage_analysis_cache.insert(spv_hash, new_analysis);
-				analysis = _spv_stage_analysis_cache.getptr(spv_hash);
+			SpvStageAnalysis analysis;
+			bool has_analysis = false;
+			{
+				MutexLock lock(_wgsl_cache_mutex);
+				const SpvStageAnalysis *cached = _spv_stage_analysis_cache.getptr(spv_hash);
+				if (cached) {
+					analysis = *cached;
+					has_analysis = true;
+				}
+			}
+			if (!has_analysis) {
+				const Vector<uint8_t> raw = spirv_preprocess::alias_anisotropic_samplers(spv_bytes);
+				spirv_preprocess::binding_image_info(raw, &analysis.binding_images);
+				spirv_preprocess::reachable_binding_keys(raw, &analysis.reachable_binding_keys);
+				MutexLock lock(_wgsl_cache_mutex);
+				_spv_stage_analysis_cache.insert(spv_hash, analysis);
 			}
 
 			WGPUShaderStage this_stage = WGPUShaderStage_None;
@@ -4827,10 +5367,10 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 				this_stage = WGPUShaderStage_Compute;
 			}
 
-			for (const KeyValue<uint32_t, spirv_preprocess::ImageBindingInfo> &kv : analysis->binding_images) {
+			for (const KeyValue<uint32_t, spirv_preprocess::ImageBindingInfo> &kv : analysis.binding_images) {
 				godot_binding_images.insert(kv.key, kv.value);
 			}
-			for (uint32_t key : analysis->reachable_binding_keys) {
+			for (uint32_t key : analysis.reachable_binding_keys) {
 				if (godot_binding_stages.has(key)) {
 					godot_binding_stages[key] |= (uint32_t)this_stage;
 				} else {
@@ -4839,6 +5379,83 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 			}
 			any_stage_analyzed = true;
 		}
+	}
+
+	if (!float32_filterable_supported && error_text.is_empty()) {
+		// Analyze original modules as one contract, including helper aliases and
+		// branches a later specialization can activate. Normal devices avoid
+		// this analysis entirely; no persisted-cache schema change is needed.
+		for (const PackedByteArray &raw : shader->stage_spirv) {
+			if (raw.is_empty()) {
+				continue;
+			}
+			if (!webgpu_collect_sampled_texture_usage(raw, sampled_usage_analyzed, sampled_usage_filtering)) {
+				sampled_usage_analyzed.clear(); // Unknown source keeps filtering.
+				break;
+			}
+		}
+	}
+
+	if (error_text.is_empty() && !shader_refl.specialization_constants.is_empty()) {
+		HashSet<uint32_t> storage_bindings;
+		for (int set = 0; set < shader_refl.uniform_sets.size(); set++) {
+			for (const RenderingDeviceCommons::ShaderUniform &uniform : shader_refl.uniform_sets[set]) {
+				const uint32_t key = (uint32_t(set) << 16) | uniform.binding;
+				if (uniform.type == RDD::UNIFORM_TYPE_IMAGE && godot_binding_stages.has(key)) {
+					storage_bindings.insert(key);
+				}
+			}
+		}
+		if (!storage_bindings.is_empty()) {
+			for (const PackedByteArray &raw : shader->stage_spirv) {
+				if (raw.is_empty()) {
+					continue;
+				}
+				_collect_storage_access_contract(raw, storage_bindings, shader->storage_texture_access);
+				// Legacy seed analysis lacks formats; use source for the complete
+				// contract even when the default WGSL has no image declaration.
+				spirv_preprocess::binding_image_info(raw, &godot_binding_images);
+			}
+			source_image_formats_loaded = true;
+			for (const KeyValue<uint32_t, WGPUStorageTextureAccess> &contract : shader->storage_texture_access) {
+				const uint32_t godot_key = (contract.key & 0xffff0000) | ((contract.key & 0xffff) / 2);
+				const spirv_preprocess::ImageBindingInfo *info = godot_binding_images.getptr(godot_key);
+				if (!info) {
+					continue;
+				}
+				const WGPUTextureFormat format = _promote_storage_format(_spirv_storage_format(info->format));
+				WGPUTextureViewDimension dimension = WGPUTextureViewDimension_2D;
+				if (info->dim == 0) {
+					dimension = WGPUTextureViewDimension_1D;
+				}
+				if (info->dim == 1 && info->arrayed) {
+					dimension = WGPUTextureViewDimension_2DArray;
+				}
+				if (info->dim == 2) {
+					dimension = WGPUTextureViewDimension_3D;
+				}
+				wgsl_storage_tex_format[contract.key] = format;
+				wgsl_tex_dims[contract.key] = dimension;
+				wgsl_storage_tex_access[contract.key] = contract.value;
+				if (contract.value == WGPUStorageTextureAccess_ReadOnly && !has_rw_storage_textures) {
+					wgsl_read_storage_to_sampled.insert(contract.key);
+				} else if (contract.value == WGPUStorageTextureAccess_ReadWrite && !_supports_rw_storage_format(format)) {
+					const uint32_t shadow_key = contract.key + 1;
+					wgsl_rw_storage_splits[contract.key] = shadow_key & 0xffff;
+					wgsl_storage_tex_access[contract.key] = WGPUStorageTextureAccess_WriteOnly;
+					wgsl_storage_tex_format[shadow_key] = format;
+					wgsl_tex_dims[shadow_key] = dimension;
+				}
+			}
+		}
+	}
+
+	// Source contracts now include all stages. Translate each module against the
+	// same access union so a later specialization cannot disagree with its layout.
+	for (int i = 0; i < stage_shaders.size() && error_text.is_empty(); i++) {
+		const RenderingShaderContainer::Shader &s = stage_shaders[i];
+		const PackedByteArray &spv_bytes = shader->stage_spirv[(int)s.shader_stage];
+		const uint64_t spv_hash = _spv_cache_hash(spv_bytes.ptr(), (int)spv_bytes.size());
 
 		// emdawnwebgpu does NOT support WGPUShaderSourceSPIRV — it's a thin wrapper
 		// around the browser's WebGPU API which only accepts WGSL.
@@ -4858,51 +5475,10 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 		// DEPTH_ALIAS parsing removed — depth=2 images are now depth=1 in SPIR-V,
 		// and a single texture_depth_2d variable handles both sampling modes.
 
-		// Remap unsupported 8-bit storage texture format names in WGSL.
-		// r8* and rg8* are not valid base WebGPU storage texel formats — remap to
-		// 32-bit equivalents. With texture-formats-tier1 these formats are valid
-		// natively, so skip the remap to preserve blendable/filterable properties.
-		if (!has_texture_formats_tier1 && _wgsl_has_unsupported_8bit_storage_format(wgsl_str)) {
-			String ws(wgsl_str);
-			ws = ws.replace("rg8unorm", "rg32float");
-			ws = ws.replace("rg8snorm", "rg32float");
-			ws = ws.replace("rg8uint", "rg32uint");
-			ws = ws.replace("rg8sint", "rg32sint");
-			ws = ws.replace("r8unorm", "r32float");
-			ws = ws.replace("r8snorm", "r32float");
-			ws = ws.replace("r8uint", "r32uint");
-			ws = ws.replace("r8sint", "r32sint");
-			free(wgsl_str);
-			CharString cs = ws.utf8();
-			wgsl_str = (char *)malloc(cs.length() + 1);
-			memcpy(wgsl_str, cs.get_data(), cs.length() + 1);
-		}
+		_remap_unsupported_wgsl_storage_formats(wgsl_str);
 
-		// WebGPU only supports a limited set of storage texel formats (see spec §26.1.1).
-		// 16-bit single/dual-channel formats (r16*, rg16*) are NOT valid for storage.
-		// Remap them to 32-bit equivalents. Also handles rgba16snorm/unorm → rgba16float.
-		// Format names only appear in texture_storage_*<format, access> declarations in WGSL.
-		// All replacements preserve string length (in-place memcpy).
-		_wgsl_remap_unsupported_16bit_storage_formats(wgsl_str);
-
-		// WebGPU restriction: storage buffers with read_write access cannot be used in
-		// vertex shaders. Tint generates var<storage, read_write> for any SSBO without
-		// a NonWritable decoration, so demote them there (in-place, same string
-		// length) and let the BGL use ReadOnlyStorage.
-		//
-		// Fragment is deliberately *not* demoted: WebGPU permits read_write storage
-		// there, and the clustered renderer depends on it — cluster_render.glsl marks
-		// clusters with atomicOr from the fragment stage, and a demoted buffer makes
-		// the module fail to parse ("atomic variables in 'storage' address space must
-		// have 'read_write' access mode").
-		if (s.shader_stage == RDD::SHADER_STAGE_VERTEX) {
-			char *q = wgsl_str;
-			while ((q = strstr(q, "var<storage, read_write>")) != nullptr) {
-				// "var<storage, read_write>" = 24 chars → "var<storage, read>      " = 24 chars
-				memcpy(q, "var<storage, read>      ", 24);
-				q += 24;
-			}
-		}
+		// Vertex storage access is validated structurally by tint_wrapper before
+		// WGSL is cached, shared by native/runtime/baking/specialization paths.
 
 		// Chrome doesn't support the 'sized_binding_array' WGSL language feature.
 		// Tint converts GLSL sampler arrays like "sampler2DArray tex[N]" to
@@ -4916,32 +5492,44 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 			int64_t search_from = 0;
 			while (true) {
 				int64_t ba_pos = ws.find(": binding_array<", search_from);
-				if (ba_pos == -1) break;
+				if (ba_pos == -1) {
+					break;
+				}
 				int64_t inner_start = ba_pos + (int64_t)strlen(": binding_array<");
 				int depth = 1;
 				int64_t p = inner_start;
 				int64_t ws_len = (int64_t)ws.length();
 				while (p < ws_len && depth > 0) {
 					char32_t c = ws[p];
-					if (c == '<') depth++;
-					else if (c == '>') depth--;
+					if (c == '<') {
+						depth++;
+					} else if (c == '>') {
+						depth--;
+					}
 					p++;
 				}
 				// ws[inner_start .. p-2] = "TYPE, COUNT"
 				String inner = ws.substr(inner_start, p - 1 - inner_start);
 				int64_t last_comma = inner.rfind(",");
-				if (last_comma == -1) { search_from = p; continue; }
+				if (last_comma == -1) {
+					search_from = p;
+					continue;
+				}
 				String type_part = inner.substr(0, last_comma).strip_edges();
 				{
 					// Extract variable name (identifier immediately before the ':')
 					int64_t name_end = ba_pos;
-					while (name_end > 0 && ws[name_end - 1] == ' ') name_end--;
+					while (name_end > 0 && ws[name_end - 1] == ' ') {
+						name_end--;
+					}
 					int64_t name_start = name_end;
 					while (name_start > 0) {
 						char32_t c = ws[name_start - 1];
-						if (c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))
+						if (c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
 							name_start--;
-						else break;
+						} else {
+							break;
+						}
 					}
 					String var_name = ws.substr(name_start, name_end - name_start);
 					if (!var_name.is_empty()) {
@@ -4961,7 +5549,9 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 				while (true) {
 					String needle = var + "[";
 					int64_t idx_pos = ws.find(needle, search_pos);
-					if (idx_pos == -1) break;
+					if (idx_pos == -1) {
+						break;
+					}
 					// Ensure 'var' is not a suffix of a longer identifier
 					if (idx_pos > 0) {
 						char32_t before = ws[idx_pos - 1];
@@ -4975,8 +5565,11 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 					int depth = 1;
 					int64_t ws_len2 = (int64_t)ws.length();
 					while (p < ws_len2 && depth > 0) {
-						if (ws[p] == '[') depth++;
-						else if (ws[p] == ']') depth--;
+						if (ws[p] == '[') {
+							depth++;
+						} else if (ws[p] == ']') {
+							depth--;
+						}
 						p++;
 					}
 					ws = ws.substr(0, idx_pos) + var + ws.substr(p);
@@ -4989,285 +5582,7 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 			memcpy(wgsl_str, cs.get_data(), cs.length() + 1);
 		}
 
-		// When readonly-and-readwrite-storage-textures is not available, split
-		// read_write storage textures into separate write + read (shadow) bindings.
-		// Safari rejects read_write storage texture access at BGL validation.
-		// The shadow read binding uses the odd slot (B+1) which is free for IMAGE
-		// types due to preprocessing's binding doubling (even=resource, odd=sampler for combined).
-		if (!has_rw_storage_textures && strstr(wgsl_str, "read_write>")) {
-			struct RWSplitInfo {
-				uint32_t grp, bnd;
-				String var_name, dim_type, fmt;
-			};
-			LocalVector<RWSplitInfo> rw_infos;
-
-			// Scan for texture_storage_*<fmt,read_write> declarations.
-			{
-				const char *p = wgsl_str;
-				while ((p = strstr(p, "@group(")) != nullptr) {
-					unsigned int grp = 0, bnd = 0;
-					if (!parse_group_binding(p, grp, bnd)) { p++; continue; }
-					const char *semi = strchr(p, ';');
-					if (!semi) { p++; continue; }
-					const char *rw = _find_before(p, semi, "read_write>");
-					if (!rw) { p = semi; continue; }
-					const char *ts = _find_before(p, semi, "texture_storage_");
-					if (!ts) { p = semi; continue; }
-					// Variable name: "var NAME:"
-					const char *vp = _find_before(p, ts, "var ");
-					if (!vp) { p = semi; continue; }
-					vp += 4;
-					const char *colon = strchr(vp, ':');
-					if (!colon || colon > ts) { p = semi; continue; }
-					const char *ne = colon;
-					while (ne > vp && (*(ne - 1) == ' ' || *(ne - 1) == '\t')) ne--;
-					if (ne <= vp) { p = semi; continue; }
-					// Dim type: texture_storage_Xd
-					const char *lt = strchr(ts, '<');
-					if (!lt || lt > rw) { p = semi; continue; }
-					// Format: between < and , before read_write
-					const char *comma = strchr(lt + 1, ',');
-					if (!comma || comma >= rw) { p = semi; continue; }
-					int fmt_len = (int)(comma - lt - 1);
-					if (fmt_len <= 0 || fmt_len >= 64) { p = semi; continue; }
-
-					RWSplitInfo info;
-					info.grp = grp;
-					info.bnd = bnd;
-					{ char buf[256]; int len = (int)(ne - vp); if (len > 255) len = 255; memcpy(buf, vp, len); buf[len] = '\0'; info.var_name = buf; }
-					{ char buf[256]; int len = (int)(lt - ts); if (len > 255) len = 255; memcpy(buf, ts, len); buf[len] = '\0'; info.dim_type = buf; }
-					{ char buf[64]; if (fmt_len > 63) fmt_len = 63; memcpy(buf, lt + 1, fmt_len); buf[fmt_len] = '\0'; info.fmt = String(buf).strip_edges(); }
-					rw_infos.push_back(info);
-					p = semi;
-				}
-			}
-
-			if (rw_infos.size() > 0) {
-				String ws(wgsl_str);
-				for (const RWSplitInfo &info : rw_infos) {
-					uint32_t shadow_bnd = info.bnd + 1;
-					String shadow_name = info.var_name + "_rw_in";
-
-					// 1. Replace read_write with write in the declaration.
-					ws = ws.replace(
-							info.dim_type + "<" + info.fmt + ",read_write>",
-							info.dim_type + "<" + info.fmt + ",write>");
-					ws = ws.replace(
-							info.dim_type + "<" + info.fmt + ", read_write>",
-							info.dim_type + "<" + info.fmt + ", write>");
-
-					// 2. Insert shadow read binding as a sampled texture (not storage).
-					// ReadOnly storage textures require the readonly-and-readwrite-storage-textures
-					// feature which Firefox lacks. A regular sampled texture works everywhere.
-					String write_pat = info.dim_type + "<" + info.fmt + ",write>;";
-					int64_t wt_pos = ws.find(write_pat);
-					if (wt_pos == -1) {
-						write_pat = info.dim_type + "<" + info.fmt + ", write>;";
-						wt_pos = ws.find(write_pat);
-					}
-					if (wt_pos != -1) {
-						int64_t insert_pos = wt_pos + write_pat.length();
-						// Map texture_storage_Xd → texture_Xd and determine component type.
-						String sampled_dim = info.dim_type.replace("texture_storage_", "texture_");
-						String comp_type = "f32";
-						if (info.fmt.find("uint") != -1) {
-							comp_type = "u32";
-						} else if (info.fmt.find("sint") != -1) {
-							comp_type = "i32";
-						}
-						String shadow_decl = "\n@group(" + itos(info.grp) + ") @binding(" + itos(shadow_bnd) + ") \nvar " + shadow_name + ": " + sampled_dim + "<" + comp_type + ">;";
-						ws = ws.substr(0, insert_pos) + shadow_decl + ws.substr(insert_pos);
-					}
-
-					// 3. Redirect textureLoad to the shadow (not textureStore).
-					ws = ws.replace("textureLoad(" + info.var_name + ",", "textureLoad(" + shadow_name + ",");
-					ws = ws.replace("textureLoad(" + info.var_name + ")", "textureLoad(" + shadow_name + ")");
-
-					// 4. Sampled textures need a mip level parameter in textureLoad.
-					// textureLoad(shadow, coords) → textureLoad(shadow, coords, 0)
-					{
-						String search = "textureLoad(" + shadow_name;
-						int64_t pos = 0;
-						while ((pos = ws.find(search, pos)) != -1) {
-							int64_t paren_start = pos + String("textureLoad").length();
-							int depth = 0;
-							int64_t insert_mip = -1;
-							for (int64_t k = paren_start; k < ws.length(); k++) {
-								if (ws[k] == '(') {
-									depth++;
-								} else if (ws[k] == ')') {
-									depth--;
-									if (depth == 0) {
-										insert_mip = k;
-										break;
-									}
-								}
-							}
-							if (insert_mip != -1) {
-								ws = ws.substr(0, insert_mip) + ", 0" + ws.substr(insert_mip);
-								pos = insert_mip + 3;
-							} else {
-								pos += search.length();
-							}
-						}
-					}
-
-					// Record the split for BGL/bind-group creation.
-					uint32_t key = ((uint32_t)info.grp << 16) | info.bnd;
-					wgsl_rw_storage_splits[key] = shadow_bnd;
-				}
-				// Log the transformed WGSL for debugging.
-				WEBGPU_DIAG({ console.log('[RW-SPLIT] Split ' + $0 + ' read_write storage texture(s)'); },
-						(int)rw_infos.size());
-				print_verbose("WebGPU rw_storage split WGSL:\n" + ws);
-
-				free(wgsl_str);
-				CharString cs = ws.utf8();
-				wgsl_str = (char *)malloc(cs.length() + 1);
-				memcpy(wgsl_str, cs.get_data(), cs.length() + 1);
-			}
-		}
-
-		// When readonly-and-readwrite-storage-textures is not available, convert
-		// read-only storage textures to sampled textures. Firefox/wgpu rejects
-		// texture_storage_*<fmt, read> without the feature.
-		if (!has_rw_storage_textures && (strstr(wgsl_str, ", read>") || strstr(wgsl_str, ",read>"))) {
-			struct ReadOnlyInfo {
-				uint32_t grp, bnd;
-				String var_name, dim_type, fmt;
-			};
-			LocalVector<ReadOnlyInfo> ro_infos;
-
-			// Scan for texture_storage_*<fmt, read> declarations.
-			{
-				const char *p = wgsl_str;
-				while ((p = strstr(p, "@group(")) != nullptr) {
-					unsigned int grp = 0, bnd = 0;
-					if (!parse_group_binding(p, grp, bnd)) { p++; continue; }
-					const char *semi = strchr(p, ';');
-					if (!semi) { p++; continue; }
-					// Look for ", read>" or ",read>" but NOT "read_write>"
-					const char *rd = _find_before(p, semi, ",read>");
-					if (!rd) {
-						rd = _find_before(p, semi, ", read>");
-					}
-					if (!rd) { p = semi; continue; }
-					// Make sure it's not read_write (already handled above).
-					if (rd > wgsl_str && *(rd - 1) == '_') { p = semi; continue; } // part of "read_write"
-					// Check for "read_write>" pattern — skip if found.
-					const char *rw_check = _find_before(p, rd, "read_write>");
-					if (rw_check) { p = semi; continue; }
-
-					const char *ts = _find_before(p, semi, "texture_storage_");
-					if (!ts) { p = semi; continue; }
-					// Variable name: "var NAME:"
-					const char *vp = _find_before(p, ts, "var ");
-					if (!vp) { p = semi; continue; }
-					vp += 4;
-					const char *colon = strchr(vp, ':');
-					if (!colon || colon > ts) { p = semi; continue; }
-					const char *ne = colon;
-					while (ne > vp && (*(ne - 1) == ' ' || *(ne - 1) == '\t')) ne--;
-					if (ne <= vp) { p = semi; continue; }
-					// Dim type: texture_storage_Xd
-					const char *lt = strchr(ts, '<');
-					if (!lt || lt > rd) { p = semi; continue; }
-					// Format: between < and , before read
-					// Note: rd points to ",read>" (includes comma) so comma == rd is expected.
-					// Use > not >= so the format-access separator comma is correctly accepted.
-					const char *comma = strchr(lt + 1, ',');
-					if (!comma || comma > rd) { p = semi; continue; }
-					int fmt_len = (int)(comma - lt - 1);
-					if (fmt_len <= 0 || fmt_len >= 64) { p = semi; continue; }
-
-					ReadOnlyInfo info;
-					info.grp = grp;
-					info.bnd = bnd;
-					{ char buf[256]; int len = (int)(ne - vp); if (len > 255) len = 255; memcpy(buf, vp, len); buf[len] = '\0'; info.var_name = buf; }
-					{ char buf[256]; int len = (int)(lt - ts); if (len > 255) len = 255; memcpy(buf, ts, len); buf[len] = '\0'; info.dim_type = buf; }
-					{ char buf[64]; if (fmt_len > 63) fmt_len = 63; memcpy(buf, lt + 1, fmt_len); buf[fmt_len] = '\0'; info.fmt = String(buf).strip_edges(); }
-					ro_infos.push_back(info);
-					p = semi;
-				}
-			}
-
-			if (ro_infos.size() > 0) {
-				String ws(wgsl_str);
-				for (const ReadOnlyInfo &info : ro_infos) {
-					// Map texture_storage_Xd → texture_Xd and determine component type.
-					String sampled_dim = info.dim_type.replace("texture_storage_", "texture_");
-					String comp_type = "f32";
-					if (info.fmt.find("uint") != -1) {
-						comp_type = "u32";
-					} else if (info.fmt.find("sint") != -1) {
-						comp_type = "i32";
-					}
-
-					// Replace the full declaration:
-					//   texture_storage_Xd<fmt, read> → texture_Xd<comp_type>
-					// Try both spacing variants.
-					String old_decl = info.dim_type + "<" + info.fmt + ", read>";
-					String new_decl = sampled_dim + "<" + comp_type + ">";
-					ws = ws.replace(old_decl, new_decl);
-					old_decl = info.dim_type + "<" + info.fmt + ",read>";
-					ws = ws.replace(old_decl, new_decl);
-
-					// Add mip level parameter to textureLoad calls for this variable.
-					// textureLoad(var, coords) → textureLoad(var, coords, 0)
-					{
-						String search = "textureLoad(" + info.var_name;
-						int64_t pos = 0;
-						while ((pos = ws.find(search, pos)) != -1) {
-							int64_t paren_start = pos + String("textureLoad").length();
-							int depth = 0;
-							int64_t insert_mip = -1;
-							for (int64_t k = paren_start; k < ws.length(); k++) {
-								if (ws[k] == '(') {
-									depth++;
-								} else if (ws[k] == ')') {
-									depth--;
-									if (depth == 0) {
-										insert_mip = k;
-										break;
-									}
-								}
-							}
-							if (insert_mip != -1) {
-								ws = ws.substr(0, insert_mip) + ", 0" + ws.substr(insert_mip);
-								pos = insert_mip + 3;
-							} else {
-								pos += search.length();
-							}
-						}
-					}
-
-					// Record the conversion for BGL creation and populate the
-					// format map so the BGL entry gets the correct sample type.
-					// The WGSL declaration is about to be removed, so the later
-					// format-scanning pass won't find it — we must record it now.
-					uint32_t key = ((uint32_t)info.grp << 16) | info.bnd;
-					wgsl_read_storage_to_sampled.insert(key);
-					{
-						const CharString fmt_cs = info.fmt.utf8();
-						const char *fmt_name = fmt_cs.get_data();
-						WGPUTextureFormat tf = _wgsl_storage_format_from_name(fmt_name, fmt_name + fmt_cs.length());
-						if (tf == WGPUTextureFormat_Undefined) {
-							WARN_PRINT(vformat("WebGPU: unrecognised WGSL storage texture format '%s' - the bind group layout cannot match the shader.", info.fmt));
-							tf = WGPUTextureFormat_RGBA8Unorm;
-						}
-						wgsl_storage_tex_format[key] = tf;
-					}
-				}
-				WEBGPU_DIAG({ console.log('[READ-CONVERT] Converted ' + $0 + ' read-only storage texture(s) to sampled'); },
-					(int)ro_infos.size());
-				print_verbose("WebGPU read_storage→sampled WGSL:\n" + ws);
-
-				free(wgsl_str);
-				CharString cs = ws.utf8();
-				wgsl_str = (char *)malloc(cs.length() + 1);
-				memcpy(wgsl_str, cs.get_data(), cs.length() + 1);
-			}
-		}
+		_lower_storage_texture_access(wgsl_str, shader->storage_texture_access, &wgsl_rw_storage_splits, &wgsl_read_storage_to_sampled, &wgsl_storage_tex_format);
 
 		// Reuse the known extent for metadata scans and the WebGPU bridge. With
 		// WGPU_STRLEN emdawnwebgpu scans every byte again in JavaScript before
@@ -5307,7 +5622,10 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 					// This avoids matching "sampler" in variable names like "shadow_sampler".
 					const char *colon = strchr(p, ':');
 					const char *semi = strchr(p, ';');
-					if (!semi) { p++; continue; }
+					if (!semi) {
+						p++;
+						continue;
+					}
 					const char *type_start = colon && colon < semi ? colon + 1 : p;
 					const char *limit = semi; // scan up to the semicolon
 
@@ -5315,9 +5633,18 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 					const char *tp = nullptr;
 					const char *sp = nullptr; // sampler type position
 					while (fwd < limit && *fwd) {
-						if (!tp && strncmp(fwd, "texture_", 8) == 0) { tp = fwd; break; }
-						if (!sp && strncmp(fwd, "sampler_comparison", 18) == 0) { sp = fwd; break; }
-						if (!sp && strncmp(fwd, "sampler", 7) == 0 && fwd[7] != '_') { sp = fwd; break; }
+						if (!tp && strncmp(fwd, "texture_", 8) == 0) {
+							tp = fwd;
+							break;
+						}
+						if (!sp && strncmp(fwd, "sampler_comparison", 18) == 0) {
+							sp = fwd;
+							break;
+						}
+						if (!sp && strncmp(fwd, "sampler", 7) == 0 && fwd[7] != '_') {
+							sp = fwd;
+							break;
+						}
 						fwd++;
 					}
 					// Check for comparison sampler (sampler_comparison type).
@@ -5402,12 +5729,17 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 								const char *gt = strchr(name_start, '>');
 								if (gt && gt < semi) {
 									name_start = gt + 1;
-									while (name_start < semi && *name_start == ' ') { name_start++; }
+									while (name_start < semi && *name_start == ' ') {
+										name_start++;
+									}
 								}
 							}
 							int name_len = 0;
 							const char *nc = name_start;
-							while (nc < semi && *nc != ':' && *nc != ' ') { nc++; name_len++; }
+							while (nc < semi && *nc != ':' && *nc != ' ') {
+								nc++;
+								name_len++;
+							}
 							if (name_len > 12) { // "_depth_alias" is 12 chars
 								const char *suffix = name_start + name_len - 12;
 								if (strncmp(suffix, "_depth_alias", 12) == 0) {
@@ -5431,18 +5763,32 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 		// Firefox/wgpu enforces Metal's limit of 8 storage buffers per shader stage.
 		{
 			WGPUShaderStage current_wgpu_stage = WGPUShaderStage_None;
-			if (s.shader_stage == RDD::SHADER_STAGE_VERTEX) { current_wgpu_stage = WGPUShaderStage_Vertex; }
-			else if (s.shader_stage == RDD::SHADER_STAGE_FRAGMENT) { current_wgpu_stage = WGPUShaderStage_Fragment; }
-			else if (s.shader_stage == RDD::SHADER_STAGE_COMPUTE) { current_wgpu_stage = WGPUShaderStage_Compute; }
+			if (s.shader_stage == RDD::SHADER_STAGE_VERTEX) {
+				current_wgpu_stage = WGPUShaderStage_Vertex;
+			} else if (s.shader_stage == RDD::SHADER_STAGE_FRAGMENT) {
+				current_wgpu_stage = WGPUShaderStage_Fragment;
+			} else if (s.shader_stage == RDD::SHADER_STAGE_COMPUTE) {
+				current_wgpu_stage = WGPUShaderStage_Compute;
+			}
 
 			const char *p = wgsl_str;
 			while (strncmp(p, "//SSBO_USED:", 12) == 0) {
 				p += 12;
 				uint32_t group = 0, binding = 0;
-				while (*p >= '0' && *p <= '9') { group = group * 10 + (*p - '0'); p++; }
-				if (*p == ',') { p++; }
-				while (*p >= '0' && *p <= '9') { binding = binding * 10 + (*p - '0'); p++; }
-				while (*p == '\n' || *p == '\r') { p++; }
+				while (*p >= '0' && *p <= '9') {
+					group = group * 10 + (*p - '0');
+					p++;
+				}
+				if (*p == ',') {
+					p++;
+				}
+				while (*p >= '0' && *p <= '9') {
+					binding = binding * 10 + (*p - '0');
+					p++;
+				}
+				while (*p == '\n' || *p == '\r') {
+					p++;
+				}
 
 				uint32_t key = (group << 16) | binding;
 				if (wgsl_buffer_stages.has(key)) {
@@ -5514,17 +5860,23 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 									// run the name scan off the end of the WGSL buffer.
 									WGPUTextureFormat tf = _wgsl_storage_format_from_name(fmt, limit);
 									if (tf == WGPUTextureFormat_Undefined) {
-										WARN_PRINT(vformat("WebGPU: unrecognised WGSL storage texture format '%s' - the bind group layout cannot match the shader.", String::utf8(fmt, (int)MIN((size_t)32, (size_t)(comma - fmt)))));
+										WARN_PRINT(vformat("WebGPU: unrecognized WGSL storage texture format '%s' - the bind group layout cannot match the shader.", String::utf8(fmt, (int)MIN((size_t)32, (size_t)(comma - fmt)))));
 										tf = WGPUTextureFormat_RGBA8Unorm;
 									}
 									wgsl_storage_tex_format[key] = tf;
 									// Parse access mode (after comma, skip space)
 									const char *acc = comma + 1;
-									while (*acc == ' ') acc++;
+									while (*acc == ' ') {
+										acc++;
+									}
 									WGPUStorageTextureAccess access = WGPUStorageTextureAccess_Undefined;
-									if (strncmp(acc, "read_write>", 11) == 0) access = WGPUStorageTextureAccess_ReadWrite;
-									else if (strncmp(acc, "write>", 6) == 0) access = WGPUStorageTextureAccess_WriteOnly;
-									else if (strncmp(acc, "read>", 5) == 0) access = WGPUStorageTextureAccess_ReadOnly;
+									if (strncmp(acc, "read_write>", 11) == 0) {
+										access = WGPUStorageTextureAccess_ReadWrite;
+									} else if (strncmp(acc, "write>", 6) == 0) {
+										access = WGPUStorageTextureAccess_WriteOnly;
+									} else if (strncmp(acc, "read>", 5) == 0) {
+										access = WGPUStorageTextureAccess_ReadOnly;
+									}
 									if (access != WGPUStorageTextureAccess_Undefined) {
 										wgsl_storage_tex_access[key] = access;
 									}
@@ -5559,12 +5911,18 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 					detected_override_declarations = true;
 					// Extract variable name: skip ") override " then read name up to ":".
 					const char *p = scan + 1; // skip ')'
-					while (*p == ' ' || *p == '\t' || *p == '\n') p++;
+					while (*p == ' ' || *p == '\t' || *p == '\n') {
+						p++;
+					}
 					if (strncmp(p, "override", 8) == 0) {
 						p += 8;
-						while (*p == ' ' || *p == '\t') p++;
+						while (*p == ' ' || *p == '\t') {
+							p++;
+						}
 						const char *name_start = p;
-						while (*p != ':' && *p != '\0' && *p != ' ' && *p != '\n') p++;
+						while (*p != ':' && *p != '\0' && *p != ' ' && *p != '\n') {
+							p++;
+						}
 						int name_len = (int)(p - name_start);
 						if (name_len > 0 && name_len < 256) {
 							// Copy the variable name to a null-terminated buffer for strstr.
@@ -5574,7 +5932,9 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 							// Check if this variable name is referenced beyond its declaration.
 							// Search from after the declaration line (past the ';').
 							const char *decl_end = p;
-							while (*decl_end && *decl_end != '\n') decl_end++;
+							while (*decl_end && *decl_end != '\n') {
+								decl_end++;
+							}
 							bool found_usage = false;
 							const char *search = decl_end;
 							while ((search = _find_before(search, wgsl_end, name_buf)) != nullptr) {
@@ -5609,6 +5969,7 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 		if (s.shader_stage < 6) {
 			// Share the translation cache's UTF-8 storage when device-specific
 			// rewrites left it unchanged. Otherwise retain the rewritten source.
+			MutexLock lock(_wgsl_cache_mutex);
 			const CharString *cached = _spv_to_wgsl_cache.getptr(spv_hash);
 			if (cached && (size_t)cached->length() == wgsl_length && memcmp(cached->get_data(), wgsl_str, wgsl_length) == 0) {
 				shader->stage_wgsl[s.shader_stage] = *cached;
@@ -5619,15 +5980,21 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 		free(wgsl_str);
 	}
 
-	shader->has_override_declarations = detected_override_declarations;
-	if (detected_override_declarations || shader_refl.specialization_constants.is_empty()) {
-		// Pipeline constants specialize WGSL directly. Only the fallback path
-		// needs raw SPIR-V; keeping it for every Forward+ variant retains a
-		// second, decompressed copy of the shader cache throughout gameplay.
-		for (PackedByteArray &spirv : shader->stage_spirv) {
-			spirv.clear();
+	// Snapshot refresh is implemented at compute dispatch boundaries. Giving a
+	// graphics stage access to a split image would otherwise validate while
+	// reading an uninitialized shadow. Reject only reachable graphics splits;
+	// native read/write formats and readonly sampled conversions remain valid.
+	for (const KeyValue<uint32_t, uint32_t> &split : wgsl_rw_storage_splits) {
+		const uint32_t godot_key = (split.key & 0xffff0000) | ((split.key & 0xffff) / 2);
+		const uint32_t *stages = godot_binding_stages.getptr(godot_key);
+		if (stages && (*stages & (WGPUShaderStage_Vertex | WGPUShaderStage_Fragment))) {
+			error_text = vformat("WebGPU: split read/write storage textures require a compute stage (shader '%s', set %d binding %d).", shader->name, godot_key >> 16, godot_key & 0xffff);
+			break;
 		}
 	}
+
+	shader->has_override_declarations = detected_override_declarations;
+
 	if (detected_override_declarations) {
 		print_verbose(vformat("WebGPU: shader '%s' has override declarations — will use pipeline constants for specialization.", shader->name));
 	}
@@ -5639,612 +6006,709 @@ bool RenderingDeviceDriverWebGPU::_ensure_shader_layout(WGShader *shader) {
 	{ // Block scope: variables here (LocalVector, String) have non-trivial
 	  // destructors and must not be jumped over by goto.
 
-	// --- Build WGPUBindGroupLayout for each descriptor set ---
-	const uint32_t set_count = (uint32_t)shader_refl.uniform_sets.size();
-	shader->bind_group_infos.resize(set_count);
-	shader->bind_group_layouts.resize(set_count);
+		// --- Build WGPUBindGroupLayout for each descriptor set ---
+		const uint32_t set_count = (uint32_t)shader_refl.uniform_sets.size();
+		shader->bind_group_infos.resize(set_count);
+		shader->bind_group_layouts.resize(set_count);
 
-	for (uint32_t set = 0; set < set_count; set++) {
-		const Vector<RenderingDeviceCommons::ShaderUniform> &set_uniforms = shader_refl.uniform_sets[set];
+		for (uint32_t set = 0; set < set_count; set++) {
+			const Vector<RenderingDeviceCommons::ShaderUniform> &set_uniforms = shader_refl.uniform_sets[set];
 
-		// Count entries — combined sampler+texture expands to 2 entries each.
-		uint32_t entry_count = 0;
-		for (int i = 0; i < set_uniforms.size(); i++) {
-			if (set_uniforms[i].type == RDD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE) {
-				entry_count += 2; // Sampler + texture.
-			} else {
-				entry_count += 1;
+			// Count entries — combined sampler+texture expands to 2 entries each.
+			uint32_t entry_count = 0;
+			for (int i = 0; i < set_uniforms.size(); i++) {
+				if (set_uniforms[i].type == RDD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE) {
+					entry_count += 2; // Sampler + texture.
+				} else {
+					entry_count += 1;
+				}
+			}
+
+			LocalVector<WGPUBindGroupLayoutEntry> entries;
+			entries.resize(entry_count);
+
+			WGShader::BindGroupInfo &bgi = shader->bind_group_infos[set];
+			bgi.entries.resize(set_uniforms.size());
+
+			uint32_t e_idx = 0;
+			for (int u_idx = 0; u_idx < set_uniforms.size(); u_idx++) {
+				const RenderingDeviceCommons::ShaderUniform &u = set_uniforms[u_idx];
+				WGShader::BindGroupEntry &bge = bgi.entries[u_idx];
+				// Reflection says which stages *mention* a uniform; the WGSL says which
+				// stages can actually reach it. Prefer the latter: WebGPU enforces
+				// per-stage resource limits (16 samplers), and marking every binding
+				// visible to both stages busts them on Godot's scene shader. Falls back
+				// to reflection for anything not seen in the WGSL (e.g. bindings the
+				// driver injects itself).
+				auto vis_for = [&](uint32_t p_wgsl_binding) -> WGPUShaderStage {
+					// The SPIR-V analysis is in Godot's binding numbers; the WGSL ones
+					// are doubled by split_combined_samplers.
+					uint32_t godot_key = ((uint32_t)set << 16) | (p_wgsl_binding / 2);
+					if (any_stage_analyzed) {
+						const uint32_t *mask = godot_binding_stages.getptr(godot_key);
+						// Absent means no stage of any specialization mentions it, so it
+						// needs a layout entry but no visibility - which is what keeps
+						// the aliased samplers off the per-stage budget.
+						return mask ? (WGPUShaderStage)*mask : WGPUShaderStage_None;
+					}
+
+					uint32_t key = ((uint32_t)set << 16) | p_wgsl_binding;
+					if (wgsl_binding_stages.has(key)) {
+						return (WGPUShaderStage)wgsl_binding_stages[key];
+					}
+					if (wgsl_unused_bindings.has(key)) {
+						// Preprocessing aliased this one away, so no stage can reach it.
+						return WGPUShaderStage_None;
+					}
+					// Absent from every stage's WGSL. That usually means unused, but a
+					// specialized module built later can declare bindings the base module
+					// did not, so hiding it is only safe where it buys something: WebGPU's
+					// tight per-stage budgets are samplers (16) and storage buffers (10),
+					// both of which Godot's scene shader busts. Textures and uniform
+					// buffers have room to spare (48 and 12), so those keep reflection's
+					// answer and stay compatible with specialized modules.
+					const bool tight_budget = u.type == RDD::UNIFORM_TYPE_SAMPLER ||
+							u.type == RDD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE ||
+							u.type == RDD::UNIFORM_TYPE_STORAGE_BUFFER;
+					if (tight_budget) {
+						return WGPUShaderStage_None;
+					}
+					return _stages_to_wgpu_visibility((uint32_t)u.stages);
+				};
+				// Prefer the SPIR-V image type over what the translated module declared:
+				// a binding the base module pruned has no declaration to read, and
+				// guessing 2D is how a 3D colour-correction LUT ended up rejected.
+				auto spirv_dim_for = [&](WGPUTextureViewDimension p_fallback, bool *r_multisampled) -> WGPUTextureViewDimension {
+					const spirv_preprocess::ImageBindingInfo *info =
+							godot_binding_images.getptr(((uint32_t)set << 16) | u.binding);
+					if (!info) {
+						return p_fallback;
+					}
+					if (r_multisampled && info->multisampled) {
+						*r_multisampled = true;
+					}
+					switch (info->dim) {
+						case 0:
+							return WGPUTextureViewDimension_1D;
+						case 1:
+							return info->arrayed ? WGPUTextureViewDimension_2DArray : WGPUTextureViewDimension_2D;
+						case 2:
+							return WGPUTextureViewDimension_3D;
+						case 3:
+							return info->arrayed ? WGPUTextureViewDimension_CubeArray : WGPUTextureViewDimension_Cube;
+						default:
+							return p_fallback;
+					}
+				};
+
+				auto storage_format_for = [&](uint32_t p_key) -> WGPUTextureFormat {
+					if (const WGPUTextureFormat *format = wgsl_storage_tex_format.getptr(p_key)) {
+						return *format;
+					}
+					const uint32_t key = ((uint32_t)set << 16) | u.binding;
+					const spirv_preprocess::ImageBindingInfo *info = godot_binding_images.getptr(key);
+					if ((!info || info->format == 0) && !source_image_formats_loaded) {
+						// Cached analysis v1 omits the image format. Recover it only
+						// for a storage declaration Tint removed.
+						for (const Vector<uint8_t> &raw : shader->stage_spirv) {
+							spirv_preprocess::binding_image_info(raw, &godot_binding_images);
+						}
+						source_image_formats_loaded = true;
+						info = godot_binding_images.getptr(key);
+					}
+					return info ? _promote_storage_format(_spirv_storage_format(info->format)) : WGPUTextureFormat_Undefined;
+				};
+
+				auto sampled_type_for = [&](uint32_t p_key, bool p_depth, bool p_multisampled) -> WGPUTextureSampleType {
+					if (!wgsl_tex_sample_types.has(p_key)) {
+						const uint32_t key = ((uint32_t)set << 16) | u.binding;
+						const spirv_preprocess::ImageBindingInfo *info = godot_binding_images.getptr(key);
+						if ((!info || info->sampled_type == UINT32_MAX) && !source_image_formats_loaded) {
+							// A pruned texture has no WGSL type. Cached analysis v1
+							// omits its scalar type, so recover that contract from source.
+							for (const Vector<uint8_t> &raw : shader->stage_spirv) {
+								spirv_preprocess::binding_image_info(raw, &godot_binding_images);
+							}
+							source_image_formats_loaded = true;
+							info = godot_binding_images.getptr(key);
+						}
+						if (info) {
+							if (info->sampled_type == 1) {
+								return WGPUTextureSampleType_Sint;
+							}
+							if (info->sampled_type == 2) {
+								return WGPUTextureSampleType_Uint;
+							}
+							p_depth |= info->depth == 1;
+						}
+					}
+					const uint32_t source_key = ((uint32_t)set << 16) | u.binding;
+					const bool filtering = !sampled_usage_analyzed.has(source_key) || sampled_usage_filtering.has(source_key);
+					return _resolve_texture_sample_type(wgsl_tex_sample_types, p_key, p_depth, p_multisampled, filtering);
+				};
+
+				WGPUShaderStage vis = vis_for(u.binding * 2);
+
+				bge.godot_type = u.type;
+
+				switch (u.type) {
+					case RDD::UNIFORM_TYPE_SAMPLER: {
+						WGPUBindGroupLayoutEntry &entry = entries[e_idx++];
+						entry = {};
+						entry.binding = u.binding * 2; // Preprocessing doubles all non-combined bindings.
+						entry.visibility = vis;
+						// FLATTEN-BA pass removes all binding_array<T,N> from WGSL,
+						// so layout entries are always non-array (no bindingArraySize).
+						{
+							uint32_t k = ((uint32_t)set << 16) | (u.binding * 2);
+							entry.sampler.type = (wgsl_is_comparison_sampler.has(k) && wgsl_is_comparison_sampler[k])
+									? WGPUSamplerBindingType_Comparison
+									: (wgsl_depth_paired_samplers.has(k) ? WGPUSamplerBindingType_NonFiltering
+																		 : WGPUSamplerBindingType_Filtering);
+						}
+						bge.layout_entry = entry;
+						bge.array_length = 1;
+					} break;
+
+					case RDD::UNIFORM_TYPE_TEXTURE:
+					case RDD::UNIFORM_TYPE_INPUT_ATTACHMENT: {
+						WGPUBindGroupLayoutEntry &entry = entries[e_idx++];
+						entry = {};
+						entry.binding = u.binding * 2; // Preprocessing doubles all non-combined bindings.
+						entry.visibility = vis;
+						// FLATTEN-BA pass removes all binding_array<T,N> from WGSL,
+						// so layout entries are always non-array (no bindingArraySize).
+						{
+							uint32_t k = ((uint32_t)set << 16) | (u.binding * 2);
+							bool is_ms = wgsl_is_multisampled_texture.has(k) && wgsl_is_multisampled_texture[k];
+							bool is_depth = wgsl_is_depth_texture.has(k) && wgsl_is_depth_texture[k];
+							// Resolve the dimension first: it can also discover that the
+							// texture is multisampled, which changes the sample type below.
+							entry.texture.viewDimension = spirv_dim_for(
+									wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D, &is_ms);
+							entry.texture.sampleType = sampled_type_for(k, is_depth, is_ms);
+							entry.texture.multisampled = is_ms;
+						}
+						bge.layout_entry = entry;
+						bge.array_length = 1;
+					} break;
+
+					case RDD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE: {
+						// Combined sampler+texture split by our SPIR-V preprocessor:
+						// Sampler at binding*2+0, texture at binding*2+1 in the modified SPIR-V → matches Tint WGSL output.
+						//
+						// Exception: a multisampled combined sampler has no sampler in WGSL at
+						// all. MSAA textures can only be textureLoad'ed, so the preprocessor
+						// emits a single bare texture at the sampler's own slot. Declaring a
+						// sampler there regardless makes the layout contradict the shader
+						// ("Binding type in the shader (texture) doesn't match the type in the
+						// layout (sampler)") and every pipeline using the set is born invalid.
+						{
+							const uint32_t samp_k = ((uint32_t)set << 16) | (u.binding * 2 + 0);
+							if (wgsl_tex_dims.has(samp_k) || wgsl_is_multisampled_texture.has(samp_k)) {
+								WGPUBindGroupLayoutEntry &only_entry = entries[e_idx++];
+								only_entry = {};
+								only_entry.binding = u.binding * 2 + 0;
+								only_entry.visibility = vis_for(u.binding * 2 + 0);
+								bool is_ms = wgsl_is_multisampled_texture.has(samp_k) && wgsl_is_multisampled_texture[samp_k];
+								const bool is_depth = wgsl_is_depth_texture.has(samp_k) && wgsl_is_depth_texture[samp_k];
+								only_entry.texture.viewDimension = spirv_dim_for(
+										wgsl_tex_dims.has(samp_k) ? wgsl_tex_dims[samp_k] : WGPUTextureViewDimension_2D, &is_ms);
+								only_entry.texture.sampleType = sampled_type_for(samp_k, is_depth, is_ms);
+								only_entry.texture.multisampled = is_ms;
+								bge.layout_entry = only_entry;
+								bge.combined_collapsed_to_texture = true;
+								bge.array_length = 1;
+								break;
+							}
+						}
+
+						WGPUBindGroupLayoutEntry &samp_entry = entries[e_idx++];
+						samp_entry = {};
+						samp_entry.binding = u.binding * 2 + 0;
+						samp_entry.visibility = vis_for(u.binding * 2 + 0);
+						{
+							uint32_t k = ((uint32_t)set << 16) | (u.binding * 2 + 0);
+							samp_entry.sampler.type = (wgsl_is_comparison_sampler.has(k) && wgsl_is_comparison_sampler[k])
+									? WGPUSamplerBindingType_Comparison
+									: (wgsl_depth_paired_samplers.has(k) ? WGPUSamplerBindingType_NonFiltering
+																		 : WGPUSamplerBindingType_Filtering);
+						}
+
+						WGPUBindGroupLayoutEntry &tex_entry = entries[e_idx++];
+						tex_entry = {};
+						tex_entry.binding = u.binding * 2 + 1;
+						tex_entry.visibility = vis_for(u.binding * 2 + 1);
+						{
+							uint32_t k = ((uint32_t)set << 16) | (u.binding * 2 + 1);
+							bool is_ms = wgsl_is_multisampled_texture.has(k) && wgsl_is_multisampled_texture[k];
+							bool is_depth = wgsl_is_depth_texture.has(k) && wgsl_is_depth_texture[k];
+							// Dimension first: it can also reveal a multisampled texture,
+							// which changes the sample type below.
+							tex_entry.texture.viewDimension = spirv_dim_for(
+									wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D, &is_ms);
+							tex_entry.texture.sampleType = sampled_type_for(k, is_depth, is_ms);
+							tex_entry.texture.multisampled = is_ms;
+							// Keep the unused sampler half compatible with an exact-fetch
+							// texture contract, including a Godot-provided linear sampler.
+							if (tex_entry.texture.sampleType == WGPUTextureSampleType_UnfilterableFloat) {
+								samp_entry.sampler.type = WGPUSamplerBindingType_NonFiltering;
+							}
+						}
+
+						bge.layout_entry = tex_entry; // Store texture entry as the primary.
+						// Keep the sampler half's declared type: it is not recoverable from
+						// layout_entry, and uniform_set_create needs it to pick a compatible sampler.
+						bge.combined_sampler_type = samp_entry.sampler.type;
+					} break;
+
+					case RDD::UNIFORM_TYPE_IMAGE: {
+						WGPUBindGroupLayoutEntry &entry = entries[e_idx++];
+						entry = {};
+						entry.binding = u.binding * 2; // Preprocessing doubles all non-combined bindings.
+						entry.visibility = vis;
+						uint32_t k = ((uint32_t)set << 16) | (u.binding * 2);
+						if (wgsl_read_storage_to_sampled.has(k)) {
+							// Read-only storage texture was converted to sampled texture_2d.
+							// Create a sampled texture BGL entry instead of storage.
+							WGPUTextureFormat fmt = storage_format_for(k);
+							if (fmt == WGPUTextureFormat_Undefined) {
+								error_text = vformat("WebGPU: missing storage format for set %d binding %d in %s.", set, u.binding, shader->name);
+								goto cleanup;
+							}
+							entry.texture.sampleType = _resolve_storage_sampled_type(wgsl_tex_sample_types, k, fmt);
+							entry.texture.viewDimension = spirv_dim_for(
+									wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D, nullptr);
+							entry.texture.multisampled = false;
+						} else {
+							WGPUTextureFormat fmt = storage_format_for(k);
+							if (fmt == WGPUTextureFormat_Undefined) {
+								error_text = vformat("WebGPU: missing storage format for set %d binding %d in %s.", set, u.binding, shader->name);
+								goto cleanup;
+							}
+							WGPUStorageTextureAccess access = wgsl_storage_tex_access.has(k)
+									? wgsl_storage_tex_access[k]
+									: (u.writable || vis == WGPUShaderStage_None ? WGPUStorageTextureAccess_WriteOnly : WGPUStorageTextureAccess_ReadOnly);
+							entry.storageTexture.access = access;
+							entry.storageTexture.format = fmt;
+							entry.storageTexture.viewDimension = spirv_dim_for(
+									wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D, nullptr);
+						}
+						bge.layout_entry = entry;
+					} break;
+
+					case RDD::UNIFORM_TYPE_UNIFORM_BUFFER: {
+						WGPUBindGroupLayoutEntry &entry = entries[e_idx++];
+						entry = {};
+						entry.binding = u.binding * 2; // Preprocessing doubles all non-combined bindings.
+						entry.visibility = vis;
+						entry.buffer.type = WGPUBufferBindingType_Uniform;
+						entry.buffer.hasDynamicOffset = false;
+						entry.buffer.minBindingSize = 0;
+						bge.layout_entry = entry;
+					} break;
+
+					case RDD::UNIFORM_TYPE_STORAGE_BUFFER: {
+						WGPUBindGroupLayoutEntry &entry = entries[e_idx++];
+						entry = {};
+						entry.binding = u.binding * 2; // Preprocessing doubles all non-combined bindings.
+						entry.visibility = vis;
+						uint32_t k = ((uint32_t)set << 16) | (u.binding * 2);
+						// Check if WGSL scan shows this is actually a storage texture.
+						if (wgsl_storage_tex_format.has(k)) {
+							WGPUTextureFormat fmt = wgsl_storage_tex_format[k];
+							WGPUStorageTextureAccess access = wgsl_storage_tex_access.has(k)
+									? wgsl_storage_tex_access[k]
+									: (u.writable ? WGPUStorageTextureAccess_WriteOnly : WGPUStorageTextureAccess_ReadOnly);
+							entry.storageTexture.access = access;
+							entry.storageTexture.format = fmt;
+							entry.storageTexture.viewDimension = wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D;
+
+						} else if (wgsl_is_uniform.has(k) && wgsl_is_uniform[k]) {
+							// Tint emitted var<uniform> for this binding.
+							entry.buffer.type = WGPUBufferBindingType_Uniform;
+						} else {
+							bool is_readonly = wgsl_ssbo_readonly.has(k) ? wgsl_ssbo_readonly[k] : !u.writable;
+							entry.buffer.type = is_readonly ? WGPUBufferBindingType_ReadOnlyStorage : WGPUBufferBindingType_Storage;
+							// Use per-stage visibility from Tint metadata for storage buffers.
+							// Firefox/wgpu enforces Metal's limit of 8 storage buffers per shader stage.
+							if (wgsl_buffer_stages.has(k)) {
+								entry.visibility = (WGPUShaderStage)wgsl_buffer_stages[k];
+							} else if (!wgsl_buffer_stages.is_empty()) {
+								// Buffer is declared in SPIR-V but not used by any entry point.
+								// Set visibility to None — doesn't count against any stage's limit.
+								entry.visibility = (WGPUShaderStage)0;
+							}
+						}
+						bge.layout_entry = entry;
+					} break;
+
+					// Task 7.5: Dynamic variants — hasDynamicOffset=true allows the
+					// bind group to be set with per-frame offsets via wgpuRenderPassEncoderSetBindGroup.
+					case RDD::UNIFORM_TYPE_UNIFORM_BUFFER_DYNAMIC: {
+						WGPUBindGroupLayoutEntry &entry = entries[e_idx++];
+						entry = {};
+						entry.binding = u.binding * 2; // Preprocessing doubles all non-combined bindings.
+						entry.visibility = vis;
+						entry.buffer.type = WGPUBufferBindingType_Uniform;
+						entry.buffer.hasDynamicOffset = true;
+						entry.buffer.minBindingSize = 0;
+						bge.layout_entry = entry;
+					} break;
+
+					case RDD::UNIFORM_TYPE_STORAGE_BUFFER_DYNAMIC: {
+						WGPUBindGroupLayoutEntry &entry = entries[e_idx++];
+						entry = {};
+						entry.binding = u.binding * 2; // Preprocessing doubles all non-combined bindings.
+						entry.visibility = vis;
+						bool is_storage_tex = false;
+						{
+							uint32_t k = ((uint32_t)set << 16) | (u.binding * 2);
+							if (wgsl_storage_tex_format.has(k)) {
+								is_storage_tex = true;
+								WGPUTextureFormat fmt = wgsl_storage_tex_format[k];
+								WGPUStorageTextureAccess access = wgsl_storage_tex_access.has(k)
+										? wgsl_storage_tex_access[k]
+										: (u.writable ? WGPUStorageTextureAccess_WriteOnly : WGPUStorageTextureAccess_ReadOnly);
+								entry.storageTexture.access = access;
+								entry.storageTexture.format = fmt;
+								entry.storageTexture.viewDimension = wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D;
+							} else if (wgsl_is_uniform.has(k) && wgsl_is_uniform[k]) {
+								entry.buffer.type = WGPUBufferBindingType_Uniform;
+							} else {
+								bool is_readonly = wgsl_ssbo_readonly.has(k) ? wgsl_ssbo_readonly[k] : !u.writable;
+								entry.buffer.type = is_readonly ? WGPUBufferBindingType_ReadOnlyStorage : WGPUBufferBindingType_Storage;
+								// Use per-stage visibility from Tint metadata (see UNIFORM_TYPE_STORAGE_BUFFER above).
+								if (wgsl_buffer_stages.has(k)) {
+									entry.visibility = (WGPUShaderStage)wgsl_buffer_stages[k];
+								} else if (!wgsl_buffer_stages.is_empty()) {
+									entry.visibility = (WGPUShaderStage)0;
+								}
+							}
+						}
+						// Only buffer bindings support dynamic offsets; storage textures must not set it.
+						entry.buffer.hasDynamicOffset = !is_storage_tex;
+						entry.buffer.minBindingSize = 0;
+						bge.layout_entry = entry;
+					} break;
+
+					// WebGPU has no texel buffers (TBOs); emulate as uniform or storage buffers based on WGSL.
+					case RDD::UNIFORM_TYPE_TEXTURE_BUFFER:
+					case RDD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE_BUFFER: {
+						WGPUBindGroupLayoutEntry &entry = entries[e_idx++];
+						entry = {};
+						entry.binding = u.binding * 2; // Preprocessing doubles all non-combined bindings.
+						entry.visibility = vis;
+						// Tint may convert TBOs to var<uniform> or var<storage,read> depending on usage.
+						{
+							uint32_t k = ((uint32_t)set << 16) | (u.binding * 2);
+							if (wgsl_is_uniform.has(k) && wgsl_is_uniform[k]) {
+								entry.buffer.type = WGPUBufferBindingType_Uniform;
+							} else if (wgsl_ssbo_readonly.has(k)) {
+								entry.buffer.type = wgsl_ssbo_readonly[k] ? WGPUBufferBindingType_ReadOnlyStorage : WGPUBufferBindingType_Storage;
+							} else {
+								entry.buffer.type = WGPUBufferBindingType_ReadOnlyStorage; // default fallback
+							}
+						}
+						entry.buffer.hasDynamicOffset = false;
+						entry.buffer.minBindingSize = 0;
+						bge.layout_entry = entry;
+					} break;
+
+					case RDD::UNIFORM_TYPE_IMAGE_BUFFER: {
+						WGPUBindGroupLayoutEntry &entry = entries[e_idx++];
+						entry = {};
+						entry.binding = u.binding * 2; // Preprocessing doubles all non-combined bindings.
+						entry.visibility = vis;
+						uint32_t k = ((uint32_t)set << 16) | (u.binding * 2);
+						// Tint may convert image buffers to texture_storage_*.
+						if (wgsl_storage_tex_format.has(k)) {
+							WGPUTextureFormat fmt = wgsl_storage_tex_format[k];
+							WGPUStorageTextureAccess access = wgsl_storage_tex_access.has(k)
+									? wgsl_storage_tex_access[k]
+									: (u.writable ? WGPUStorageTextureAccess_WriteOnly : WGPUStorageTextureAccess_ReadOnly);
+							entry.storageTexture.access = access;
+							entry.storageTexture.format = fmt;
+							entry.storageTexture.viewDimension = wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D;
+						} else {
+							entry.buffer.type = WGPUBufferBindingType_Storage;
+							entry.buffer.hasDynamicOffset = false;
+							entry.buffer.minBindingSize = 0;
+						}
+						bge.layout_entry = entry;
+					} break;
+
+					default:
+						WARN_PRINT_ONCE(vformat("WebGPU: unhandled uniform type %d in bind group layout.", (int)u.type));
+						WGPUBindGroupLayoutEntry &entry = entries[e_idx++];
+						entry = {};
+						entry.binding = u.binding * 2; // Preprocessing doubles all non-combined bindings.
+						entry.visibility = vis;
+						entry.buffer.type = WGPUBufferBindingType_Uniform;
+						bge.layout_entry = entry;
+						break;
+				}
+			}
+
+			// entry_count assumed two entries for every combined sampler+texture. Any that
+			// collapsed to a lone texture used one, so drop the unwritten tail before the
+			// extra entries below are appended — a zeroed leftover would be an entry at
+			// binding 0 with no resource type at all.
+			entries.resize(e_idx);
+
+			// Add BGL entries for depth alias variables.
+			// Tint splits mixed-usage depth textures: original→Depth at binding B,
+			// clone→Float at binding B+1 (named "*_depth_alias").
+			for (const KeyValue<uint32_t, uint32_t> &kv : wgsl_depth_alias_bindings) {
+				uint32_t alias_key = kv.key;
+				uint32_t alias_grp = alias_key >> 16;
+				uint32_t alias_bnd = alias_key & 0xFFFF;
+				if (alias_grp != set) {
+					continue;
+				}
+				WGPUBindGroupLayoutEntry alias_entry = {};
+				alias_entry.binding = alias_bnd;
+				alias_entry.visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
+				alias_entry.texture.sampleType = WGPUTextureSampleType_Float;
+				alias_entry.texture.viewDimension = wgsl_tex_dims.has(alias_key) ? wgsl_tex_dims[alias_key] : WGPUTextureViewDimension_2D;
+				alias_entry.texture.multisampled = false;
+				entries.push_back(alias_entry);
+			}
+
+			// Add BGL entries for read_write storage texture shadow read bindings.
+			// Each shadow is a sampled texture at (write_binding + 1), NOT a ReadOnly
+			// storage texture, because ReadOnly access requires the
+			// readonly-and-readwrite-storage-textures feature which Firefox lacks.
+			for (const KeyValue<uint32_t, uint32_t> &kv : wgsl_rw_storage_splits) {
+				uint32_t write_key = kv.key;
+				uint32_t shadow_bnd = kv.value;
+				uint32_t split_grp = write_key >> 16;
+				if (split_grp != set) {
+					continue;
+				}
+				uint32_t shadow_key = ((uint32_t)split_grp << 16) | shadow_bnd;
+				WGPUTextureFormat shadow_fmt = wgsl_storage_tex_format.has(shadow_key) ? wgsl_storage_tex_format[shadow_key] : WGPUTextureFormat_RGBA8Unorm;
+				WGPUBindGroupLayoutEntry shadow_entry = {};
+				shadow_entry.binding = shadow_bnd;
+				const uint32_t godot_key = (write_key & 0xffff0000) | ((write_key & 0xffff) / 2);
+				shadow_entry.visibility = godot_binding_stages.has(godot_key) ? (WGPUShaderStage)godot_binding_stages[godot_key] : WGPUShaderStage_Compute;
+				shadow_entry.texture.sampleType = _resolve_storage_sampled_type(wgsl_tex_sample_types, shadow_key, shadow_fmt);
+				shadow_entry.texture.viewDimension = wgsl_tex_dims.has(shadow_key) ? wgsl_tex_dims[shadow_key] : WGPUTextureViewDimension_2D;
+				shadow_entry.texture.multisampled = false;
+				entries.push_back(shadow_entry);
+			}
+
+			// Log any duplicate binding indices for debugging.
+			for (uint32_t a = 0; a < entries.size(); a++) {
+				for (uint32_t b = a + 1; b < entries.size(); b++) {
+					if (entries[a].binding == entries[b].binding) {
+						WEBGPU_DIAG({ console.error('[BGL-DUP] set=' + $0 + ' binding=' + $1 + ' idx_a=' + $2 + ' idx_b=' + $3); }, (int)set, (int)entries[a].binding, (int)a, (int)b);
+					}
+				}
+			}
+
+			WGPUBindGroupLayoutDescriptor layout_desc = {};
+			layout_desc.entryCount = entries.size();
+			layout_desc.entries = entries.size() > 0 ? entries.ptr() : nullptr;
+
+			// Label the BGL so JS-side patch logs identify it.
+			String _bgl_label = "bgl:" + shader->name + ":set" + itos((int)set);
+			CharString _bgl_label_cs = _bgl_label.utf8();
+			layout_desc.label = { _bgl_label_cs.get_data(), WGPU_STRLEN };
+
+			shader->bind_group_layouts[set] = wgpuDeviceCreateBindGroupLayout(device, &layout_desc);
+			if (shader->bind_group_layouts[set] == nullptr) {
+				error_text = "WebGPU: wgpuDeviceCreateBindGroupLayout failed.";
+				goto cleanup;
 			}
 		}
 
+		// Store depth alias bindings on the shader for use during uniform_set_create.
+		shader->depth_alias_bindings = wgsl_depth_alias_bindings;
 
-		LocalVector<WGPUBindGroupLayoutEntry> entries;
-		entries.resize(entry_count);
+		// Store read_write storage texture splits for bind group creation.
+		shader->rw_storage_splits = wgsl_rw_storage_splits;
+		shader->read_storage_to_sampled = wgsl_read_storage_to_sampled;
 
-		WGShader::BindGroupInfo &bgi = shader->bind_group_infos[set];
-		bgi.entries.resize(set_uniforms.size());
+		// --- Build WGPUPipelineLayout ---
+		// The number of bind groups in the pipeline layout must cover:
+		//   - All descriptor sets (0 .. set_count - 1)
+		//   - The push constant bind group slot (if any)
+		const bool has_pc = wg_container->has_push_constants();
+		const uint32_t pc_group = has_pc ? wg_container->get_push_constant_bind_group() : UINT32_MAX;
+		const uint32_t total_groups = has_pc ? MAX(set_count, pc_group + 1) : set_count;
 
-		uint32_t e_idx = 0;
-		for (int u_idx = 0; u_idx < set_uniforms.size(); u_idx++) {
-			const RenderingDeviceCommons::ShaderUniform &u = set_uniforms[u_idx];
-			WGShader::BindGroupEntry &bge = bgi.entries[u_idx];
-			// Reflection says which stages *mention* a uniform; the WGSL says which
-			// stages can actually reach it. Prefer the latter: WebGPU enforces
-			// per-stage resource limits (16 samplers), and marking every binding
-			// visible to both stages busts them on Godot's scene shader. Falls back
-			// to reflection for anything not seen in the WGSL (e.g. bindings the
-			// driver injects itself).
-			auto vis_for = [&](uint32_t p_wgsl_binding) -> WGPUShaderStage {
-				// The SPIR-V analysis is in Godot's binding numbers; the WGSL ones
-				// are doubled by split_combined_samplers.
-				uint32_t godot_key = ((uint32_t)set << 16) | (p_wgsl_binding / 2);
-				if (any_stage_analyzed) {
-					const uint32_t *mask = godot_binding_stages.getptr(godot_key);
-					// Absent means no stage of any specialization mentions it, so it
-					// needs a layout entry but no visibility - which is what keeps
-					// the aliased samplers off the per-stage budget.
-					return mask ? (WGPUShaderStage)*mask : WGPUShaderStage_None;
-				}
+		LocalVector<WGPUBindGroupLayout> all_layouts;
+		all_layouts.resize(total_groups);
 
-				uint32_t key = ((uint32_t)set << 16) | p_wgsl_binding;
-				if (wgsl_binding_stages.has(key)) {
-					return (WGPUShaderStage)wgsl_binding_stages[key];
-				}
-				if (wgsl_unused_bindings.has(key)) {
-					// Preprocessing aliased this one away, so no stage can reach it.
-					return WGPUShaderStage_None;
-				}
-				// Absent from every stage's WGSL. That usually means unused, but a
-				// specialised module built later can declare bindings the base module
-				// did not, so hiding it is only safe where it buys something: WebGPU's
-				// tight per-stage budgets are samplers (16) and storage buffers (10),
-				// both of which Godot's scene shader busts. Textures and uniform
-				// buffers have room to spare (48 and 12), so those keep reflection's
-				// answer and stay compatible with specialised modules.
-				const bool tight_budget = u.type == RDD::UNIFORM_TYPE_SAMPLER ||
-						u.type == RDD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE ||
-						u.type == RDD::UNIFORM_TYPE_STORAGE_BUFFER;
-				if (tight_budget) {
-					return WGPUShaderStage_None;
-				}
-				return _stages_to_wgpu_visibility((uint32_t)u.stages);
-			};
-			// Prefer the SPIR-V image type over what the translated module declared:
-			// a binding the base module pruned has no declaration to read, and
-			// guessing 2D is how a 3D colour-correction LUT ended up rejected.
-			auto spirv_dim_for = [&](WGPUTextureViewDimension p_fallback, bool *r_multisampled) -> WGPUTextureViewDimension {
-				const spirv_preprocess::ImageBindingInfo *info =
-						godot_binding_images.getptr(((uint32_t)set << 16) | u.binding);
-				if (!info) {
-					return p_fallback;
-				}
-				if (r_multisampled && info->multisampled) {
-					*r_multisampled = true;
-				}
-				switch (info->dim) {
-					case 0: return WGPUTextureViewDimension_1D;
-					case 1: return info->arrayed ? WGPUTextureViewDimension_2DArray : WGPUTextureViewDimension_2D;
-					case 2: return WGPUTextureViewDimension_3D;
-					case 3: return info->arrayed ? WGPUTextureViewDimension_CubeArray : WGPUTextureViewDimension_Cube;
-					default: return p_fallback;
-				}
-			};
+		// Use the persistent empty layout for gap slots between sets and push constant slot.
 
-			WGPUShaderStage vis = vis_for(u.binding * 2);
-
-			bge.godot_type = u.type;
-
-			switch (u.type) {
-				case RDD::UNIFORM_TYPE_SAMPLER: {
-					WGPUBindGroupLayoutEntry &entry = entries[e_idx++];
-					entry = {};
-					entry.binding = u.binding * 2; // Preprocessing doubles all non-combined bindings.
-					entry.visibility = vis;
-					// FLATTEN-BA pass removes all binding_array<T,N> from WGSL,
-					// so layout entries are always non-array (no bindingArraySize).
-					{ uint32_t k = ((uint32_t)set << 16) | (u.binding * 2);
-					  entry.sampler.type = (wgsl_is_comparison_sampler.has(k) && wgsl_is_comparison_sampler[k])
-						  ? WGPUSamplerBindingType_Comparison
-						  : (wgsl_depth_paired_samplers.has(k) ? WGPUSamplerBindingType_NonFiltering
-															   : WGPUSamplerBindingType_Filtering); }
-					bge.layout_entry = entry;
-					bge.array_length = 1;
-				} break;
-
-				case RDD::UNIFORM_TYPE_TEXTURE:
-				case RDD::UNIFORM_TYPE_INPUT_ATTACHMENT: {
-					WGPUBindGroupLayoutEntry &entry = entries[e_idx++];
-					entry = {};
-					entry.binding = u.binding * 2; // Preprocessing doubles all non-combined bindings.
-					entry.visibility = vis;
-					// FLATTEN-BA pass removes all binding_array<T,N> from WGSL,
-					// so layout entries are always non-array (no bindingArraySize).
-					{ uint32_t k = ((uint32_t)set << 16) | (u.binding * 2);
-					  bool is_ms = wgsl_is_multisampled_texture.has(k) && wgsl_is_multisampled_texture[k];
-					  bool is_depth = wgsl_is_depth_texture.has(k) && wgsl_is_depth_texture[k];
-					  // Resolve the dimension first: it can also discover that the
-					  // texture is multisampled, which changes the sample type below.
-					  entry.texture.viewDimension = spirv_dim_for(
-							  wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D, &is_ms);
-					  entry.texture.sampleType = _resolve_texture_sample_type(wgsl_tex_sample_types, k, is_depth, is_ms);
-					  entry.texture.multisampled = is_ms; }
-					bge.layout_entry = entry;
-					bge.array_length = 1;
-				} break;
-
-				case RDD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE: {
-					// Combined sampler+texture split by our SPIR-V preprocessor:
-					// Sampler at binding*2+0, texture at binding*2+1 in the modified SPIR-V → matches Tint WGSL output.
-					//
-					// Exception: a multisampled combined sampler has no sampler in WGSL at
-					// all. MSAA textures can only be textureLoad'ed, so the preprocessor
-					// emits a single bare texture at the sampler's own slot. Declaring a
-					// sampler there regardless makes the layout contradict the shader
-					// ("Binding type in the shader (texture) doesn't match the type in the
-					// layout (sampler)") and every pipeline using the set is born invalid.
-					{
-						const uint32_t samp_k = ((uint32_t)set << 16) | (u.binding * 2 + 0);
-						if (wgsl_tex_dims.has(samp_k) || wgsl_is_multisampled_texture.has(samp_k)) {
-							WGPUBindGroupLayoutEntry &only_entry = entries[e_idx++];
-							only_entry = {};
-							only_entry.binding = u.binding * 2 + 0;
-							only_entry.visibility = vis_for(u.binding * 2 + 0);
-							bool is_ms = wgsl_is_multisampled_texture.has(samp_k) && wgsl_is_multisampled_texture[samp_k];
-							const bool is_depth = wgsl_is_depth_texture.has(samp_k) && wgsl_is_depth_texture[samp_k];
-							only_entry.texture.viewDimension = spirv_dim_for(
-									wgsl_tex_dims.has(samp_k) ? wgsl_tex_dims[samp_k] : WGPUTextureViewDimension_2D, &is_ms);
-							only_entry.texture.sampleType = _resolve_texture_sample_type(wgsl_tex_sample_types, samp_k, is_depth, is_ms);
-							only_entry.texture.multisampled = is_ms;
-							bge.layout_entry = only_entry;
-							bge.combined_collapsed_to_texture = true;
-							bge.array_length = 1;
+		for (uint32_t i = 0; i < total_groups; i++) {
+			if (has_pc && i == pc_group) {
+				// Build a merged layout: the shader's own group entries (material uniforms,
+				// textures, etc.) PLUS the PC ring-buffer entry at binding 0 with hasDynamicOffset.
+				// This is needed because calling setBindGroup() twice for the same group index
+				// overrides the first binding — we must combine both into one layout/bind group.
+				bool has_existing = (i < set_count && i < (uint32_t)shader->bind_group_infos.size() &&
+						!shader->bind_group_infos[i].entries.is_empty());
+				if (has_existing) {
+					// Rebuild all layout entries for this group (both sampler AND texture for
+					// combined types — bge.layout_entry only stores the texture entry).
+					LocalVector<WGPUBindGroupLayoutEntry> merged_entries;
+					const Vector<RenderingDeviceCommons::ShaderUniform> &pc_uniforms = shader_refl.uniform_sets[i];
+					for (int u_idx2 = 0; u_idx2 < pc_uniforms.size(); u_idx2++) {
+						const RenderingDeviceCommons::ShaderUniform &pu = pc_uniforms[u_idx2];
+						WGPUShaderStage pvis = _stages_to_wgpu_visibility((uint32_t)pu.stages);
+						// A collapsed pair is already a single complete entry — rebuilding it
+						// as sampler+texture here would reintroduce the layout/shader conflict.
+						if (pu.type == RDD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE &&
+								shader->bind_group_infos[i].entries[u_idx2].combined_collapsed_to_texture) {
+							merged_entries.push_back(shader->bind_group_infos[i].entries[u_idx2].layout_entry);
+						} else if (pu.type == RDD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE) {
+							WGPUBindGroupLayoutEntry se = {}, te = {};
+							se.binding = pu.binding * 2 + 0;
+							se.visibility = pvis;
+							// Must agree with the per-set BGL above, including the depth-paired
+							// case: uniform_set_create picks the sampler from that layout, and a
+							// disagreement here fails bind group creation against this one.
+							{
+								uint32_t k = ((uint32_t)i << 16) | (pu.binding * 2 + 0);
+								se.sampler.type = (wgsl_is_comparison_sampler.has(k) && wgsl_is_comparison_sampler[k])
+										? WGPUSamplerBindingType_Comparison
+										: (wgsl_depth_paired_samplers.has(k) ? WGPUSamplerBindingType_NonFiltering
+																			 : WGPUSamplerBindingType_Filtering);
+							}
+							te.binding = pu.binding * 2 + 1;
+							te.visibility = pvis;
+							{
+								uint32_t k = ((uint32_t)i << 16) | (pu.binding * 2 + 1);
+								bool is_ms = wgsl_is_multisampled_texture.has(k) && wgsl_is_multisampled_texture[k];
+								bool is_depth = wgsl_is_depth_texture.has(k) && wgsl_is_depth_texture[k];
+								const uint32_t source_key = ((uint32_t)i << 16) | pu.binding;
+								const bool filtering = !sampled_usage_analyzed.has(source_key) || sampled_usage_filtering.has(source_key);
+								te.texture.sampleType = _resolve_texture_sample_type(wgsl_tex_sample_types, k, is_depth, is_ms, filtering);
+								te.texture.viewDimension = wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D;
+								te.texture.multisampled = is_ms;
+								if (te.texture.sampleType == WGPUTextureSampleType_UnfilterableFloat) {
+									se.sampler.type = WGPUSamplerBindingType_NonFiltering;
+								}
+							}
+							merged_entries.push_back(se);
+							merged_entries.push_back(te);
+						} else {
+							// For all other types, just copy the existing bge.layout_entry.
+							merged_entries.push_back(shader->bind_group_infos[i].entries[u_idx2].layout_entry);
+						}
+					}
+					// Add the PC ring-buffer entry: PUSH_CONSTANT_RING_BINDING, uniform, hasDynamicOffset=true.
+					// Safety: skip if any existing entry is already at PUSH_CONSTANT_RING_BINDING.
+					bool has_pc_binding = false;
+					for (const auto &me : merged_entries) {
+						if (me.binding == PUSH_CONSTANT_RING_BINDING) {
+							has_pc_binding = true;
 							break;
 						}
 					}
-
-					WGPUBindGroupLayoutEntry &samp_entry = entries[e_idx++];
-					samp_entry = {};
-					samp_entry.binding = u.binding * 2 + 0;
-					samp_entry.visibility = vis_for(u.binding * 2 + 0);
-					{ uint32_t k = ((uint32_t)set << 16) | (u.binding * 2 + 0);
-					  samp_entry.sampler.type = (wgsl_is_comparison_sampler.has(k) && wgsl_is_comparison_sampler[k])
-						  ? WGPUSamplerBindingType_Comparison
-						  : (wgsl_depth_paired_samplers.has(k) ? WGPUSamplerBindingType_NonFiltering
-															   : WGPUSamplerBindingType_Filtering); }
-
-					WGPUBindGroupLayoutEntry &tex_entry = entries[e_idx++];
-					tex_entry = {};
-					tex_entry.binding = u.binding * 2 + 1;
-					tex_entry.visibility = vis_for(u.binding * 2 + 1);
-					{ uint32_t k = ((uint32_t)set << 16) | (u.binding * 2 + 1);
-					  bool is_ms = wgsl_is_multisampled_texture.has(k) && wgsl_is_multisampled_texture[k];
-					  bool is_depth = wgsl_is_depth_texture.has(k) && wgsl_is_depth_texture[k];
-					  // Dimension first: it can also reveal a multisampled texture,
-					  // which changes the sample type below.
-					  tex_entry.texture.viewDimension = spirv_dim_for(
-							  wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D, &is_ms);
-					  tex_entry.texture.sampleType = _resolve_texture_sample_type(wgsl_tex_sample_types, k, is_depth, is_ms);
-					  tex_entry.texture.multisampled = is_ms;
-					  // MSAA texture bindings with UnfilterableFloat require a NonFiltering sampler —
-					  // override the sampler for this combined binding.
-					  if (is_ms && !is_depth) {
-						  samp_entry.sampler.type = WGPUSamplerBindingType_NonFiltering;
-					  }
+					WGPUBindGroupLayoutEntry pc_entry = {};
+					pc_entry.binding = PUSH_CONSTANT_RING_BINDING;
+					pc_entry.visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment | WGPUShaderStage_Compute;
+					pc_entry.buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+					pc_entry.buffer.hasDynamicOffset = true;
+					pc_entry.buffer.minBindingSize = 0;
+					if (!has_pc_binding) {
+						merged_entries.push_back(pc_entry);
 					}
 
-					bge.layout_entry = tex_entry; // Store texture entry as the primary.
-					// Keep the sampler half's declared type: it is not recoverable from
-					// layout_entry, and uniform_set_create needs it to pick a compatible sampler.
-					bge.combined_sampler_type = samp_entry.sampler.type;
-				} break;
-
-				case RDD::UNIFORM_TYPE_IMAGE: {
-					WGPUBindGroupLayoutEntry &entry = entries[e_idx++];
-					entry = {};
-					entry.binding = u.binding * 2; // Preprocessing doubles all non-combined bindings.
-					entry.visibility = vis;
-					uint32_t k = ((uint32_t)set << 16) | (u.binding * 2);
-					if (wgsl_read_storage_to_sampled.has(k)) {
-						// Read-only storage texture was converted to sampled texture_2d.
-						// Create a sampled texture BGL entry instead of storage.
-						WGPUTextureFormat fmt = wgsl_storage_tex_format.has(k) ? wgsl_storage_tex_format[k] : WGPUTextureFormat_RGBA8Unorm;
-						entry.texture.sampleType = _resolve_storage_sampled_type(wgsl_tex_sample_types, k, fmt);
-						entry.texture.viewDimension = wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D;
-						entry.texture.multisampled = false;
-					} else {
-						WGPUTextureFormat fmt = wgsl_storage_tex_format.has(k) ? wgsl_storage_tex_format[k] : WGPUTextureFormat_RGBA8Unorm;
-						WGPUStorageTextureAccess access = wgsl_storage_tex_access.has(k)
-							? wgsl_storage_tex_access[k]
-							: (u.writable ? WGPUStorageTextureAccess_WriteOnly : WGPUStorageTextureAccess_ReadOnly);
-						entry.storageTexture.access = access;
-						entry.storageTexture.format = fmt;
-						entry.storageTexture.viewDimension = wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D;
-					}
-					bge.layout_entry = entry;
-				} break;
-
-				case RDD::UNIFORM_TYPE_UNIFORM_BUFFER: {
-					WGPUBindGroupLayoutEntry &entry = entries[e_idx++];
-					entry = {};
-					entry.binding = u.binding * 2; // Preprocessing doubles all non-combined bindings.
-					entry.visibility = vis;
-					entry.buffer.type = WGPUBufferBindingType_Uniform;
-					entry.buffer.hasDynamicOffset = false;
-					entry.buffer.minBindingSize = 0;
-					bge.layout_entry = entry;
-				} break;
-
-				case RDD::UNIFORM_TYPE_STORAGE_BUFFER: {
-					WGPUBindGroupLayoutEntry &entry = entries[e_idx++];
-					entry = {};
-					entry.binding = u.binding * 2; // Preprocessing doubles all non-combined bindings.
-					entry.visibility = vis;
-					uint32_t k = ((uint32_t)set << 16) | (u.binding * 2);
-					// Check if WGSL scan shows this is actually a storage texture.
-					if (wgsl_storage_tex_format.has(k)) {
-						WGPUTextureFormat fmt = wgsl_storage_tex_format[k];
-						WGPUStorageTextureAccess access = wgsl_storage_tex_access.has(k)
-							? wgsl_storage_tex_access[k]
-							: (u.writable ? WGPUStorageTextureAccess_WriteOnly : WGPUStorageTextureAccess_ReadOnly);
-						entry.storageTexture.access = access;
-						entry.storageTexture.format = fmt;
-						entry.storageTexture.viewDimension = wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D;
-
-					} else if (wgsl_is_uniform.has(k) && wgsl_is_uniform[k]) {
-						// Tint emitted var<uniform> for this binding.
-						entry.buffer.type = WGPUBufferBindingType_Uniform;
-					} else {
-						bool is_readonly = wgsl_ssbo_readonly.has(k) ? wgsl_ssbo_readonly[k] : !u.writable;
-						entry.buffer.type = is_readonly ? WGPUBufferBindingType_ReadOnlyStorage : WGPUBufferBindingType_Storage;
-						// Use per-stage visibility from Tint metadata for storage buffers.
-						// Firefox/wgpu enforces Metal's limit of 8 storage buffers per shader stage.
-						if (wgsl_buffer_stages.has(k)) {
-							entry.visibility = (WGPUShaderStage)wgsl_buffer_stages[k];
-						} else if (!wgsl_buffer_stages.is_empty()) {
-							// Buffer is declared in SPIR-V but not used by any entry point.
-							// Set visibility to None — doesn't count against any stage's limit.
-							entry.visibility = (WGPUShaderStage)0;
+					// Add depth alias entries to the merged layout.
+					for (const KeyValue<uint32_t, uint32_t> &kv : wgsl_depth_alias_bindings) {
+						uint32_t alias_grp = kv.key >> 16;
+						uint32_t alias_bnd = kv.key & 0xFFFF;
+						if (alias_grp != i) {
+							continue;
 						}
+						WGPUBindGroupLayoutEntry ae = {};
+						ae.binding = alias_bnd;
+						ae.visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
+						ae.texture.sampleType = WGPUTextureSampleType_Float;
+						ae.texture.viewDimension = wgsl_tex_dims.has(kv.key) ? wgsl_tex_dims[kv.key] : WGPUTextureViewDimension_2D;
+						ae.texture.multisampled = false;
+						merged_entries.push_back(ae);
 					}
-					bge.layout_entry = entry;
-				} break;
-
-				// Task 7.5: Dynamic variants — hasDynamicOffset=true allows the
-				// bind group to be set with per-frame offsets via wgpuRenderPassEncoderSetBindGroup.
-				case RDD::UNIFORM_TYPE_UNIFORM_BUFFER_DYNAMIC: {
-					WGPUBindGroupLayoutEntry &entry = entries[e_idx++];
-					entry = {};
-					entry.binding = u.binding * 2; // Preprocessing doubles all non-combined bindings.
-					entry.visibility = vis;
-					entry.buffer.type = WGPUBufferBindingType_Uniform;
-					entry.buffer.hasDynamicOffset = true;
-					entry.buffer.minBindingSize = 0;
-					bge.layout_entry = entry;
-				} break;
-
-				case RDD::UNIFORM_TYPE_STORAGE_BUFFER_DYNAMIC: {
-					WGPUBindGroupLayoutEntry &entry = entries[e_idx++];
-					entry = {};
-					entry.binding = u.binding * 2; // Preprocessing doubles all non-combined bindings.
-					entry.visibility = vis;
-					bool is_storage_tex = false;
-					{ uint32_t k = ((uint32_t)set << 16) | (u.binding * 2);
-					  if (wgsl_storage_tex_format.has(k)) {
-						  is_storage_tex = true;
-						  WGPUTextureFormat fmt = wgsl_storage_tex_format[k];
-						  WGPUStorageTextureAccess access = wgsl_storage_tex_access.has(k)
-							  ? wgsl_storage_tex_access[k]
-							  : (u.writable ? WGPUStorageTextureAccess_WriteOnly : WGPUStorageTextureAccess_ReadOnly);
-						  entry.storageTexture.access = access;
-						  entry.storageTexture.format = fmt;
-						  entry.storageTexture.viewDimension = wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D;
-					  } else if (wgsl_is_uniform.has(k) && wgsl_is_uniform[k]) {
-						  entry.buffer.type = WGPUBufferBindingType_Uniform;
-					  } else {
-						  bool is_readonly = wgsl_ssbo_readonly.has(k) ? wgsl_ssbo_readonly[k] : !u.writable;
-						  entry.buffer.type = is_readonly ? WGPUBufferBindingType_ReadOnlyStorage : WGPUBufferBindingType_Storage;
-						  // Use per-stage visibility from Tint metadata (see UNIFORM_TYPE_STORAGE_BUFFER above).
-						  if (wgsl_buffer_stages.has(k)) {
-							  entry.visibility = (WGPUShaderStage)wgsl_buffer_stages[k];
-						  } else if (!wgsl_buffer_stages.is_empty()) {
-							  entry.visibility = (WGPUShaderStage)0;
-						  }
-					  } }
-					// Only buffer bindings support dynamic offsets; storage textures must not set it.
-					entry.buffer.hasDynamicOffset = !is_storage_tex;
-					entry.buffer.minBindingSize = 0;
-					bge.layout_entry = entry;
-				} break;
-
-				// WebGPU has no texel buffers (TBOs); emulate as uniform or storage buffers based on WGSL.
-				case RDD::UNIFORM_TYPE_TEXTURE_BUFFER:
-				case RDD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE_BUFFER: {
-					WGPUBindGroupLayoutEntry &entry = entries[e_idx++];
-					entry = {};
-					entry.binding = u.binding * 2; // Preprocessing doubles all non-combined bindings.
-					entry.visibility = vis;
-					// Tint may convert TBOs to var<uniform> or var<storage,read> depending on usage.
-					{ uint32_t k = ((uint32_t)set << 16) | (u.binding * 2);
-					  if (wgsl_is_uniform.has(k) && wgsl_is_uniform[k]) {
-						  entry.buffer.type = WGPUBufferBindingType_Uniform;
-					  } else if (wgsl_ssbo_readonly.has(k)) {
-						  entry.buffer.type = wgsl_ssbo_readonly[k] ? WGPUBufferBindingType_ReadOnlyStorage : WGPUBufferBindingType_Storage;
-					  } else {
-						  entry.buffer.type = WGPUBufferBindingType_ReadOnlyStorage; // default fallback
-					  } }
-					entry.buffer.hasDynamicOffset = false;
-					entry.buffer.minBindingSize = 0;
-					bge.layout_entry = entry;
-				} break;
-
-				case RDD::UNIFORM_TYPE_IMAGE_BUFFER: {
-					WGPUBindGroupLayoutEntry &entry = entries[e_idx++];
-					entry = {};
-					entry.binding = u.binding * 2; // Preprocessing doubles all non-combined bindings.
-					entry.visibility = vis;
-					uint32_t k = ((uint32_t)set << 16) | (u.binding * 2);
-					// Tint may convert image buffers to texture_storage_*.
-					if (wgsl_storage_tex_format.has(k)) {
-						WGPUTextureFormat fmt = wgsl_storage_tex_format[k];
-						WGPUStorageTextureAccess access = wgsl_storage_tex_access.has(k)
-							? wgsl_storage_tex_access[k]
-							: (u.writable ? WGPUStorageTextureAccess_WriteOnly : WGPUStorageTextureAccess_ReadOnly);
-						entry.storageTexture.access = access;
-						entry.storageTexture.format = fmt;
-						entry.storageTexture.viewDimension = wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D;
-					} else {
-						entry.buffer.type = WGPUBufferBindingType_Storage;
-						entry.buffer.hasDynamicOffset = false;
-						entry.buffer.minBindingSize = 0;
-					}
-					bge.layout_entry = entry;
-				} break;
-
-				default:
-					WARN_PRINT_ONCE(vformat("WebGPU: unhandled uniform type %d in bind group layout.", (int)u.type));
-					WGPUBindGroupLayoutEntry &entry = entries[e_idx++];
-					entry = {};
-					entry.binding = u.binding * 2; // Preprocessing doubles all non-combined bindings.
-					entry.visibility = vis;
-					entry.buffer.type = WGPUBufferBindingType_Uniform;
-					bge.layout_entry = entry;
-					break;
-			}
-		}
-
-		// entry_count assumed two entries for every combined sampler+texture. Any that
-		// collapsed to a lone texture used one, so drop the unwritten tail before the
-		// extra entries below are appended — a zeroed leftover would be an entry at
-		// binding 0 with no resource type at all.
-		entries.resize(e_idx);
-
-		// Add BGL entries for depth alias variables.
-		// Tint splits mixed-usage depth textures: original→Depth at binding B,
-		// clone→Float at binding B+1 (named "*_depth_alias").
-		for (const KeyValue<uint32_t, uint32_t> &kv : wgsl_depth_alias_bindings) {
-			uint32_t alias_key = kv.key;
-			uint32_t alias_grp = alias_key >> 16;
-			uint32_t alias_bnd = alias_key & 0xFFFF;
-			if (alias_grp != set) {
-				continue;
-			}
-			WGPUBindGroupLayoutEntry alias_entry = {};
-			alias_entry.binding = alias_bnd;
-			alias_entry.visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
-			alias_entry.texture.sampleType = WGPUTextureSampleType_Float;
-			alias_entry.texture.viewDimension = wgsl_tex_dims.has(alias_key) ? wgsl_tex_dims[alias_key] : WGPUTextureViewDimension_2D;
-			alias_entry.texture.multisampled = false;
-			entries.push_back(alias_entry);
-		}
-
-		// Add BGL entries for read_write storage texture shadow read bindings.
-		// Each shadow is a sampled texture at (write_binding + 1), NOT a ReadOnly
-		// storage texture, because ReadOnly access requires the
-		// readonly-and-readwrite-storage-textures feature which Firefox lacks.
-		for (const KeyValue<uint32_t, uint32_t> &kv : wgsl_rw_storage_splits) {
-			uint32_t write_key = kv.key;
-			uint32_t shadow_bnd = kv.value;
-			uint32_t split_grp = write_key >> 16;
-			if (split_grp != set) {
-				continue;
-			}
-			uint32_t shadow_key = ((uint32_t)split_grp << 16) | shadow_bnd;
-			WGPUTextureFormat shadow_fmt = wgsl_storage_tex_format.has(shadow_key) ? wgsl_storage_tex_format[shadow_key] : WGPUTextureFormat_RGBA8Unorm;
-			WGPUBindGroupLayoutEntry shadow_entry = {};
-			shadow_entry.binding = shadow_bnd;
-			shadow_entry.visibility = WGPUShaderStage_Compute;
-			shadow_entry.texture.sampleType = _resolve_storage_sampled_type(wgsl_tex_sample_types, shadow_key, shadow_fmt);
-			shadow_entry.texture.viewDimension = wgsl_tex_dims.has(shadow_key) ? wgsl_tex_dims[shadow_key] : WGPUTextureViewDimension_2D;
-			shadow_entry.texture.multisampled = false;
-			entries.push_back(shadow_entry);
-		}
-
-		// Log any duplicate binding indices for debugging.
-		for (uint32_t a = 0; a < entries.size(); a++) {
-			for (uint32_t b = a + 1; b < entries.size(); b++) {
-				if (entries[a].binding == entries[b].binding) {
-					WEBGPU_DIAG({ console.error('[BGL-DUP] set=' + $0 + ' binding=' + $1 + ' idx_a=' + $2 + ' idx_b=' + $3); },
-							(int)set, (int)entries[a].binding, (int)a, (int)b);
-				}
-			}
-		}
-
-		WGPUBindGroupLayoutDescriptor layout_desc = {};
-		layout_desc.entryCount = entries.size();
-		layout_desc.entries = entries.size() > 0 ? entries.ptr() : nullptr;
-
-		// Label the BGL so JS-side patch logs identify it.
-		String _bgl_label = "bgl:" + shader->name + ":set" + itos((int)set);
-		CharString _bgl_label_cs = _bgl_label.utf8();
-		layout_desc.label = { _bgl_label_cs.get_data(), WGPU_STRLEN };
-
-		shader->bind_group_layouts[set] = wgpuDeviceCreateBindGroupLayout(device, &layout_desc);
-		if (shader->bind_group_layouts[set] == nullptr) {
-			error_text = "WebGPU: wgpuDeviceCreateBindGroupLayout failed.";
-			goto cleanup;
-		}
-	}
-
-	// Store depth alias bindings on the shader for use during uniform_set_create.
-	shader->depth_alias_bindings = wgsl_depth_alias_bindings;
-
-	// Store read_write storage texture splits for bind group creation.
-	shader->rw_storage_splits = wgsl_rw_storage_splits;
-	shader->read_storage_to_sampled = wgsl_read_storage_to_sampled;
-
-	// --- Build WGPUPipelineLayout ---
-	// The number of bind groups in the pipeline layout must cover:
-	//   - All descriptor sets (0 .. set_count - 1)
-	//   - The push constant bind group slot (if any)
-	const bool has_pc = wg_container->has_push_constants();
-	const uint32_t pc_group = has_pc ? wg_container->get_push_constant_bind_group() : UINT32_MAX;
-	const uint32_t total_groups = has_pc ? MAX(set_count, pc_group + 1) : set_count;
-
-	LocalVector<WGPUBindGroupLayout> all_layouts;
-	all_layouts.resize(total_groups);
-
-	// Use the persistent empty layout for gap slots between sets and push constant slot.
-
-	for (uint32_t i = 0; i < total_groups; i++) {
-		if (has_pc && i == pc_group) {
-			// Build a merged layout: the shader's own group entries (material uniforms,
-			// textures, etc.) PLUS the PC ring-buffer entry at binding 0 with hasDynamicOffset.
-			// This is needed because calling setBindGroup() twice for the same group index
-			// overrides the first binding — we must combine both into one layout/bind group.
-			bool has_existing = (i < set_count && i < (uint32_t)shader->bind_group_infos.size() &&
-					!shader->bind_group_infos[i].entries.is_empty());
-			if (has_existing) {
-				// Rebuild all layout entries for this group (both sampler AND texture for
-				// combined types — bge.layout_entry only stores the texture entry).
-				LocalVector<WGPUBindGroupLayoutEntry> merged_entries;
-				const Vector<RenderingDeviceCommons::ShaderUniform> &pc_uniforms = shader_refl.uniform_sets[i];
-				for (int u_idx2 = 0; u_idx2 < pc_uniforms.size(); u_idx2++) {
-					const RenderingDeviceCommons::ShaderUniform &pu = pc_uniforms[u_idx2];
-					WGPUShaderStage pvis = _stages_to_wgpu_visibility((uint32_t)pu.stages);
-					// A collapsed pair is already a single complete entry — rebuilding it
-					// as sampler+texture here would reintroduce the layout/shader conflict.
-					if (pu.type == RDD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE &&
-							shader->bind_group_infos[i].entries[u_idx2].combined_collapsed_to_texture) {
-						merged_entries.push_back(shader->bind_group_infos[i].entries[u_idx2].layout_entry);
-					} else if (pu.type == RDD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE) {
-						WGPUBindGroupLayoutEntry se = {}, te = {};
-						se.binding = pu.binding * 2 + 0; se.visibility = pvis;
-						// Must agree with the per-set BGL above, including the depth-paired
-						// case: uniform_set_create picks the sampler from that layout, and a
-						// disagreement here fails bind group creation against this one.
-						{ uint32_t k = ((uint32_t)i << 16) | (pu.binding * 2 + 0);
-						  se.sampler.type = (wgsl_is_comparison_sampler.has(k) && wgsl_is_comparison_sampler[k])
-							  ? WGPUSamplerBindingType_Comparison
-							  : (wgsl_depth_paired_samplers.has(k) ? WGPUSamplerBindingType_NonFiltering
-																   : WGPUSamplerBindingType_Filtering); }
-						te.binding = pu.binding * 2 + 1; te.visibility = pvis;
-						{ uint32_t k = ((uint32_t)i << 16) | (pu.binding * 2 + 1);
-						  bool is_ms = wgsl_is_multisampled_texture.has(k) && wgsl_is_multisampled_texture[k];
-						  bool is_depth = wgsl_is_depth_texture.has(k) && wgsl_is_depth_texture[k];
-						  te.texture.sampleType = _resolve_texture_sample_type(wgsl_tex_sample_types, k, is_depth, is_ms);
-						  te.texture.viewDimension = wgsl_tex_dims.has(k) ? wgsl_tex_dims[k] : WGPUTextureViewDimension_2D;
-						  te.texture.multisampled = is_ms;
-						  if (is_ms && !is_depth) {
-							  se.sampler.type = WGPUSamplerBindingType_NonFiltering;
-						  }
+					// Add rw_storage split entries to the merged layout (sampled texture, not ReadOnly storage).
+					for (const KeyValue<uint32_t, uint32_t> &kv : wgsl_rw_storage_splits) {
+						uint32_t split_grp = kv.key >> 16;
+						uint32_t shadow_bnd = kv.value;
+						if (split_grp != i) {
+							continue;
 						}
+						uint32_t shadow_key = ((uint32_t)split_grp << 16) | shadow_bnd;
+						WGPUTextureFormat shadow_fmt = wgsl_storage_tex_format.has(shadow_key) ? wgsl_storage_tex_format[shadow_key] : WGPUTextureFormat_RGBA8Unorm;
+						WGPUBindGroupLayoutEntry se = {};
+						se.binding = shadow_bnd;
+						const uint32_t godot_key = (kv.key & 0xffff0000) | ((kv.key & 0xffff) / 2);
+						se.visibility = godot_binding_stages.has(godot_key) ? (WGPUShaderStage)godot_binding_stages[godot_key] : WGPUShaderStage_Compute;
+						se.texture.sampleType = _resolve_storage_sampled_type(wgsl_tex_sample_types, shadow_key, shadow_fmt);
+						se.texture.viewDimension = wgsl_tex_dims.has(shadow_key) ? wgsl_tex_dims[shadow_key] : WGPUTextureViewDimension_2D;
+						se.texture.multisampled = false;
 						merged_entries.push_back(se);
-						merged_entries.push_back(te);
-					} else {
-						// For all other types, just copy the existing bge.layout_entry.
-						merged_entries.push_back(shader->bind_group_infos[i].entries[u_idx2].layout_entry);
 					}
-				}
-				// Add the PC ring-buffer entry: PUSH_CONSTANT_RING_BINDING, uniform, hasDynamicOffset=true.
-				// Safety: skip if any existing entry is already at PUSH_CONSTANT_RING_BINDING.
-				bool has_pc_binding = false;
-				for (const auto &me : merged_entries) { if (me.binding == PUSH_CONSTANT_RING_BINDING) { has_pc_binding = true; break; } }
-				WGPUBindGroupLayoutEntry pc_entry = {};
-				pc_entry.binding = PUSH_CONSTANT_RING_BINDING;
-				pc_entry.visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment | WGPUShaderStage_Compute;
-				pc_entry.buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-				pc_entry.buffer.hasDynamicOffset = true;
-				pc_entry.buffer.minBindingSize = 0;
-				if (!has_pc_binding) {
-					merged_entries.push_back(pc_entry);
-				}
 
-				// Add depth alias entries to the merged layout.
-				for (const KeyValue<uint32_t, uint32_t> &kv : wgsl_depth_alias_bindings) {
-					uint32_t alias_grp = kv.key >> 16;
-					uint32_t alias_bnd = kv.key & 0xFFFF;
-					if (alias_grp != i) { continue; }
-					WGPUBindGroupLayoutEntry ae = {};
-					ae.binding = alias_bnd;
-					ae.visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
-					ae.texture.sampleType = WGPUTextureSampleType_Float;
-					ae.texture.viewDimension = wgsl_tex_dims.has(kv.key) ? wgsl_tex_dims[kv.key] : WGPUTextureViewDimension_2D;
-					ae.texture.multisampled = false;
-					merged_entries.push_back(ae);
+					WGPUBindGroupLayoutDescriptor merged_desc = {};
+					merged_desc.entryCount = merged_entries.size();
+					merged_desc.entries = merged_entries.ptr();
+					shader->merged_pc_group_layout = wgpuDeviceCreateBindGroupLayout(device, &merged_desc);
+					if (!shader->merged_pc_group_layout) {
+						error_text = "WebGPU: failed to create merged PC+material bind group layout.";
+						goto cleanup;
+					}
+					all_layouts[i] = shader->merged_pc_group_layout;
+				} else {
+					// No material uniforms at this group — use the universal PC-only layout.
+					all_layouts[i] = push_constant_bind_group_layout;
 				}
-				// Add rw_storage split entries to the merged layout (sampled texture, not ReadOnly storage).
-				for (const KeyValue<uint32_t, uint32_t> &kv : wgsl_rw_storage_splits) {
-					uint32_t split_grp = kv.key >> 16;
-					uint32_t shadow_bnd = kv.value;
-					if (split_grp != i) { continue; }
-					uint32_t shadow_key = ((uint32_t)split_grp << 16) | shadow_bnd;
-					WGPUTextureFormat shadow_fmt = wgsl_storage_tex_format.has(shadow_key) ? wgsl_storage_tex_format[shadow_key] : WGPUTextureFormat_RGBA8Unorm;
-					WGPUBindGroupLayoutEntry se = {};
-					se.binding = shadow_bnd;
-					se.visibility = WGPUShaderStage_Compute;
-					se.texture.sampleType = _resolve_storage_sampled_type(wgsl_tex_sample_types, shadow_key, shadow_fmt);
-					se.texture.viewDimension = wgsl_tex_dims.has(shadow_key) ? wgsl_tex_dims[shadow_key] : WGPUTextureViewDimension_2D;
-					se.texture.multisampled = false;
-					merged_entries.push_back(se);
+			} else if (i < set_count) {
+				// Check if this set is empty (no uniforms defined in GLSL).
+				// E.g., CanvasShaderRD has sets 0, 2, 3 but no set 1.
+				bool is_empty_set = (i >= (uint32_t)shader->bind_group_infos.size() ||
+						shader->bind_group_infos[i].entries.is_empty());
+				if (is_empty_set) {
+					all_layouts[i] = empty_bind_group_layout;
+					shader->gap_bind_group_indices.push_back(i);
+				} else {
+					all_layouts[i] = shader->bind_group_layouts[i];
 				}
-
-				WGPUBindGroupLayoutDescriptor merged_desc = {};
-				merged_desc.entryCount = merged_entries.size();
-				merged_desc.entries = merged_entries.ptr();
-				shader->merged_pc_group_layout = wgpuDeviceCreateBindGroupLayout(device, &merged_desc);
-				if (!shader->merged_pc_group_layout) {
-					error_text = "WebGPU: failed to create merged PC+material bind group layout.";
-					goto cleanup;
-				}
-				all_layouts[i] = shader->merged_pc_group_layout;
 			} else {
-				// No material uniforms at this group — use the universal PC-only layout.
-				all_layouts[i] = push_constant_bind_group_layout;
-			}
-		} else if (i < set_count) {
-			// Check if this set is empty (no uniforms defined in GLSL).
-			// E.g., CanvasShaderRD has sets 0, 2, 3 but no set 1.
-			bool is_empty_set = (i >= (uint32_t)shader->bind_group_infos.size() ||
-					shader->bind_group_infos[i].entries.is_empty());
-			if (is_empty_set) {
+				// Gap slot — use empty layout and record for pre-binding at draw time.
 				all_layouts[i] = empty_bind_group_layout;
 				shader->gap_bind_group_indices.push_back(i);
-			} else {
-				all_layouts[i] = shader->bind_group_layouts[i];
 			}
-		} else {
-			// Gap slot — use empty layout and record for pre-binding at draw time.
-			all_layouts[i] = empty_bind_group_layout;
-			shader->gap_bind_group_indices.push_back(i);
 		}
-	}
 
-	WGPUPipelineLayoutDescriptor pl_desc = {};
-	pl_desc.bindGroupLayoutCount = total_groups;
-	pl_desc.bindGroupLayouts = all_layouts.size() > 0 ? all_layouts.ptr() : nullptr;
+		WGPUPipelineLayoutDescriptor pl_desc = {};
+		pl_desc.bindGroupLayoutCount = total_groups;
+		pl_desc.bindGroupLayouts = all_layouts.size() > 0 ? all_layouts.ptr() : nullptr;
 
-	// Label the pipeline layout for JS-side patch logs.
-	String _pl_label = "plyt:" + shader->name;
-	CharString _pl_label_cs = _pl_label.utf8();
-	pl_desc.label = { _pl_label_cs.get_data(), WGPU_STRLEN };
+		// Label the pipeline layout for JS-side patch logs.
+		String _pl_label = "plyt:" + shader->name;
+		CharString _pl_label_cs = _pl_label.utf8();
+		pl_desc.label = { _pl_label_cs.get_data(), WGPU_STRLEN };
 
-	shader->pipeline_layout = wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-	if (shader->pipeline_layout == nullptr) {
-		error_text = "WebGPU: wgpuDeviceCreatePipelineLayout failed.";
-		goto cleanup;
-	}
+		shader->pipeline_layout = wgpuDeviceCreatePipelineLayout(device, &pl_desc);
+		if (shader->pipeline_layout == nullptr) {
+			error_text = "WebGPU: wgpuDeviceCreatePipelineLayout failed.";
+			goto cleanup;
+		}
 
-	return true;
+		if (detected_override_declarations || shader_refl.specialization_constants.is_empty()) {
+			// Pipeline constants specialize WGSL directly. Only the fallback path
+			// needs raw SPIR-V; keeping it for every Forward+ variant retains a
+			// second, decompressed copy of the shader cache throughout gameplay.
+			for (PackedByteArray &spirv : shader->stage_spirv) {
+				spirv.clear();
+			}
+		}
+
+		return true;
 
 	} // End block scope.
 
@@ -6256,7 +6720,9 @@ cleanup:
 
 uint32_t RenderingDeviceDriverWebGPU::shader_get_layout_hash(ShaderID p_shader) {
 	WGShader *shader = (WGShader *)(p_shader.id);
-	if (!shader) return 0;
+	if (!shader) {
+		return 0;
+	}
 	// The identity must be available before lazy layout initialization and stay
 	// stable afterwards. Layouts are private to their WGShader.
 	return (uint32_t)(uint64_t)(void *)shader;
@@ -6352,6 +6818,7 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 					WGPUBindGroupEntry entry = {};
 					entry.binding = uniform.binding * 2;
 					entry.sampler = (WGPUSampler)(uniform.ids[0].id);
+					us->bound_samplers[entry.binding] = entry.sampler;
 					entry.sampler = _compatible_sampler(entry.sampler, shader, p_set_index, entry.binding);
 					entries.push_back(entry);
 				}
@@ -6384,7 +6851,7 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 						if (expected_sample == WGPUTextureSampleType_Depth && _is_depth_format(tex->format)) {
 							entry.textureView = _create_depth_sample_view(tex, expected_dim);
 							us->temp_views.push_back(entry.textureView);
-						} else if (expected_sample == WGPUTextureSampleType_Float &&
+						} else if ((expected_sample == WGPUTextureSampleType_Float || expected_sample == WGPUTextureSampleType_UnfilterableFloat) &&
 								_is_depth_format(tex->format) &&
 								fallback_float_texture_view != nullptr) {
 							// Also check if we need cube dimension for the depth fallback.
@@ -6482,6 +6949,7 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 					if (sampler && !swt_collapsed) {
 						WGPUBindGroupEntry se = {};
 						se.binding = uniform.binding * 2 + j * 2 + 0;
+						us->bound_samplers[se.binding] = sampler;
 						se.sampler = _compatible_sampler(sampler, shader, p_set_index, se.binding);
 						entries.push_back(se);
 					}
@@ -6507,7 +6975,8 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 							} else {
 								te.textureView = fallback_float_texture_view;
 							}
-						} else if (!float32_filterable_supported &&
+						} else if (swt_expected_sample == WGPUTextureSampleType_Float &&
+								!float32_filterable_supported &&
 								_is_float32_format(tex->format) &&
 								fallback_float_texture_view != nullptr) {
 							// R32Float/RG32Float/RGBA32Float unfilterable without feature.
@@ -6593,8 +7062,7 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 					static bool alias_stub_logged = false;
 					if (!alias_stub_logged) {
 						alias_stub_logged = true;
-						WEBGPU_DIAG({ console.warn('[ALIAS-STUB] Writable storage buffer aliasing at set=' + $0 + ' binding=' + $1 + ', redirected to stub buffer'); },
-								(int)p_set_index, (int)uniform.binding);
+						WEBGPU_DIAG({ console.warn('[ALIAS-STUB] Writable storage buffer aliasing at set=' + $0 + ' binding=' + $1 + ', redirected to stub buffer'); }, (int)p_set_index, (int)uniform.binding);
 					}
 					entry.buffer = aliasing_stub_buffer;
 					entry.size = ALIASING_STUB_BUFFER_SIZE;
@@ -6695,65 +7163,17 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 		}
 	}
 
-	// Add shadow read bindings for read_write storage texture splits.
-	// For each split, create a GPU copy of the original texture and bind it
-	// at the shadow read slot (write_binding + 1).
-	for (const KeyValue<uint32_t, uint32_t> &kv : shader->rw_storage_splits) {
-		uint32_t split_grp = kv.key >> 16;
-		uint32_t write_bnd = kv.key & 0xFFFF;
-		uint32_t shadow_bnd = kv.value;
-		if (split_grp != p_set_index) {
+	// Allocate first; the snapshot is recorded at dispatch time, after any
+	// preceding GPU writes and after variant adaptation has finished.
+	for (const KeyValue<uint32_t, uint32_t> &split : shader->rw_storage_splits) {
+		if ((split.key >> 16) != p_set_index) {
 			continue;
 		}
-		// Find the original texture from the write binding.
-		WGTexture *orig_tex = nullptr;
-		if (us->bound_textures.has(write_bnd)) {
-			orig_tex = us->bound_textures[write_bnd];
-		}
-		if (!orig_tex) {
-			continue;
-		}
-		// Create a shadow texture with the same format and size.
-		WGPUTextureDescriptor shadow_desc = {};
-		shadow_desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
-		shadow_desc.dimension = orig_tex->dimension;
-		shadow_desc.size = { orig_tex->width, orig_tex->height, orig_tex->depth };
-		shadow_desc.format = orig_tex->format;
-		shadow_desc.mipLevelCount = orig_tex->mipmaps;
-		shadow_desc.sampleCount = orig_tex->sample_count;
-		WGPUTexture shadow_tex = wgpuDeviceCreateTexture(device, &shadow_desc);
-		if (!shadow_tex) {
-			WARN_PRINT("WebGPU: failed to create shadow read texture for rw_storage split.");
-			continue;
-		}
-		// NOTE: We intentionally do NOT copy original→shadow here.
-		// The shadow will be populated by command_copy_buffer_to_texture
-		// (called from texture_update) before any compute dispatch reads it.
-		// An eager copy here races with later wgpuQueueWriteTexture on
-		// Firefox/wgpu, overwriting shadow data with zeros.
-		// Create a view and bind it at the shadow slot.
-		WGPUTextureViewDescriptor vd = {};
-		vd.format = orig_tex->format;
-		vd.dimension = orig_tex->view_dimension;
-		vd.baseMipLevel = 0;
-		vd.mipLevelCount = orig_tex->mipmaps;
-		vd.baseArrayLayer = 0;
-		vd.arrayLayerCount = orig_tex->layers;
-		vd.aspect = WGPUTextureAspect_All;
-		WGPUTextureView shadow_view = wgpuTextureCreateView(shadow_tex, &vd);
-		if (shadow_view) {
-			WGPUBindGroupEntry shadow_entry = {};
-			shadow_entry.binding = shadow_bnd;
-			shadow_entry.textureView = shadow_view;
-			entries.push_back(shadow_entry);
-			us->rw_shadow_textures.push_back(shadow_tex);
-			us->rw_shadow_views.push_back(shadow_view);
-			// Register in the driver-level map so future texture_update calls
-			// on the source also copy to this shadow.
-			rw_shadow_copy_map[orig_tex->gpu_handle()].push_back(shadow_tex);
-			us->rw_shadow_registrations.push_back({ orig_tex->gpu_handle(), shadow_tex });
-		} else {
-			wgpuTextureRelease(shadow_tex);
+		WGPUBindGroupEntry entry = {};
+		entry.binding = split.value;
+		entry.textureView = _get_rw_shadow_view(us, split.key & 0xFFFF);
+		if (entry.textureView) {
+			entries.push_back(entry);
 		}
 	}
 
@@ -6772,8 +7192,7 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 	for (uint32_t a = 0; a < entries.size(); a++) {
 		for (uint32_t b = a + 1; b < entries.size(); b++) {
 			if (entries[a].binding == entries[b].binding) {
-				WEBGPU_DIAG({ console.error('[BG-DUP] set=' + $0 + ' binding=' + $1 + ' idx_a=' + $2 + ' idx_b=' + $3); },
-						(int)p_set_index, (int)entries[a].binding, (int)a, (int)b);
+				WEBGPU_DIAG({ console.error('[BG-DUP] set=' + $0 + ' binding=' + $1 + ' idx_a=' + $2 + ' idx_b=' + $3); }, (int)p_set_index, (int)entries[a].binding, (int)a, (int)b);
 			}
 		}
 	}
@@ -6802,8 +7221,7 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 			BGScopeCtx *c = (BGScopeCtx *)p_userdata1;
 			if (p_type != WGPUErrorType_NoError) {
 #ifdef __EMSCRIPTEN__
-				EM_ASM({ console.error('[BINDGROUP-FAIL] shader=' + UTF8ToString($0) + ' set=' + $1 + ' : ' + UTF8ToString($2, $3)); },
-						c->shader_name.get_data(), (int)c->set_index, p_message.data, (int)p_message.length);
+				EM_ASM({ console.error('[BINDGROUP-FAIL] shader=' + UTF8ToString($0) + ' set=' + $1 + ' : ' + UTF8ToString($2, $3)); }, c->shader_name.get_data(), (int)c->set_index, p_message.data, (int)p_message.length);
 #else
 				String message = String::utf8(p_message.data, p_message.length == WGPU_STRLEN ? -1 : (int)p_message.length);
 				ERR_PRINT(vformat("[BINDGROUP-FAIL] shader=%s set=%d: %s", String::utf8(c->shader_name.get_data()), c->set_index, message));
@@ -6827,6 +7245,114 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
 	}
 	us->source_shader = shader;
 	return UniformSetID(us);
+}
+
+WGPUTextureView RenderingDeviceDriverWebGPU::_get_rw_shadow_view(WGUniformSet *p_us, uint32_t p_write_binding) {
+	for (const WGUniformSet::RWShadow &shadow : p_us->rw_shadows) {
+		if (shadow.write_binding == p_write_binding) {
+			return shadow.view;
+		}
+	}
+	WGTexture **source = p_us->bound_textures.getptr(p_write_binding);
+	ERR_FAIL_NULL_V(source, nullptr);
+	WGTexture *tex = *source;
+	ERR_FAIL_COND_V(tex->sample_count != 1, nullptr);
+
+	WGUniformSet::RWShadow shadow;
+	shadow.write_binding = p_write_binding;
+	shadow.source = tex->gpu_handle();
+	shadow.width = tex->width;
+	shadow.height = tex->height;
+	shadow.is_3d = tex->dimension == WGPUTextureDimension_3D;
+	shadow.depth_or_layers = shadow.is_3d ? tex->depth : tex->layers;
+	shadow.base_mip = tex->base_mipmap;
+	shadow.base_layer = tex->base_layer;
+	shadow.mip_count = tex->mipmaps;
+	WGPUTextureDescriptor desc = {};
+	desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
+	desc.dimension = tex->dimension;
+	desc.size = { shadow.width, shadow.height, shadow.depth_or_layers };
+	desc.format = tex->format;
+	desc.mipLevelCount = shadow.mip_count;
+	desc.sampleCount = 1;
+	shadow.texture = wgpuDeviceCreateTexture(device, &desc);
+	ERR_FAIL_NULL_V(shadow.texture, nullptr);
+	WGPUTextureViewDescriptor view_desc = {};
+	view_desc.format = tex->format;
+	view_desc.dimension = tex->view_dimension;
+	view_desc.mipLevelCount = shadow.mip_count;
+	view_desc.arrayLayerCount = shadow.is_3d ? 1 : tex->layers;
+	view_desc.aspect = WGPUTextureAspect_All;
+	shadow.view = wgpuTextureCreateView(shadow.texture, &view_desc);
+	if (!shadow.view) {
+		wgpuTextureRelease(shadow.texture);
+		ERR_FAIL_V_MSG(nullptr, "WebGPU: cannot create read/write storage snapshot view.");
+	}
+	p_us->rw_shadows.push_back(shadow);
+	return shadow.view;
+}
+
+void RenderingDeviceDriverWebGPU::_refresh_compute_shadows(WGCommandBuffer *p_cmd) {
+	WGPipelineWrapper *pipeline = p_cmd->render_state.current_pipeline;
+	if (!pipeline || !pipeline->shader || pipeline->shader->rw_storage_splits.is_empty()) {
+		return;
+	}
+	WGShader *shader = pipeline->shader;
+	bool copying = false;
+	for (const KeyValue<uint32_t, uint32_t> &split : shader->rw_storage_splits) {
+		const uint32_t set = split.key >> 16;
+		if (set >= WGCommandBuffer::MAX_BIND_GROUPS || !p_cmd->compute_uniform_sets[set]) {
+			continue;
+		}
+		WGUniformSet *us = p_cmd->compute_uniform_sets[set];
+		for (const WGUniformSet::RWShadow &shadow : us->rw_shadows) {
+			if (shadow.write_binding != (split.key & 0xFFFF)) {
+				continue;
+			}
+			if (!copying) {
+				p_cmd->end_active_encoder();
+				copying = true;
+				perf.shadow_pass_restarts++;
+			}
+			for (uint32_t mip = 0; mip < shadow.mip_count; mip++) {
+				WGPUTexelCopyTextureInfo src = {};
+				src.texture = shadow.source;
+				src.mipLevel = shadow.base_mip + mip;
+				src.origin.z = shadow.base_layer;
+				src.aspect = WGPUTextureAspect_All;
+				WGPUTexelCopyTextureInfo dst = {};
+				dst.texture = shadow.texture;
+				dst.mipLevel = mip;
+				dst.aspect = WGPUTextureAspect_All;
+				WGPUExtent3D extent = { MAX(1u, shadow.width >> mip), MAX(1u, shadow.height >> mip),
+					shadow.is_3d ? MAX(1u, shadow.depth_or_layers >> mip) : shadow.depth_or_layers };
+				wgpuCommandEncoderCopyTextureToTexture(p_cmd->encoder, &src, &dst, &extent);
+				perf.shadow_copies++;
+			}
+			break;
+		}
+	}
+	if (!copying) {
+		return;
+	}
+	// At most one restart per dispatch, even when several sets need snapshots.
+	// Dispatch only reaches here after the async readiness check. Every bound
+	// read/write split may write its source, so a new snapshot is required for
+	// the next dispatch; binding a set repeatedly does not copy anything.
+	WGPUComputePassDescriptor desc = {};
+	p_cmd->compute_encoder = wgpuCommandEncoderBeginComputePass(p_cmd->encoder, &desc);
+	p_cmd->active_encoder = WGCommandBuffer::COMPUTE;
+	wgpuComputePassEncoderSetPipeline(p_cmd->compute_encoder, pipeline->compute_handle);
+	for (uint32_t i = 0; i < WGCommandBuffer::MAX_BIND_GROUPS; i++) {
+		const auto &state = p_cmd->last_bound_state[i];
+		if (state.group) {
+			wgpuComputePassEncoderSetBindGroup(p_cmd->compute_encoder, i, state.group, state.dynamic_offset_count, state.dynamic_offsets);
+		}
+		p_cmd->bound_bind_groups[i] = nullptr;
+	}
+	for (uint32_t gap : shader->gap_bind_group_indices) {
+		wgpuComputePassEncoderSetBindGroup(p_cmd->compute_encoder, gap, empty_bind_group, 0, nullptr);
+	}
 }
 
 WGPUBindGroup RenderingDeviceDriverWebGPU::_get_compatible_bind_group(WGUniformSet *p_us, WGShader *p_target_shader, uint32_t p_set_idx) {
@@ -6868,75 +7394,68 @@ WGPUBindGroup RenderingDeviceDriverWebGPU::_get_compatible_bind_group(WGUniformS
 		adapted[i] = p_us->cached_entries[i];
 	}
 
-	// Check sampler and texture entries for type mismatches between source and target BGLs.
+	// Adapt from the original resources, not a fallback view or non-filtering
+	// sampler twin selected for the source shader. A shared uniform set can move
+	// between exact-fetch and filtered variants in either direction.
 	if (p_set_idx < (uint32_t)p_target_shader->bind_group_infos.size()) {
 		for (auto &entry : adapted) {
-			// --- Sampler adaptation ---
 			if (entry.sampler != nullptr) {
-				entry.sampler = _compatible_sampler(entry.sampler, p_target_shader, p_set_idx, entry.binding);
+				const WGPUSampler *original = p_us->bound_samplers.getptr(entry.binding);
+				entry.sampler = _compatible_sampler(original ? *original : entry.sampler, p_target_shader, p_set_idx, entry.binding);
 			}
-
-			// --- Texture view adaptation ---
-			// If the target BGL expects Float but the entry has a depth-format texture view,
-			// substitute the fallback float texture view.
-			if (entry.textureView != nullptr) {
-				WGPUTextureSampleType target_tex_sample = WGPUTextureSampleType_BindingNotUsed;
-				for (const auto &bge : p_target_shader->bind_group_infos[p_set_idx].entries) {
-					if (bge.layout_entry.binding == entry.binding &&
-							bge.layout_entry.texture.sampleType != WGPUTextureSampleType_BindingNotUsed) {
-						target_tex_sample = bge.layout_entry.texture.sampleType;
-						break;
-					}
+			if (entry.textureView == nullptr || !p_us->bound_textures.has(entry.binding)) {
+				continue;
+			}
+			WGTexture *tex = p_us->bound_textures[entry.binding];
+			if (!tex) {
+				continue;
+			}
+			WGPUTextureSampleType target_sample = WGPUTextureSampleType_BindingNotUsed;
+			WGPUTextureViewDimension target_dim = WGPUTextureViewDimension_Undefined;
+			bool target_ms = false;
+			for (const auto &bge : p_target_shader->bind_group_infos[p_set_idx].entries) {
+				if (bge.layout_entry.binding == entry.binding) {
+					target_sample = bge.layout_entry.texture.sampleType;
+					target_dim = bge.layout_entry.texture.viewDimension;
+					target_ms = bge.layout_entry.texture.multisampled;
+					break;
 				}
-				// Check source BGL to detect if the texture was originally depth.
-				WGPUTextureSampleType source_tex_sample = WGPUTextureSampleType_BindingNotUsed;
-				if (p_us->source_shader && p_set_idx < (uint32_t)p_us->source_shader->bind_group_infos.size()) {
-					for (const auto &bge : p_us->source_shader->bind_group_infos[p_set_idx].entries) {
-						if (bge.layout_entry.binding == entry.binding &&
-								bge.layout_entry.texture.sampleType != WGPUTextureSampleType_BindingNotUsed) {
-							source_tex_sample = bge.layout_entry.texture.sampleType;
-							break;
-						}
-					}
-				}
-				// Source was Depth, target expects Float → substitute fallback.
-				if (source_tex_sample == WGPUTextureSampleType_Depth &&
-						target_tex_sample == WGPUTextureSampleType_Float &&
-						fallback_float_texture_view != nullptr) {
-					entry.textureView = fallback_float_texture_view;
-				}
-
-				// --- Texture view dimension adaptation ---
-				// If the target BGL expects a different dimension (e.g. 2D vs Cube),
-				// create a compatible view from the original texture.
-				WGPUTextureViewDimension target_dim = WGPUTextureViewDimension_Undefined;
-				for (const auto &bge : p_target_shader->bind_group_infos[p_set_idx].entries) {
-					if (bge.layout_entry.binding == entry.binding &&
-							bge.layout_entry.texture.viewDimension != WGPUTextureViewDimension_Undefined) {
-						target_dim = bge.layout_entry.texture.viewDimension;
-						break;
-					}
-				}
-				if (target_dim != WGPUTextureViewDimension_Undefined &&
-						p_us->bound_textures.has(entry.binding)) {
-					WGTexture *tex = p_us->bound_textures[entry.binding];
-					if (tex && tex->view_dimension != target_dim && tex->view_source) {
-						// Use slice base offsets so slice views don't
-						// silently remap to mip 0 / layer 0 of the parent.
-						WGPUTextureViewDescriptor vd = {};
-						vd.format = tex->format;
-						vd.dimension = target_dim;
-						vd.baseMipLevel = tex->base_mipmap;
-						vd.mipLevelCount = tex->mipmaps;
-						vd.baseArrayLayer = tex->base_layer;
-						vd.arrayLayerCount = (target_dim == WGPUTextureViewDimension_2D) ? 1 : tex->layers;
-						vd.aspect = WGPUTextureAspect_All;
-						WGPUTextureView fixed = wgpuTextureCreateView(tex->view_source, &vd);
-						if (fixed) {
-							entry.textureView = fixed;
-							p_us->temp_views.push_back(fixed);
-						}
-					}
+			}
+			if (target_sample == WGPUTextureSampleType_BindingNotUsed) {
+				continue; // Storage views and injected shadow bindings stay intact.
+			}
+			if (target_ms && (tex->sample_count == 1 || (_is_depth_format(tex->format) && target_sample != WGPUTextureSampleType_Depth)) && fallback_ms_texture_view) {
+				entry.textureView = fallback_ms_texture_view;
+				continue;
+			}
+			if (target_sample == WGPUTextureSampleType_Depth && _is_depth_format(tex->format)) {
+				entry.textureView = _create_depth_sample_view(tex, target_dim);
+				p_us->temp_views.push_back(entry.textureView);
+				continue;
+			}
+			const bool float_target = target_sample == WGPUTextureSampleType_Float || target_sample == WGPUTextureSampleType_UnfilterableFloat;
+			const bool requires_fallback = (float_target && _is_depth_format(tex->format)) ||
+					(target_sample == WGPUTextureSampleType_Float && !float32_filterable_supported && _is_float32_format(tex->format));
+			if (requires_fallback && fallback_float_texture_view) {
+				entry.textureView = target_dim == WGPUTextureViewDimension_Cube && fallback_cube_texture_view ? fallback_cube_texture_view : fallback_float_texture_view;
+				continue;
+			}
+			entry.textureView = tex->default_view;
+			if (target_dim != WGPUTextureViewDimension_Undefined && tex->view_dimension != target_dim) {
+				// Preserve the original slice offsets when a target uses another
+				// view dimension, including after restoring a former fallback.
+				WGPUTextureViewDescriptor vd = {};
+				vd.format = tex->format;
+				vd.dimension = target_dim;
+				vd.baseMipLevel = tex->base_mipmap;
+				vd.mipLevelCount = tex->mipmaps;
+				vd.baseArrayLayer = tex->base_layer;
+				vd.arrayLayerCount = target_dim == WGPUTextureViewDimension_2D ? 1 : tex->layers;
+				vd.aspect = WGPUTextureAspect_All;
+				WGPUTextureView fixed = wgpuTextureCreateView(tex->gpu_handle(), &vd);
+				if (fixed) {
+					entry.textureView = fixed;
+					p_us->temp_views.push_back(fixed);
 				}
 			}
 		}
@@ -6983,6 +7502,28 @@ WGPUBindGroup RenderingDeviceDriverWebGPU::_get_compatible_bind_group(WGUniformS
 		}
 	}
 
+	// A target variant may require a split absent from the source layout. Build
+	// its read binding before dispatch refresh, including on the first use.
+	for (const KeyValue<uint32_t, uint32_t> &split : p_target_shader->rw_storage_splits) {
+		if ((split.key >> 16) != p_set_idx) {
+			continue;
+		}
+		WGPUBindGroupEntry shadow_entry = {};
+		shadow_entry.binding = split.value;
+		shadow_entry.textureView = _get_rw_shadow_view(p_us, split.key & 0xFFFF);
+		bool replaced = false;
+		for (auto &entry : filtered) {
+			if (entry.binding == shadow_entry.binding) {
+				entry = shadow_entry;
+				replaced = true;
+				break;
+			}
+		}
+		if (!replaced && shadow_entry.textureView) {
+			filtered.push_back(shadow_entry);
+		}
+	}
+
 	// Create re-bound bind group with target layout.
 	perf.bind_group_cache_misses++;
 	WGPUBindGroupDescriptor desc = {};
@@ -6997,6 +7538,10 @@ WGPUBindGroup RenderingDeviceDriverWebGPU::_get_compatible_bind_group(WGUniformS
 				p_target_shader->name,
 				(int)filtered.size()));
 	}
+	// Retain the cache key itself. In emdawnwebgpu a bind group keeps the JS
+	// layout alive, but does not retain its C wrapper. Freeing the target shader
+	// could otherwise recycle that wrapper address into a false cache hit.
+	wgpuBindGroupLayoutAddRef(target_layout);
 	p_us->rebind_cache[target_layout] = bg; // Cache even if null.
 	return bg ? bg : p_us->handle;
 }
@@ -7009,37 +7554,17 @@ void RenderingDeviceDriverWebGPU::uniform_set_free(UniformSetID p_uniform_set) {
 			wgpuTextureViewRelease(v);
 		}
 	}
-	// Release shadow read textures/views from read_write storage splits.
-	for (WGPUTextureView v : us->rw_shadow_views) {
-		if (v) {
-			wgpuTextureViewRelease(v);
-		}
-	}
-	for (WGPUTexture t : us->rw_shadow_textures) {
-		if (t) {
-			wgpuTextureRelease(t);
-		}
-	}
-	// Deregister shadow copy targets from the driver-level map.
-	for (const WGUniformSet::RWShadowRegistration &reg : us->rw_shadow_registrations) {
-		if (rw_shadow_copy_map.has(reg.source)) {
-			LocalVector<WGPUTexture> &shadows = rw_shadow_copy_map[reg.source];
-			for (int i = (int)shadows.size() - 1; i >= 0; i--) {
-				if (shadows[i] == reg.shadow) {
-					shadows.remove_at(i);
-					break;
-				}
-			}
-			if (shadows.is_empty()) {
-				rw_shadow_copy_map.erase(reg.source);
-			}
-		}
+	for (const WGUniformSet::RWShadow &shadow : us->rw_shadows) {
+		wgpuTextureViewRelease(shadow.view);
+		wgpuTextureDestroy(shadow.texture);
+		wgpuTextureRelease(shadow.texture);
 	}
 	// Release cached rebind bind groups.
 	for (const KeyValue<WGPUBindGroupLayout, WGPUBindGroup> &kv : us->rebind_cache) {
 		if (kv.value) {
 			wgpuBindGroupRelease(kv.value);
 		}
+		wgpuBindGroupLayoutRelease(kv.key);
 	}
 	if (us->handle) {
 		wgpuBindGroupRelease(us->handle);
@@ -7059,7 +7584,9 @@ uint32_t RenderingDeviceDriverWebGPU::uniform_sets_get_dynamic_offsets(VectorVie
 			continue;
 		}
 		for (const WGBuffer *buf : us->dynamic_buffers) {
-			if (!buf) continue;
+			if (!buf) {
+				continue;
+			}
 			mask |= (buf->frame_idx & 0xFu) << shift;
 			shift += 4u;
 		}
@@ -7214,6 +7741,15 @@ void RenderingDeviceDriverWebGPU::command_copy_texture(CommandBufferID p_cmd_buf
 
 	cmd->end_active_encoder();
 
+	// A compressed mip tail is still one physical block. WebGPU validates
+	// the copy against block dimensions, not the logical 1x1/2x2 mip size.
+	uint32_t block_w = 1, block_h = 1;
+	if (src->rd_format != DATA_FORMAT_MAX) {
+		get_compressed_image_format_block_dimensions(src->rd_format, block_w, block_h);
+	} else if (dst->rd_format != DATA_FORMAT_MAX) {
+		get_compressed_image_format_block_dimensions(dst->rd_format, block_w, block_h);
+	}
+
 	for (uint32_t i = 0; i < p_regions.size(); i++) {
 		const TextureCopyRegion &region = p_regions[i];
 
@@ -7229,10 +7765,139 @@ void RenderingDeviceDriverWebGPU::command_copy_texture(CommandBufferID p_cmd_buf
 		dst_copy.origin = { (uint32_t)region.dst_offset.x, (uint32_t)region.dst_offset.y, region.dst_subresources.base_layer };
 		dst_copy.aspect = WGPUTextureAspect_All;
 
-		WGPUExtent3D extent = { (uint32_t)region.size.x, (uint32_t)region.size.y, (uint32_t)region.size.z };
+		WGPUExtent3D extent = {
+			(uint32_t(region.size.x) + block_w - 1) / block_w * block_w,
+			(uint32_t(region.size.y) + block_h - 1) / block_h * block_h,
+			(uint32_t)region.size.z
+		};
 
 		wgpuCommandEncoderCopyTextureToTexture(cmd->encoder, &src_copy, &dst_copy, &extent);
 	}
+}
+
+static const char *_resolve_compute_wgsl_format_token(WGPUTextureFormat p_format) {
+	switch (p_format) {
+		case WGPUTextureFormat_R32Float:
+			return "r32float";
+		case WGPUTextureFormat_RG32Float:
+			return "rg32float";
+		case WGPUTextureFormat_RGBA16Float:
+			return "rgba16float";
+		case WGPUTextureFormat_RGBA32Float:
+			return "rgba32float";
+		default:
+			return nullptr;
+	}
+}
+
+// Resolve a promoted storage destination without an intermediate texture.
+bool RenderingDeviceDriverWebGPU::_resolve_texture_compute(WGCommandBuffer *p_cmd, WGPUTextureFormat p_dst_format, WGPUTextureView p_src_view, WGPUTextureView p_dst_view, uint32_t p_width, uint32_t p_height) {
+	const char *dst_format_token = _resolve_compute_wgsl_format_token(p_dst_format);
+	if (dst_format_token == nullptr) {
+		WARN_PRINT_ONCE(vformat("WebGPU: command_resolve_texture's compute-resolve fallback doesn't support destination format %d; leaving destination unresolved.", (int)p_dst_format));
+		return false;
+	}
+
+	ResolveComputePipeline *rcp = resolve_compute_pipelines.getptr(p_dst_format);
+	if (rcp == nullptr) {
+		String wgsl = vformat(
+				"@group(0) @binding(0) var src_tex: texture_multisampled_2d<f32>;\n"
+				"@group(0) @binding(1) var dst_tex: texture_storage_2d<%s, write>;\n"
+				"@compute @workgroup_size(8, 8, 1)\n"
+				"fn main(@builtin(global_invocation_id) gid: vec3<u32>) {\n"
+				"\tlet dims = textureDimensions(dst_tex);\n"
+				"\tif (gid.x >= dims.x || gid.y >= dims.y) {\n"
+				"\t\treturn;\n"
+				"\t}\n"
+				"\tlet pos = vec2<i32>(i32(gid.x), i32(gid.y));\n"
+				"\tvar sum = vec4<f32>(0.0, 0.0, 0.0, 0.0);\n"
+				"\tsum = sum + textureLoad(src_tex, pos, 0);\n"
+				"\tsum = sum + textureLoad(src_tex, pos, 1);\n"
+				"\tsum = sum + textureLoad(src_tex, pos, 2);\n"
+				"\tsum = sum + textureLoad(src_tex, pos, 3);\n"
+				"\ttextureStore(dst_tex, pos, sum * 0.25);\n"
+				"}\n",
+				dst_format_token);
+
+		CharString wgsl_utf8 = wgsl.utf8();
+		WGPUShaderSourceWGSL wgsl_source = {};
+		wgsl_source.chain.sType = WGPUSType_ShaderSourceWGSL;
+		wgsl_source.code = WGPUStringView{ wgsl_utf8.get_data(), WGPU_STRLEN };
+		WGPUShaderModuleDescriptor mod_desc = {};
+		mod_desc.nextInChain = (WGPUChainedStruct *)&wgsl_source;
+		WGPUShaderModule mod = wgpuDeviceCreateShaderModule(device, &mod_desc);
+		ERR_FAIL_NULL_V_MSG(mod, false, "WebGPU: failed to create compute-resolve shader module.");
+
+		WGPUBindGroupLayoutEntry bgl_entries[2] = {};
+		bgl_entries[0].binding = 0;
+		bgl_entries[0].visibility = WGPUShaderStage_Compute;
+		bgl_entries[0].texture.sampleType = WGPUTextureSampleType_UnfilterableFloat;
+		bgl_entries[0].texture.viewDimension = WGPUTextureViewDimension_2D;
+		bgl_entries[0].texture.multisampled = true;
+		bgl_entries[1].binding = 1;
+		bgl_entries[1].visibility = WGPUShaderStage_Compute;
+		bgl_entries[1].storageTexture.access = WGPUStorageTextureAccess_WriteOnly;
+		bgl_entries[1].storageTexture.format = p_dst_format;
+		bgl_entries[1].storageTexture.viewDimension = WGPUTextureViewDimension_2D;
+
+		WGPUBindGroupLayoutDescriptor bgl_desc = {};
+		bgl_desc.entryCount = 2;
+		bgl_desc.entries = bgl_entries;
+
+		ResolveComputePipeline new_rcp;
+		new_rcp.bind_group_layout = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
+		if (!new_rcp.bind_group_layout) {
+			wgpuShaderModuleRelease(mod);
+			ERR_FAIL_V_MSG(false, "WebGPU: failed to create compute-resolve bind group layout.");
+		}
+
+		WGPUPipelineLayoutDescriptor pl_desc = {};
+		pl_desc.bindGroupLayoutCount = 1;
+		pl_desc.bindGroupLayouts = &new_rcp.bind_group_layout;
+		WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(device, &pl_desc);
+		if (!pipeline_layout) {
+			wgpuBindGroupLayoutRelease(new_rcp.bind_group_layout);
+			wgpuShaderModuleRelease(mod);
+			ERR_FAIL_V_MSG(false, "WebGPU: failed to create compute-resolve pipeline layout.");
+		}
+
+		WGPUComputePipelineDescriptor cp_desc = {};
+		cp_desc.layout = pipeline_layout;
+		cp_desc.compute.module = mod;
+		cp_desc.compute.entryPoint = WGPUStringView{ "main", WGPU_STRLEN };
+		new_rcp.pipeline = wgpuDeviceCreateComputePipeline(device, &cp_desc);
+		wgpuShaderModuleRelease(mod);
+		wgpuPipelineLayoutRelease(pipeline_layout);
+		if (!new_rcp.pipeline) {
+			wgpuBindGroupLayoutRelease(new_rcp.bind_group_layout);
+			ERR_FAIL_V_MSG(false, "WebGPU: failed to create compute-resolve pipeline.");
+		}
+
+		rcp = &resolve_compute_pipelines.insert(p_dst_format, new_rcp)->value;
+	}
+
+	WGPUBindGroupEntry bg_entries[2] = {};
+	bg_entries[0].binding = 0;
+	bg_entries[0].textureView = p_src_view;
+	bg_entries[1].binding = 1;
+	bg_entries[1].textureView = p_dst_view;
+
+	WGPUBindGroupDescriptor bg_desc = {};
+	bg_desc.layout = rcp->bind_group_layout;
+	bg_desc.entryCount = 2;
+	bg_desc.entries = bg_entries;
+	WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+	ERR_FAIL_NULL_V_MSG(bind_group, false, "WebGPU: failed to create compute-resolve bind group.");
+
+	WGPUComputePassDescriptor cp_pass_desc = {};
+	WGPUComputePassEncoder pass = wgpuCommandEncoderBeginComputePass(p_cmd->encoder, &cp_pass_desc);
+	wgpuComputePassEncoderSetPipeline(pass, rcp->pipeline);
+	wgpuComputePassEncoderSetBindGroup(pass, 0, bind_group, 0, nullptr);
+	wgpuComputePassEncoderDispatchWorkgroups(pass, (p_width + 7) / 8, (p_height + 7) / 8, 1);
+	wgpuComputePassEncoderEnd(pass);
+	wgpuComputePassEncoderRelease(pass);
+	wgpuBindGroupRelease(bind_group);
+	return true;
 }
 
 void RenderingDeviceDriverWebGPU::command_resolve_texture(CommandBufferID p_cmd_buffer, TextureID p_src_texture, TextureLayout p_src_texture_layout, uint32_t p_src_layer, uint32_t p_src_mipmap, TextureID p_dst_texture, TextureLayout p_dst_texture_layout, uint32_t p_dst_layer, uint32_t p_dst_mipmap) {
@@ -7243,15 +7908,14 @@ void RenderingDeviceDriverWebGPU::command_resolve_texture(CommandBufferID p_cmd_
 	ERR_FAIL_NULL(src);
 	ERR_FAIL_NULL(dst);
 
-	// WebGPU has no standalone resolve command: the only way to resolve MSAA is a
-	// render pass whose colour attachment names a resolveTarget. A pass that draws
-	// nothing still resolves when it ends, so begin one and end it immediately.
+	// Equal formats use the native resolveTarget fast path. Storage promotion
+	// can change only the destination (e.g. RG16Float velocity -> RG32Float),
+	// in which case a compute pass averages directly into the promoted format.
 	//
 	// Without this the destination is simply never written. Anything rendering
 	// through an MSAA viewport (a SubViewport with msaa_3d set — the ship preview
 	// in the upgrade station) resolved into a texture that stayed black.
-	ERR_FAIL_COND_MSG(src->format != dst->format,
-			"WebGPU: cannot resolve between different texture formats.");
+
 	// resolveTarget is colour-only; depth MSAA goes through the resolve shaders.
 	ERR_FAIL_COND_MSG(_is_depth_format(src->format),
 			"WebGPU: cannot resolve a depth texture through a resolve target.");
@@ -7259,16 +7923,25 @@ void RenderingDeviceDriverWebGPU::command_resolve_texture(CommandBufferID p_cmd_
 					!(dst->usage & WGPUTextureUsage_RenderAttachment),
 			"WebGPU: cannot resolve a texture that lacks RenderAttachment usage.");
 
+	ERR_FAIL_COND_MSG(src->sample_count != 4 || dst->sample_count != 1, "WebGPU: resolve requires 4x source and single-sample destination.");
+	const bool convert_format = src->format != dst->format;
+	ERR_FAIL_COND_MSG(convert_format && (!(src->usage & WGPUTextureUsage_TextureBinding) || !(dst->usage & WGPUTextureUsage_StorageBinding)),
+			"WebGPU: format-converting resolve requires a sampled source and storage destination.");
+	ERR_FAIL_COND(p_src_mipmap < src->base_mipmap || p_dst_mipmap < dst->base_mipmap);
+	const uint32_t dst_width = MAX(1u, dst->width >> (p_dst_mipmap - dst->base_mipmap));
+	const uint32_t dst_height = MAX(1u, dst->height >> (p_dst_mipmap - dst->base_mipmap));
+	ERR_FAIL_COND_MSG(src->width != dst_width || src->height != dst_height, "WebGPU: resolve source and destination extents differ.");
+
 	cmd->end_active_encoder();
 
-	// Slice views carry a base offset into the parent, so the requested
-	// layer/mipmap is relative to that base, not to the whole texture.
+	// RenderingDevice already supplies absolute layer/mip offsets, including
+	// the slice base. gpu_handle() returns the parent texture; do not add twice.
 	WGPUTextureViewDescriptor src_desc = {};
 	src_desc.format = src->format;
 	src_desc.dimension = WGPUTextureViewDimension_2D;
-	src_desc.baseMipLevel = src->base_mipmap + p_src_mipmap;
+	src_desc.baseMipLevel = p_src_mipmap;
 	src_desc.mipLevelCount = 1;
-	src_desc.baseArrayLayer = src->base_layer + p_src_layer;
+	src_desc.baseArrayLayer = p_src_layer;
 	src_desc.arrayLayerCount = 1;
 	src_desc.aspect = WGPUTextureAspect_All;
 	WGPUTextureView src_view = wgpuTextureCreateView(src->gpu_handle(), &src_desc);
@@ -7276,12 +7949,19 @@ void RenderingDeviceDriverWebGPU::command_resolve_texture(CommandBufferID p_cmd_
 	WGPUTextureViewDescriptor dst_desc = {};
 	dst_desc.format = dst->format;
 	dst_desc.dimension = WGPUTextureViewDimension_2D;
-	dst_desc.baseMipLevel = dst->base_mipmap + p_dst_mipmap;
+	dst_desc.baseMipLevel = p_dst_mipmap;
 	dst_desc.mipLevelCount = 1;
-	dst_desc.baseArrayLayer = dst->base_layer + p_dst_layer;
+	dst_desc.baseArrayLayer = p_dst_layer;
 	dst_desc.arrayLayerCount = 1;
 	dst_desc.aspect = WGPUTextureAspect_All;
 	WGPUTextureView dst_view = wgpuTextureCreateView(dst->gpu_handle(), &dst_desc);
+
+	if (convert_format) {
+		_resolve_texture_compute(cmd, dst->format, src_view, dst_view, dst_width, dst_height);
+		wgpuTextureViewRelease(src_view);
+		wgpuTextureViewRelease(dst_view);
+		return;
+	}
 
 	WGPURenderPassColorAttachment color_att = {};
 	color_att.view = src_view;
@@ -7338,6 +8018,7 @@ static uint32_t _wgpu_format_byte_size(WGPUTextureFormat p_format) {
 		case WGPUTextureFormat_BGRA8Unorm:
 		case WGPUTextureFormat_BGRA8UnormSrgb:
 		case WGPUTextureFormat_RGB10A2Unorm:
+		case WGPUTextureFormat_RGB10A2Uint:
 		case WGPUTextureFormat_RG11B10Ufloat:
 			return 4;
 		case WGPUTextureFormat_RG32Float:
@@ -7356,109 +8037,40 @@ static uint32_t _wgpu_format_byte_size(WGPUTextureFormat p_format) {
 	}
 }
 
-// Encode a clear Color into the raw texel bytes for a given WGPUTextureFormat.
-// r_texel must point to at least 16 bytes and be pre-zeroed.
-static void _encode_clear_texel(WGPUTextureFormat p_format, const Color &p_color, uint8_t *r_texel) {
+// Reuse the upload/readback conversion contract for every physical texel format.
+static bool _encode_clear_texel(WGPUTextureFormat p_format, const Color &p_color, uint8_t *r_texel) {
+	using E = WebGPUTextureConversion::Encoding;
+	WebGPUTextureConversion::Format format = _conversion_format(p_format);
+	Color color = p_color;
 	switch (p_format) {
-		// Float32 formats.
-		case WGPUTextureFormat_R32Float: {
-			float v = p_color.r;
-			memcpy(r_texel, &v, 4);
-		} break;
-		case WGPUTextureFormat_RG32Float: {
-			float v[2] = { p_color.r, p_color.g };
-			memcpy(r_texel, v, 8);
-		} break;
-		case WGPUTextureFormat_RGBA32Float: {
-			float v[4] = { p_color.r, p_color.g, p_color.b, p_color.a };
-			memcpy(r_texel, v, 16);
-		} break;
-
-		// Uint32 formats.
-		case WGPUTextureFormat_R32Uint: {
-			uint32_t v = (uint32_t)p_color.r;
-			memcpy(r_texel, &v, 4);
-		} break;
-		case WGPUTextureFormat_RG32Uint: {
-			uint32_t v[2] = { (uint32_t)p_color.r, (uint32_t)p_color.g };
-			memcpy(r_texel, v, 8);
-		} break;
-		case WGPUTextureFormat_RGBA32Uint: {
-			uint32_t v[4] = { (uint32_t)p_color.r, (uint32_t)p_color.g, (uint32_t)p_color.b, (uint32_t)p_color.a };
-			memcpy(r_texel, v, 16);
-		} break;
-
-		// Sint32 formats.
-		case WGPUTextureFormat_R32Sint: {
-			int32_t v = (int32_t)p_color.r;
-			memcpy(r_texel, &v, 4);
-		} break;
-		case WGPUTextureFormat_RG32Sint: {
-			int32_t v[2] = { (int32_t)p_color.r, (int32_t)p_color.g };
-			memcpy(r_texel, v, 8);
-		} break;
-		case WGPUTextureFormat_RGBA32Sint: {
-			int32_t v[4] = { (int32_t)p_color.r, (int32_t)p_color.g, (int32_t)p_color.b, (int32_t)p_color.a };
-			memcpy(r_texel, v, 16);
-		} break;
-
-		// Unorm8 formats.
-		case WGPUTextureFormat_R8Unorm: {
-			r_texel[0] = (uint8_t)CLAMP(p_color.r * 255.0f, 0.0f, 255.0f);
-		} break;
-		case WGPUTextureFormat_RG8Unorm: {
-			r_texel[0] = (uint8_t)CLAMP(p_color.r * 255.0f, 0.0f, 255.0f);
-			r_texel[1] = (uint8_t)CLAMP(p_color.g * 255.0f, 0.0f, 255.0f);
-		} break;
-		case WGPUTextureFormat_RGBA8Unorm:
-		case WGPUTextureFormat_RGBA8UnormSrgb: {
-			r_texel[0] = (uint8_t)CLAMP(p_color.r * 255.0f, 0.0f, 255.0f);
-			r_texel[1] = (uint8_t)CLAMP(p_color.g * 255.0f, 0.0f, 255.0f);
-			r_texel[2] = (uint8_t)CLAMP(p_color.b * 255.0f, 0.0f, 255.0f);
-			r_texel[3] = (uint8_t)CLAMP(p_color.a * 255.0f, 0.0f, 255.0f);
-		} break;
+		case WGPUTextureFormat_RGBA8UnormSrgb:
+		case WGPUTextureFormat_BGRA8UnormSrgb:
+			color = color.linear_to_srgb();
+			[[fallthrough]];
 		case WGPUTextureFormat_BGRA8Unorm:
-		case WGPUTextureFormat_BGRA8UnormSrgb: {
-			r_texel[0] = (uint8_t)CLAMP(p_color.b * 255.0f, 0.0f, 255.0f);
-			r_texel[1] = (uint8_t)CLAMP(p_color.g * 255.0f, 0.0f, 255.0f);
-			r_texel[2] = (uint8_t)CLAMP(p_color.r * 255.0f, 0.0f, 255.0f);
-			r_texel[3] = (uint8_t)CLAMP(p_color.a * 255.0f, 0.0f, 255.0f);
-		} break;
-
-		// Float16 formats.
-		case WGPUTextureFormat_R16Float: {
-			uint16_t v = Math::make_half_float(p_color.r);
-			memcpy(r_texel, &v, 2);
-		} break;
-		case WGPUTextureFormat_RG16Float: {
-			uint16_t v[2] = { Math::make_half_float(p_color.r), Math::make_half_float(p_color.g) };
-			memcpy(r_texel, v, 4);
-		} break;
-		case WGPUTextureFormat_RGBA16Float: {
-			uint16_t v[4] = { Math::make_half_float(p_color.r), Math::make_half_float(p_color.g),
-				Math::make_half_float(p_color.b), Math::make_half_float(p_color.a) };
-			memcpy(r_texel, v, 8);
-		} break;
-
-		// Uint16 formats.
-		case WGPUTextureFormat_R16Uint: {
-			uint16_t v = (uint16_t)p_color.r;
-			memcpy(r_texel, &v, 2);
-		} break;
-		case WGPUTextureFormat_RG16Uint: {
-			uint16_t v[2] = { (uint16_t)p_color.r, (uint16_t)p_color.g };
-			memcpy(r_texel, v, 4);
-		} break;
-		case WGPUTextureFormat_RGBA16Uint: {
-			uint16_t v[4] = { (uint16_t)p_color.r, (uint16_t)p_color.g,
-				(uint16_t)p_color.b, (uint16_t)p_color.a };
-			memcpy(r_texel, v, 8);
-		} break;
-
+			format = { E::UNORM8, 4 };
+			break;
+		case WGPUTextureFormat_RGB10A2Unorm:
+			format = { E::RGB10A2_UNORM, 4 };
+			break;
+		case WGPUTextureFormat_RGB10A2Uint:
+			format = { E::RGB10A2_UINT, 4 };
+			break;
+		case WGPUTextureFormat_RG11B10Ufloat:
+			format = { E::RG11B10_UFLOAT, 3 };
+			break;
 		default:
-			// Zero-fill for unhandled formats (already zeroed).
 			break;
 	}
+	if (!WebGPUTextureConversion::pixel_size(format)) {
+		return false;
+	}
+	if (p_format == WGPUTextureFormat_BGRA8Unorm || p_format == WGPUTextureFormat_BGRA8UnormSrgb) {
+		SWAP(color.r, color.b);
+	}
+	const double values[4] = { color.r, color.g, color.b, color.a };
+	WebGPUTextureConversion::pack(r_texel, format, values);
+	return true;
 }
 
 void RenderingDeviceDriverWebGPU::command_clear_color_texture(CommandBufferID p_cmd_buffer, TextureID p_texture, TextureLayout p_texture_layout, const Color &p_color, const TextureSubresourceRange &p_subresources) {
@@ -7469,7 +8081,7 @@ void RenderingDeviceDriverWebGPU::command_clear_color_texture(CommandBufferID p_
 
 	cmd->end_active_encoder();
 
-	if (tex->usage & WGPUTextureUsage_RenderAttachment) {
+	if ((tex->usage & WGPUTextureUsage_RenderAttachment) && tex->dimension != WGPUTextureDimension_3D) {
 		// Fast path: clear via a zero-draw render pass (requires RenderAttachment usage).
 		for (uint32_t mip = p_subresources.base_mipmap; mip < p_subresources.base_mipmap + p_subresources.mipmap_count; mip++) {
 			for (uint32_t layer = p_subresources.base_layer; layer < p_subresources.base_layer + p_subresources.layer_count; layer++) {
@@ -7502,58 +8114,81 @@ void RenderingDeviceDriverWebGPU::command_clear_color_texture(CommandBufferID p_
 			}
 		}
 	} else {
-		// Fallback for textures without RenderAttachment usage (e.g. storage-only
-		// compute textures). Uses wgpuQueueWriteTexture to fill with the clear color.
+		// Queue writes run before the submitted encoder, so they cannot represent a
+		// clear between dispatches. Encode copies from immutable buffer contents.
 		ERR_FAIL_COND_MSG(!(tex->usage & WGPUTextureUsage_CopyDst),
 				"Cannot clear texture: texture has neither RenderAttachment nor CopyDst usage.");
-
-		uint32_t bpp = _wgpu_format_byte_size(tex->format);
-		ERR_FAIL_COND_MSG(bpp == 0,
-				"Cannot clear texture via writeTexture: unsupported format.");
-
-		bool is_zero = (p_color.r == 0.0f && p_color.g == 0.0f && p_color.b == 0.0f && p_color.a == 0.0f);
-
-		// Encode one texel of the clear color.
+		const uint32_t bpp = _wgpu_format_byte_size(tex->format);
+		ERR_FAIL_COND_MSG(bpp == 0, "Cannot clear texture: unsupported format.");
+		const bool is_zero = p_color == Color(0, 0, 0, 0);
 		uint8_t texel[16] = {};
-		if (!is_zero) {
-			_encode_clear_texel(tex->format, p_color, texel);
+		ERR_FAIL_COND_MSG(!is_zero && !_encode_clear_texel(tex->format, p_color, texel),
+				"Cannot encode clear color for this texture format.");
+
+		// Bound temporary allocations even for large 3D volumes. Common zero
+		// clears reuse a driver-owned immutable buffer; WebGPU initializes it to
+		// zero without an 8 MiB CPU upload for each SDFGI scratch volume.
+		const uint64_t chunk_limit = MIN(uint64_t(4 * 1024 * 1024), device_limits.maxBufferSize) & ~uint64_t(3);
+		ERR_FAIL_COND(chunk_limit < 256);
+		if (is_zero && !texture_clear_zero_buffer) {
+			WGPUBufferDescriptor desc = {};
+			desc.size = chunk_limit;
+			desc.usage = WGPUBufferUsage_CopySrc;
+			texture_clear_zero_buffer = wgpuDeviceCreateBuffer(device, &desc);
+			ERR_FAIL_NULL(texture_clear_zero_buffer);
 		}
-
+		const bool is_3d = tex->dimension == WGPUTextureDimension_3D;
 		for (uint32_t mip = p_subresources.base_mipmap; mip < p_subresources.base_mipmap + p_subresources.mipmap_count; mip++) {
-			for (uint32_t layer = p_subresources.base_layer; layer < p_subresources.base_layer + p_subresources.layer_count; layer++) {
-				uint32_t w = MAX(1u, tex->width >> mip);
-				uint32_t h = MAX(1u, tex->height >> mip);
-				uint32_t row_bytes = w * bpp;
-
-				// Fill a CPU buffer with the clear texel pattern.
-				Vector<uint8_t> data;
-				data.resize(row_bytes * h);
-				uint8_t *ptr = data.ptrw();
-
-				if (is_zero) {
-					memset(ptr, 0, data.size());
-				} else {
-					for (uint32_t y = 0; y < h; y++) {
-						for (uint32_t x = 0; x < w; x++) {
-							memcpy(ptr + y * row_bytes + x * bpp, texel, bpp);
-						}
+			ERR_FAIL_COND(mip < tex->base_mipmap);
+			const uint32_t relative_mip = mip - tex->base_mipmap;
+			const uint32_t width = MAX(1u, tex->width >> relative_mip);
+			const uint32_t height = MAX(1u, tex->height >> relative_mip);
+			const uint32_t depth = is_3d ? MAX(1u, tex->depth >> relative_mip) : p_subresources.layer_count;
+			const uint32_t row_pitch = (width * bpp + 255u) & ~255u;
+			ERR_FAIL_COND(row_pitch > chunk_limit);
+			const uint32_t chunk_rows = MIN(uint64_t(height), chunk_limit / row_pitch);
+			const uint32_t chunk_depth = chunk_rows == height ? MIN(uint64_t(depth), chunk_limit / (uint64_t(row_pitch) * chunk_rows)) : 1;
+			const uint64_t buffer_size = uint64_t(row_pitch) * chunk_rows * chunk_depth;
+			WGPUBuffer clear_buffer = texture_clear_zero_buffer;
+			if (!is_zero) {
+				WGPUBufferDescriptor desc = {};
+				desc.size = buffer_size;
+				desc.usage = WGPUBufferUsage_CopySrc;
+				desc.mappedAtCreation = true;
+				clear_buffer = wgpuDeviceCreateBuffer(device, &desc);
+				ERR_FAIL_NULL(clear_buffer);
+				uint8_t *data = static_cast<uint8_t *>(wgpuBufferGetMappedRange(clear_buffer, 0, buffer_size));
+				if (!data) {
+					wgpuBufferRelease(clear_buffer);
+					ERR_FAIL_MSG("Cannot map texture clear upload buffer.");
+				}
+				// The aligned row padding is not copied into the texture.
+				for (uint64_t row = 0; row < uint64_t(chunk_rows) * chunk_depth; row++) {
+					for (uint32_t x = 0; x < width; x++) {
+						memcpy(data + row * row_pitch + x * bpp, texel, bpp);
 					}
 				}
-
-				WGPUTexelCopyTextureInfo dst = {};
-				dst.texture = tex->gpu_handle();
-				dst.mipLevel = mip;
-				dst.origin = { 0, 0, layer };
-				dst.aspect = WGPUTextureAspect_All;
-
-				WGPUTexelCopyBufferLayout layout = {};
-				layout.offset = 0;
-				layout.bytesPerRow = row_bytes;
-				layout.rowsPerImage = h;
-
-				WGPUExtent3D extent = { w, h, 1 };
-
-				wgpuQueueWriteTexture(queue, &dst, ptr, data.size(), &layout, &extent);
+				wgpuBufferUnmap(clear_buffer);
+			}
+			for (uint32_t z = 0; z < depth; z += chunk_depth) {
+				for (uint32_t y = 0; y < height; y += chunk_rows) {
+					WGPUTexelCopyBufferInfo src = {};
+					src.buffer = clear_buffer;
+					src.layout.bytesPerRow = row_pitch;
+					src.layout.rowsPerImage = chunk_rows;
+					WGPUTexelCopyTextureInfo dst = {};
+					dst.texture = tex->gpu_handle();
+					dst.mipLevel = mip;
+					dst.origin = { 0, y, is_3d ? z : p_subresources.base_layer + z };
+					dst.aspect = WGPUTextureAspect_All;
+					WGPUExtent3D extent = { width, MIN(chunk_rows, height - y), MIN(chunk_depth, depth - z) };
+					wgpuCommandEncoderCopyBufferToTexture(cmd->encoder, &src, &dst, &extent);
+				}
+			}
+			if (!is_zero) {
+				// Encoding retains the buffer. Destroying before submission would
+				// invalidate the command; release our reference instead.
+				wgpuBufferRelease(clear_buffer);
 			}
 		}
 	}
@@ -7652,7 +8287,8 @@ void RenderingDeviceDriverWebGPU::command_copy_buffer_to_texture(CommandBufferID
 		WGPUTexelCopyTextureInfo dst_copy = {};
 		dst_copy.texture = dst->gpu_handle();
 		dst_copy.mipLevel = region.texture_subresource.mipmap;
-		dst_copy.origin = { (uint32_t)region.texture_offset.x, (uint32_t)region.texture_offset.y, region.texture_subresource.layer };
+		dst_copy.origin = { (uint32_t)region.texture_offset.x, (uint32_t)region.texture_offset.y,
+			dst->dimension == WGPUTextureDimension_3D ? (uint32_t)region.texture_offset.z : region.texture_subresource.layer };
 		dst_copy.aspect = WGPUTextureAspect_All;
 
 		WGPUExtent3D extent = { copy_w, copy_h, (uint32_t)region.texture_region_size.z };
@@ -7691,70 +8327,9 @@ void RenderingDeviceDriverWebGPU::command_copy_buffer_to_texture(CommandBufferID
 		src->map_dirty = false;
 	}
 
-	// If the destination texture has read_write storage shadow copies,
-	// replay the same writeTexture data to each shadow. This is more
-	// reliable than texture-to-texture copy on Firefox/wgpu, which can
-	// race with the preceding writeTexture on some implementations.
-	WGPUTexture dst_handle = dst->gpu_handle();
-	if (use_write_texture && rw_shadow_copy_map.has(dst_handle)) {
-		const LocalVector<WGPUTexture> &shadows = rw_shadow_copy_map[dst_handle];
-		static int _shadow_write_log = 0;
-		if (_shadow_write_log < 10) {
-			WEBGPU_DIAG({ console.log('[SHADOW-WRITE] shadow_count=' + $0 + ' regions=' + $1); },
-					(int)shadows.size(), (int)p_regions.size());
-			_shadow_write_log++;
-		}
-		for (WGPUTexture shadow : shadows) {
-			for (uint32_t i = 0; i < p_regions.size(); i++) {
-				const BufferTextureCopyRegion &region = p_regions[i];
-
-				uint32_t s_copy_w = (uint32_t)region.texture_region_size.x;
-				uint32_t s_copy_h = (uint32_t)region.texture_region_size.y;
-				if (block_w > 1 || block_h > 1) {
-					s_copy_w = ((s_copy_w + block_w - 1) / block_w) * block_w;
-					s_copy_h = ((s_copy_h + block_h - 1) / block_h) * block_h;
-				}
-
-				WGPUTexelCopyTextureInfo shd_copy = {};
-				shd_copy.texture = shadow;
-				shd_copy.mipLevel = region.texture_subresource.mipmap;
-				shd_copy.origin = { (uint32_t)region.texture_offset.x, (uint32_t)region.texture_offset.y, region.texture_subresource.layer };
-				shd_copy.aspect = WGPUTextureAspect_All;
-
-				uint32_t s_aligned_bpr = ((region.row_pitch + 255) / 256) * 256;
-				uint32_t s_rows = (block_h > 1) ? (s_copy_h / block_h) : s_copy_h;
-
-				WGPUTexelCopyBufferLayout shd_layout = {};
-				shd_layout.offset = 0;
-				shd_layout.bytesPerRow = s_aligned_bpr;
-				shd_layout.rowsPerImage = s_rows;
-
-				const uint8_t *data_ptr = src->shadow_map + region.buffer_offset;
-				uint64_t data_size = (uint64_t)s_aligned_bpr * s_rows;
-
-				WGPUExtent3D shd_extent = { s_copy_w, s_copy_h, (uint32_t)region.texture_region_size.z };
-				wgpuQueueWriteTexture(queue, &shd_copy, data_ptr, data_size, &shd_layout, &shd_extent);
-			}
-		}
-	} else if (!use_write_texture && rw_shadow_copy_map.has(dst_handle)) {
-		// GPU buffer path: record shadow copies on the same command encoder so
-		// they execute after the preceding buffer-to-texture copy.
-		const LocalVector<WGPUTexture> &shadows = rw_shadow_copy_map[dst_handle];
-		for (WGPUTexture shadow : shadows) {
-			WGPUTexelCopyTextureInfo shd_src = {};
-			shd_src.texture = dst_handle;
-			shd_src.mipLevel = 0;
-			shd_src.origin = { 0, 0, 0 };
-			shd_src.aspect = WGPUTextureAspect_All;
-			WGPUTexelCopyTextureInfo shd_dst = {};
-			shd_dst.texture = shadow;
-			shd_dst.mipLevel = 0;
-			shd_dst.origin = { 0, 0, 0 };
-			shd_dst.aspect = WGPUTextureAspect_All;
-			WGPUExtent3D shd_extent = { dst->width, dst->height, dst->depth };
-			wgpuCommandEncoderCopyTextureToTexture(cmd->encoder, &shd_src, &shd_dst, &shd_extent);
-		}
-	}
+	// Read/write snapshots are refreshed by the command encoder immediately
+	// before dispatch. Replaying CPU uploads to every shadow here duplicates
+	// transfers and misses GPU-written data, new variants and shared slices.
 }
 
 // Single-call multi-layer buffer→texture upload. The WGSL queue.writeTexture
@@ -7924,18 +8499,17 @@ void RenderingDeviceDriverWebGPU::command_copy_texture_to_buffer(CommandBufferID
 		WGPUTexelCopyTextureInfo src_copy = {};
 		src_copy.texture = src->gpu_handle();
 		src_copy.mipLevel = region.texture_subresource.mipmap;
-		src_copy.origin = { (uint32_t)region.texture_offset.x, (uint32_t)region.texture_offset.y, region.texture_subresource.layer };
+		src_copy.origin = { (uint32_t)region.texture_offset.x, (uint32_t)region.texture_offset.y,
+			src->dimension == WGPUTextureDimension_3D ? (uint32_t)region.texture_offset.z : region.texture_subresource.layer };
 		src_copy.aspect = WGPUTextureAspect_All;
 
-		// WGPUTexelCopyBufferInfo combines the buffer handle + layout (Dawn API)
-		// Use the actual GPU texture's pixel size for bytesPerRow — promoted
-		// formats (R8→R32Float etc.) have a different bpp than the engine expects.
-		uint32_t gpu_bpp = wgpu_format_pixel_size(src->format);
-		uint32_t actual_row_bytes = copy_w * gpu_bpp;
+		// RD sized and aligned the staging row for the physical GPU format.
+		// Preserve that pitch: compressed formats have bytes per block, not a
+		// per-texel byte size, so width * wgpu_format_pixel_size() gives zero.
 		WGPUTexelCopyBufferInfo dst_info = {};
 		dst_info.buffer = dst->handle;
 		dst_info.layout.offset = region.buffer_offset;
-		dst_info.layout.bytesPerRow = ((actual_row_bytes + 255) / 256) * 256;
+		dst_info.layout.bytesPerRow = ((region.row_pitch + 255) / 256) * 256;
 		dst_info.layout.rowsPerImage = (block_h > 1) ? (copy_h / block_h) : copy_h;
 
 		WGPUExtent3D extent = { copy_w, copy_h, (uint32_t)region.texture_region_size.z };
@@ -7976,23 +8550,8 @@ void RenderingDeviceDriverWebGPU::command_bind_push_constants(CommandBufferID p_
 	cmd->push_constants_dirty = true;
 }
 
-void RenderingDeviceDriverWebGPU::_flush_push_constants(WGCommandBuffer *p_cmd_buf, WGShader *p_shader) {
-	if (!p_cmd_buf->push_constants_dirty || p_cmd_buf->push_constant_data_len == 0 || !p_shader) {
-		perf.push_constant_skipped++;
-		return;
-	}
-	if (p_shader->push_constant_bind_group == UINT32_MAX || !push_constant_bind_group) {
-		p_cmd_buf->push_constants_dirty = false;
-		perf.push_constant_skipped++;
-		return; // Shader has no push constants.
-	}
-
-	perf.push_constant_writes++;
-
-	// Write push constant data to CPU shadow buffer (batched GPU write at submit time).
-	uint32_t aligned_size = (p_cmd_buf->push_constant_data_len + PUSH_CONSTANT_SLOT_ALIGNMENT - 1) & ~(PUSH_CONSTANT_SLOT_ALIGNMENT - 1);
-
-	if (push_constant_ring_offset + aligned_size > PUSH_CONSTANT_RING_SIZE) {
+void RenderingDeviceDriverWebGPU::_ensure_push_constant_space(WGCommandBuffer *p_cmd_buf, uint32_t p_aligned_size) {
+	if (push_constant_ring_offset + p_aligned_size > PUSH_CONSTANT_RING_SIZE) {
 		// Ring overflow: flush + submit to freeze all prior dispatches/draws' data, then reset.
 		// This guarantees earlier work in the submitted command buffer sees correct push
 		// constant values (wgpuQueueWriteBuffer is ordered-before submit).
@@ -8209,6 +8768,27 @@ void RenderingDeviceDriverWebGPU::_flush_push_constants(WGCommandBuffer *p_cmd_b
 			}
 		}
 	}
+}
+
+void RenderingDeviceDriverWebGPU::_flush_push_constants(WGCommandBuffer *p_cmd_buf, WGShader *p_shader) {
+	if (!p_cmd_buf->push_constants_dirty || p_cmd_buf->push_constant_data_len == 0 || !p_shader) {
+		perf.push_constant_skipped++;
+		return;
+	}
+	if (p_shader->push_constant_bind_group == UINT32_MAX || !push_constant_bind_group) {
+		p_cmd_buf->push_constants_dirty = false;
+		perf.push_constant_skipped++;
+		return; // Shader has no push constants.
+	}
+
+	perf.push_constant_writes++;
+
+	// Write push constant data to CPU shadow buffer (batched GPU write at submit time).
+	uint32_t aligned_size = (p_cmd_buf->push_constant_data_len + PUSH_CONSTANT_SLOT_ALIGNMENT - 1) & ~(PUSH_CONSTANT_SLOT_ALIGNMENT - 1);
+
+	if (push_constant_ring_offset + aligned_size > PUSH_CONSTANT_RING_SIZE) {
+		_ensure_push_constant_space(p_cmd_buf, aligned_size);
+	}
 
 	memcpy(push_constant_shadow + push_constant_ring_offset, p_cmd_buf->push_constant_data, p_cmd_buf->push_constant_data_len);
 
@@ -8263,6 +8843,18 @@ void RenderingDeviceDriverWebGPU::_flush_push_constants(WGCommandBuffer *p_cmd_b
 		wgpuRenderPassEncoderSetBindGroup(p_cmd_buf->render_encoder, p_shader->push_constant_bind_group, pc_bind_group_to_use, num_dyn_offsets, dyn_offsets);
 	} else if (p_cmd_buf->compute_encoder) {
 		wgpuComputePassEncoderSetBindGroup(p_cmd_buf->compute_encoder, p_shader->push_constant_bind_group, pc_bind_group_to_use, num_dyn_offsets, dyn_offsets);
+	}
+
+	// A storage snapshot or ring overflow can restart the pass without new
+	// push constants. Preserve the actual ring offset, not the placeholder
+	// saved when the material set was originally bound.
+	if (p_shader->push_constant_bind_group < WGCommandBuffer::MAX_BIND_GROUPS) {
+		auto &state = p_cmd_buf->last_bound_state[p_shader->push_constant_bind_group];
+		state.group = pc_bind_group_to_use;
+		state.dynamic_offset_count = num_dyn_offsets;
+		for (uint32_t i = 0; i < num_dyn_offsets; i++) {
+			state.dynamic_offsets[i] = dyn_offsets[i];
+		}
 	}
 
 	p_cmd_buf->last_flushed_pc_offset = push_constant_ring_offset;
@@ -8389,6 +8981,99 @@ WGPURenderPipeline RenderingDeviceDriverWebGPU::_get_depth_rect_clear_pipeline(W
 	return pipeline;
 }
 
+WGPURenderPipeline RenderingDeviceDriverWebGPU::_get_region_clear_pipeline(const LocalVector<WGPUTextureFormat> &p_color_formats, uint32_t p_color_mask, WGPUTextureFormat p_depth_format, bool p_clear_depth, bool p_clear_stencil, uint32_t p_samples) {
+	String key = vformat("%d|%d|%d|%d|%d", p_color_mask, int(p_depth_format), int(p_clear_depth), int(p_clear_stencil), p_samples);
+	for (WGPUTextureFormat format : p_color_formats) {
+		key += "|" + itos(int(format));
+	}
+	if (const WGPURenderPipeline *cached = region_clear_pipelines.getptr(key)) {
+		return *cached;
+	}
+
+	String source =
+			"@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {\n"
+			"  let p = vec2f(f32((i << 1u) & 2u), f32(i & 2u));\n"
+			"  return vec4f(p * 2.0 - 1.0, 0.0, 1.0);\n"
+			"}\n";
+	if (p_color_mask) {
+		// Use the existing upload ring: one draw clears all selected attachments,
+		// including integer/unblendable formats and HDR values. No blend constant
+		// restrictions, per-clear buffer allocation or extra queue submission.
+		source += vformat("@group(0) @binding(%d) var<storage, read> colors: array<vec4f, 8>;\n", PUSH_CONSTANT_RING_BINDING);
+		source += "struct Output {\n";
+		String body;
+		for (uint32_t i = 0; i < p_color_formats.size(); i++) {
+			if (!(p_color_mask & (1u << i))) {
+				continue;
+			}
+			WGPUTextureSampleType sample_type = _texture_sample_type_for_format(p_color_formats[i]);
+			const char *type = sample_type == WGPUTextureSampleType_Uint ? "vec4u" : (sample_type == WGPUTextureSampleType_Sint ? "vec4i" : "vec4f");
+			source += vformat("  @location(%d) color%d: %s,\n", i, i, type);
+			body += vformat("  result.color%d = %s(colors[%d]);\n", i, type, i);
+		}
+		source += "};\n@fragment fn fs() -> Output {\n  var result: Output;\n" + body + "  return result;\n}\n";
+	} else {
+		source += "@fragment fn fs() {}\n";
+	}
+	CharString utf8 = source.utf8();
+	WGPUShaderSourceWGSL wgsl = {};
+	wgsl.chain.sType = WGPUSType_ShaderSourceWGSL;
+	wgsl.code = { utf8.get_data(), WGPU_STRLEN };
+	WGPUShaderModuleDescriptor module_desc = {};
+	module_desc.nextInChain = &wgsl.chain;
+	WGPUShaderModule module = wgpuDeviceCreateShaderModule(device, &module_desc);
+	ERR_FAIL_NULL_V(module, nullptr);
+
+	LocalVector<WGPUColorTargetState> targets;
+	for (uint32_t i = 0; i < p_color_formats.size(); i++) {
+		WGPUColorTargetState target = {};
+		target.format = p_color_formats[i];
+		target.writeMask = (p_color_mask & (1u << i)) ? WGPUColorWriteMask_All : WGPUColorWriteMask_None;
+		targets.push_back(target);
+	}
+	WGPUFragmentState fragment = {};
+	fragment.module = module;
+	fragment.entryPoint = { "fs", WGPU_STRLEN };
+	fragment.targetCount = targets.size();
+	fragment.targets = targets.ptr();
+
+	WGPUDepthStencilState ds = {};
+	if (p_depth_format != WGPUTextureFormat_Undefined) {
+		ds.format = p_depth_format;
+		ds.depthWriteEnabled = p_clear_depth ? WGPUOptionalBool_True : WGPUOptionalBool_False;
+		ds.depthCompare = WGPUCompareFunction_Always;
+		ds.stencilFront = { WGPUCompareFunction_Always, WGPUStencilOperation_Keep, WGPUStencilOperation_Keep,
+			p_clear_stencil ? WGPUStencilOperation_Replace : WGPUStencilOperation_Keep };
+		ds.stencilBack = ds.stencilFront;
+		ds.stencilReadMask = 0xff;
+		ds.stencilWriteMask = p_clear_stencil ? 0xff : 0;
+	}
+	WGPUPipelineLayoutDescriptor layout_desc = {};
+	layout_desc.bindGroupLayoutCount = p_color_mask ? 1 : 0;
+	layout_desc.bindGroupLayouts = p_color_mask ? &push_constant_bind_group_layout : nullptr;
+	WGPUPipelineLayout layout = wgpuDeviceCreatePipelineLayout(device, &layout_desc);
+	if (!layout) {
+		wgpuShaderModuleRelease(module);
+		ERR_FAIL_V(nullptr);
+	}
+	WGPURenderPipelineDescriptor desc = {};
+	desc.label = { "partial attachment clear", WGPU_STRLEN };
+	desc.layout = layout;
+	desc.vertex.module = module;
+	desc.vertex.entryPoint = { "vs", WGPU_STRLEN };
+	desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+	desc.depthStencil = p_depth_format != WGPUTextureFormat_Undefined ? &ds : nullptr;
+	desc.multisample.count = p_samples;
+	desc.multisample.mask = 0xffffffff;
+	desc.fragment = &fragment;
+	WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(device, &desc);
+	wgpuPipelineLayoutRelease(layout);
+	wgpuShaderModuleRelease(module);
+	ERR_FAIL_NULL_V(pipeline, nullptr);
+	region_clear_pipelines.insert(key, pipeline);
+	return pipeline;
+}
+
 void RenderingDeviceDriverWebGPU::command_begin_render_pass(CommandBufferID p_cmd_buffer, RenderPassID p_render_pass, FramebufferID p_framebuffer, CommandBufferType p_cmd_buffer_type, const Rect2i &p_rect, VectorView<RenderPassClearValue> p_clear_values) {
 	WGCommandBuffer *cmd = (WGCommandBuffer *)(p_cmd_buffer.id);
 	WGRenderPass *rp = (WGRenderPass *)(p_render_pass.id);
@@ -8442,15 +9127,20 @@ void RenderingDeviceDriverWebGPU::command_begin_render_pass(CommandBufferID p_cm
 	// --- Helper lambdas for op mapping ---
 	auto map_load_op = [](AttachmentLoadOp op) -> WGPULoadOp {
 		switch (op) {
-			case ATTACHMENT_LOAD_OP_LOAD: return WGPULoadOp_Load;
-			case ATTACHMENT_LOAD_OP_CLEAR: return WGPULoadOp_Clear;
-			default: return WGPULoadOp_Clear; // DONT_CARE → Clear (WebGPU has no DONT_CARE; Clear is safest)
+			case ATTACHMENT_LOAD_OP_LOAD:
+				return WGPULoadOp_Load;
+			case ATTACHMENT_LOAD_OP_CLEAR:
+				return WGPULoadOp_Clear;
+			default:
+				return WGPULoadOp_Clear; // DONT_CARE → Clear (WebGPU has no DONT_CARE; Clear is safest)
 		}
 	};
 	auto map_store_op = [](AttachmentStoreOp op) -> WGPUStoreOp {
 		switch (op) {
-			case ATTACHMENT_STORE_OP_STORE: return WGPUStoreOp_Store;
-			default: return WGPUStoreOp_Discard; // DONT_CARE
+			case ATTACHMENT_STORE_OP_STORE:
+				return WGPUStoreOp_Store;
+			default:
+				return WGPUStoreOp_Discard; // DONT_CARE
 		}
 	};
 
@@ -8521,8 +9211,6 @@ void RenderingDeviceDriverWebGPU::command_begin_render_pass(CommandBufferID p_cm
 	// --- Build depth/stencil attachment ---
 	WGPURenderPassDepthStencilAttachment ds_att = {};
 	WGPURenderPassDepthStencilAttachment *ds_att_ptr = nullptr;
-	WGPURenderPipeline depth_rect_clear_pipeline = nullptr;
-	float depth_rect_clear_value = 0.0f;
 
 	const RDD::AttachmentReference &ds_ref = subpass.depth_stencil_reference;
 	if (ds_ref.attachment != RDD::AttachmentReference::UNUSED &&
@@ -8548,14 +9236,7 @@ void RenderingDeviceDriverWebGPU::command_begin_render_pass(CommandBufferID p_cm
 				} else {
 					ds_att.depthClearValue = 1.0f;
 				}
-				if (ds_att.depthLoadOp == WGPULoadOp_Clear && color_attachments.is_empty() &&
-						p_rect != Rect2i(0, 0, fb->width, fb->height)) {
-					depth_rect_clear_pipeline = _get_depth_rect_clear_pipeline(wgpu_fmt, fb->attachments[ds_ref.attachment]->sample_count);
-					depth_rect_clear_value = ds_att.depthClearValue;
-					ds_att.depthLoadOp = WGPULoadOp_Load;
-					// A partial pass must preserve the rest of the atlas as well.
-					ds_att.depthStoreOp = WGPUStoreOp_Store;
-				}
+
 			} else {
 				ds_att.depthLoadOp = WGPULoadOp_Undefined;
 				ds_att.depthStoreOp = WGPUStoreOp_Undefined;
@@ -8587,6 +9268,78 @@ void RenderingDeviceDriverWebGPU::command_begin_render_pass(CommandBufferID p_cm
 			ds_att.stencilStoreOp = WGPUStoreOp_Store;
 		}
 		ds_att_ptr = &ds_att;
+	}
+
+	// Vulkan limits attachment clears/discards to the render area; WebGPU load
+	// and store ops affect the whole texture. Preserve neighbors and clear the
+	// requested rectangle with one draw in this pass. The depth-atlas fast path
+	// retains its uniform-free draw.
+	WGPURenderPipeline region_clear_pipeline = nullptr;
+	uint32_t region_color_mask = 0;
+	uint32_t region_color_offset = 0;
+	float region_depth = 0.0f;
+	uint32_t region_stencil = 0;
+	Rect2i region = p_rect.intersection(Rect2i(0, 0, fb->width, fb->height));
+	if (!rp->is_swap_chain_pass && region.has_area() && region != Rect2i(0, 0, fb->width, fb->height)) {
+		ERR_FAIL_COND(color_attachments.size() > 8);
+		LocalVector<WGPUTextureFormat> formats;
+		float colors[8][4] = {};
+		uint32_t samples = 1;
+		for (uint32_t i = 0; i < color_attachments.size(); i++) {
+			WGPURenderPassColorAttachment &att = color_attachments[i];
+			WGPUTextureFormat format = WGPUTextureFormat_Undefined;
+			uint32_t index = subpass.color_references[i].attachment;
+			if (att.view && index < fb->attachments.size() && fb->attachments[index]) {
+				format = fb->attachments[index]->format;
+				samples = fb->attachments[index]->sample_count;
+				att.storeOp = WGPUStoreOp_Store;
+				if (att.loadOp == WGPULoadOp_Clear) {
+					region_color_mask |= 1u << i;
+					colors[i][0] = att.clearValue.r;
+					colors[i][1] = att.clearValue.g;
+					colors[i][2] = att.clearValue.b;
+					colors[i][3] = att.clearValue.a;
+					att.loadOp = WGPULoadOp_Load;
+				}
+			}
+			formats.push_back(format);
+		}
+		bool clear_depth = false;
+		bool clear_stencil = false;
+		WGPUTextureFormat depth_format = WGPUTextureFormat_Undefined;
+		if (ds_att_ptr && ds_ref.attachment < fb->attachments.size() && fb->attachments[ds_ref.attachment]) {
+			depth_format = fb->attachments[ds_ref.attachment]->format;
+			samples = fb->attachments[ds_ref.attachment]->sample_count;
+			if (is_depth_format_wgpu(depth_format)) {
+				clear_depth = ds_att.depthLoadOp == WGPULoadOp_Clear;
+				region_depth = ds_att.depthClearValue;
+				ds_att.depthLoadOp = WGPULoadOp_Load;
+				ds_att.depthStoreOp = WGPUStoreOp_Store;
+			}
+			if (has_stencil_wgpu(depth_format)) {
+				clear_stencil = ds_att.stencilLoadOp == WGPULoadOp_Clear;
+				region_stencil = ds_att.stencilClearValue;
+				ds_att.stencilLoadOp = WGPULoadOp_Load;
+				ds_att.stencilStoreOp = WGPUStoreOp_Store;
+			}
+		}
+		if (clear_depth && !clear_stencil && formats.is_empty()) {
+			region_clear_pipeline = _get_depth_rect_clear_pipeline(depth_format, samples);
+		} else if (region_color_mask || clear_depth || clear_stencil) {
+			region_clear_pipeline = _get_region_clear_pipeline(formats, region_color_mask, depth_format, clear_depth, clear_stencil, samples);
+		}
+		if (region_color_mask) {
+			// Reserve before beginning the pass, so ring exhaustion never restarts
+			// a just-started clear pass. Ordinary writes stay batched at submit.
+			if (push_constant_ring_offset + PUSH_CONSTANT_SLOT_ALIGNMENT > PUSH_CONSTANT_RING_SIZE) {
+				_ensure_push_constant_space(cmd, PUSH_CONSTANT_SLOT_ALIGNMENT);
+			}
+			region_color_offset = push_constant_ring_offset;
+			memcpy(push_constant_shadow + region_color_offset, colors, sizeof(colors));
+			push_constant_shadow_dirty_start = MIN(push_constant_shadow_dirty_start, region_color_offset);
+			push_constant_ring_offset += PUSH_CONSTANT_SLOT_ALIGNMENT;
+			push_constant_shadow_dirty_end = MAX(push_constant_shadow_dirty_end, push_constant_ring_offset);
+		}
 	}
 
 	// --- Begin render pass ---
@@ -8621,8 +9374,7 @@ void RenderingDeviceDriverWebGPU::command_begin_render_pass(CommandBufferID p_cm
 							console.log('[SC-VIEW#' + $3 + '] getCurrentTexture error: ' + e.message);
 						}
 					}
-				}
-			}, (int)(uintptr_t)view, load_op_int, store_op_int, _sc_view_log);
+				} }, (int)(uintptr_t)view, load_op_int, store_op_int, _sc_view_log);
 			_sc_view_log++;
 		}
 	}
@@ -8651,11 +9403,16 @@ void RenderingDeviceDriverWebGPU::command_begin_render_pass(CommandBufferID p_cm
 	cmd->render_encoder = wgpuCommandEncoderBeginRenderPass(cmd->encoder, &pass_desc);
 	cmd->active_encoder = WGCommandBuffer::RENDER;
 
-	if (depth_rect_clear_pipeline) {
-		wgpuRenderPassEncoderSetPipeline(cmd->render_encoder, depth_rect_clear_pipeline);
-		wgpuRenderPassEncoderSetViewport(cmd->render_encoder, (float)p_rect.position.x, (float)p_rect.position.y,
-				(float)p_rect.size.x, (float)p_rect.size.y, depth_rect_clear_value, depth_rect_clear_value);
-		wgpuRenderPassEncoderSetScissorRect(cmd->render_encoder, p_rect.position.x, p_rect.position.y, p_rect.size.x, p_rect.size.y);
+	if (region_clear_pipeline) {
+		wgpuRenderPassEncoderSetPipeline(cmd->render_encoder, region_clear_pipeline);
+		wgpuRenderPassEncoderSetViewport(cmd->render_encoder, (float)region.position.x, (float)region.position.y,
+				(float)region.size.x, (float)region.size.y, region_depth, region_depth);
+		wgpuRenderPassEncoderSetScissorRect(cmd->render_encoder, region.position.x, region.position.y, region.size.x, region.size.y);
+		wgpuRenderPassEncoderSetStencilReference(cmd->render_encoder, region_stencil);
+		if (region_color_mask) {
+			wgpuRenderPassEncoderSetBindGroup(cmd->render_encoder, 0, push_constant_bind_group, 1, &region_color_offset);
+			perf.set_bind_group_calls++;
+		}
 		wgpuRenderPassEncoderDraw(cmd->render_encoder, 3, 1, 0, 0);
 		perf.draw_calls++;
 		perf.set_pipeline_calls++;
@@ -8676,10 +9433,7 @@ void RenderingDeviceDriverWebGPU::command_end_render_pass(CommandBufferID p_cmd_
 	// Temporary: log render pass ends to track pass boundaries.
 	static int _rp_end_log = 0;
 	if (_rp_end_log < 30) {
-		WEBGPU_DIAG({ console.log('[RP-END#' + $0 + '] ' + $1 + 'x' + $2); },
-				_rp_end_log,
-				cmd->render_state.render_area_width,
-				cmd->render_state.render_area_height);
+		WEBGPU_DIAG({ console.log('[RP-END#' + $0 + '] ' + $1 + 'x' + $2); }, _rp_end_log, cmd->render_state.render_area_width, cmd->render_state.render_area_height);
 		_rp_end_log++;
 	}
 
@@ -8921,7 +9675,15 @@ void RenderingDeviceDriverWebGPU::command_bind_render_uniform_sets(CommandBuffer
 	ERR_FAIL_NULL(cmd);
 	ERR_FAIL_COND(!cmd->render_encoder);
 
-	WGShader *pipeline_shader = cmd->render_state.current_pipeline ? cmd->render_state.current_pipeline->shader : nullptr;
+	// The graph can bind sets before binding their pipeline. Adapt to the shader
+	// RD names, not whichever pipeline happened to be bound by the previous draw.
+	WGShader *pipeline_shader = (WGShader *)p_shader.id;
+	if (!pipeline_shader && cmd->render_state.current_pipeline) {
+		pipeline_shader = cmd->render_state.current_pipeline->shader;
+	}
+	if (pipeline_shader) {
+		ERR_FAIL_COND(!_ensure_shader_layout(pipeline_shader));
+	}
 
 	// Diagnostic: log texture bindings and push constant info on swap chain pass.
 	// Invalidate bind group tracking if the pipeline shader changed.
@@ -8940,22 +9702,34 @@ void RenderingDeviceDriverWebGPU::command_bind_render_uniform_sets(CommandBuffer
 	if (_cur_fb && _sync_conflict_log_count < 20) {
 		for (uint32_t i = 0; i < p_set_count; i++) {
 			WGUniformSet *us = (WGUniformSet *)(p_uniform_sets[i].id);
-			if (!us) continue;
+			if (!us) {
+				continue;
+			}
 			for (const KeyValue<uint32_t, WGTexture *> &kv : us->bound_textures) {
 				WGTexture *btex = kv.value;
-				if (!btex || !btex->view_source) continue;
+				if (!btex || !btex->view_source) {
+					continue;
+				}
 				for (uint32_t a = 0; a < _cur_fb->attachments.size(); a++) {
 					WGTexture *atex = _cur_fb->attachments[a];
-					if (!atex) continue;
+					if (!atex) {
+						continue;
+					}
 					WGPUTexture a_src = atex->gpu_handle();
 					if (a_src == btex->view_source) {
 						_sync_conflict_log_count++;
-						if (_sync_conflict_log_count >= 20) break;
+						if (_sync_conflict_log_count >= 20) {
+							break;
+						}
 					}
 				}
-				if (_sync_conflict_log_count >= 20) break;
+				if (_sync_conflict_log_count >= 20) {
+					break;
+				}
 			}
-			if (_sync_conflict_log_count >= 20) break;
+			if (_sync_conflict_log_count >= 20) {
+				break;
+			}
 		}
 	}
 
@@ -9100,7 +9874,8 @@ void RenderingDeviceDriverWebGPU::command_render_draw_indexed(CommandBufferID p_
 		// Always select the correct variant — the format may have changed since pipeline bind.
 		if (pw->is_strip && pw->render_handle_u16) {
 			WGPURenderPipeline needed = (cmd->render_state.current_index_format == WGPUIndexFormat_Uint16)
-					? pw->render_handle_u16 : pw->render_handle;
+					? pw->render_handle_u16
+					: pw->render_handle;
 			wgpuRenderPassEncoderSetPipeline(cmd->render_encoder, needed);
 		}
 	}
@@ -9124,7 +9899,8 @@ void RenderingDeviceDriverWebGPU::command_render_draw_indexed_indirect(CommandBu
 		_flush_push_constants(cmd, pw->shader);
 		if (pw->is_strip && pw->render_handle_u16) {
 			WGPURenderPipeline needed = (cmd->render_state.current_index_format == WGPUIndexFormat_Uint16)
-					? pw->render_handle_u16 : pw->render_handle;
+					? pw->render_handle_u16
+					: pw->render_handle;
 			wgpuRenderPassEncoderSetPipeline(cmd->render_encoder, needed);
 		}
 	}
@@ -9352,7 +10128,7 @@ static PackedByteArray _patch_spirv_spec_constants(const PackedByteArray &p_spir
 WGPUShaderModule RenderingDeviceDriverWebGPU::_create_module_with_spec_constants(
 		const PackedByteArray &p_spirv,
 		VectorView<PipelineSpecializationConstant> p_constants,
-		ShaderStage p_stage) {
+		ShaderStage p_stage, const WGShader *p_shader) {
 	PackedByteArray patched = _patch_spirv_spec_constants(p_spirv, p_constants);
 
 	// Cached SPIR-V → WGSL via Tint (see _spv_to_wgsl_cached above).
@@ -9363,38 +10139,7 @@ WGPUShaderModule RenderingDeviceDriverWebGPU::_create_module_with_spec_constants
 		return nullptr;
 	}
 
-	// Format remapping passes (must match shader_create_from_container).
-
-	// Remap unsupported 8-bit storage texture format names in WGSL.
-	if (!has_texture_formats_tier1 && _wgsl_has_unsupported_8bit_storage_format(wgsl_str)) {
-		String ws(wgsl_str);
-		ws = ws.replace("rg8unorm", "rg32float");
-		ws = ws.replace("rg8snorm", "rg32float");
-		ws = ws.replace("rg8uint", "rg32uint");
-		ws = ws.replace("rg8sint", "rg32sint");
-		ws = ws.replace("r8unorm", "r32float");
-		ws = ws.replace("r8snorm", "r32float");
-		ws = ws.replace("r8uint", "r32uint");
-		ws = ws.replace("r8sint", "r32sint");
-		free(wgsl_str);
-		CharString cs = ws.utf8();
-		wgsl_str = (char *)malloc(cs.length() + 1);
-		memcpy(wgsl_str, cs.get_data(), cs.length() + 1);
-	}
-
-	// Remap 16-bit storage formats to 32-bit equivalents (WebGPU spec §26.1.1).
-	_wgsl_remap_unsupported_16bit_storage_formats(wgsl_str);
-
-	// WebGPU does not allow read_write storage buffers in vertex shaders.
-	// Keep fragment storage access unchanged: clustered rendering uses atomics there,
-	// and WGSL requires atomic storage variables to remain read_write.
-	if (p_stage == SHADER_STAGE_VERTEX) {
-		char *q = wgsl_str;
-		while ((q = strstr(q, "var<storage, read_write>")) != nullptr) {
-			memcpy(q, "var<storage, read>      ", 24);
-			q += 24;
-		}
-	}
+	_remap_unsupported_wgsl_storage_formats(wgsl_str);
 
 	// FLATTEN-BA: Remove binding_array<T, N> → T (same pass as in shader_create_from_container).
 	// Chrome doesn't support 'sized_binding_array'; Tint emits it for GLSL texture arrays.
@@ -9404,30 +10149,42 @@ WGPUShaderModule RenderingDeviceDriverWebGPU::_create_module_with_spec_constants
 		int64_t search_from = 0;
 		while (true) {
 			int64_t ba_pos = ws.find(": binding_array<", search_from);
-			if (ba_pos == -1) break;
+			if (ba_pos == -1) {
+				break;
+			}
 			int64_t inner_start = ba_pos + (int64_t)strlen(": binding_array<");
 			int depth = 1;
 			int64_t p = inner_start;
 			int64_t ws_len = (int64_t)ws.length();
 			while (p < ws_len && depth > 0) {
 				char32_t c = ws[p];
-				if (c == '<') depth++;
-				else if (c == '>') depth--;
+				if (c == '<') {
+					depth++;
+				} else if (c == '>') {
+					depth--;
+				}
 				p++;
 			}
 			String inner = ws.substr(inner_start, p - 1 - inner_start);
 			int64_t last_comma = inner.rfind(",");
-			if (last_comma == -1) { search_from = p; continue; }
+			if (last_comma == -1) {
+				search_from = p;
+				continue;
+			}
 			String type_part = inner.substr(0, last_comma).strip_edges();
 			{
 				int64_t name_end = ba_pos;
-				while (name_end > 0 && ws[name_end - 1] == ' ') name_end--;
+				while (name_end > 0 && ws[name_end - 1] == ' ') {
+					name_end--;
+				}
 				int64_t name_start = name_end;
 				while (name_start > 0) {
 					char32_t c = ws[name_start - 1];
-					if (c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))
+					if (c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
 						name_start--;
-					else break;
+					} else {
+						break;
+					}
 				}
 				String var_name = ws.substr(name_start, name_end - name_start);
 				if (!var_name.is_empty()) {
@@ -9444,7 +10201,9 @@ WGPUShaderModule RenderingDeviceDriverWebGPU::_create_module_with_spec_constants
 			while (true) {
 				String needle = var + "[";
 				int64_t idx_pos = ws.find(needle, search_pos);
-				if (idx_pos == -1) break;
+				if (idx_pos == -1) {
+					break;
+				}
 				if (idx_pos > 0) {
 					char32_t before = ws[idx_pos - 1];
 					if (before == '_' || (before >= 'a' && before <= 'z') || (before >= 'A' && before <= 'Z') || (before >= '0' && before <= '9')) {
@@ -9456,8 +10215,11 @@ WGPUShaderModule RenderingDeviceDriverWebGPU::_create_module_with_spec_constants
 				int depth2 = 1;
 				int64_t ws_len2 = (int64_t)ws.length();
 				while (pp < ws_len2 && depth2 > 0) {
-					if (ws[pp] == '[') depth2++;
-					else if (ws[pp] == ']') depth2--;
+					if (ws[pp] == '[') {
+						depth2++;
+					} else if (ws[pp] == ']') {
+						depth2--;
+					}
 					pp++;
 				}
 				ws = ws.substr(0, idx_pos) + var + ws.substr(pp);
@@ -9469,6 +10231,8 @@ WGPUShaderModule RenderingDeviceDriverWebGPU::_create_module_with_spec_constants
 		wgsl_str = (char *)malloc(cs.length() + 1);
 		memcpy(wgsl_str, cs.get_data(), cs.length() + 1);
 	}
+
+	_lower_storage_texture_access(wgsl_str, p_shader->storage_texture_access, nullptr, nullptr, nullptr);
 
 	WGPUShaderSourceWGSL wgsl_source = {};
 	wgsl_source.chain.sType = WGPUSType_ShaderSourceWGSL;
@@ -9600,14 +10364,14 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 			// Legacy path: patch SPIR-V and create specialized modules via Tint.
 			if (!shader->stage_spirv[SHADER_STAGE_VERTEX].is_empty()) {
 				specialized_vertex = _create_module_with_spec_constants(
-						shader->stage_spirv[SHADER_STAGE_VERTEX], p_specialization_constants, SHADER_STAGE_VERTEX);
+						shader->stage_spirv[SHADER_STAGE_VERTEX], p_specialization_constants, SHADER_STAGE_VERTEX, shader);
 				if (specialized_vertex) {
 					vertex_module = specialized_vertex;
 				}
 			}
 			if (!shader->stage_spirv[SHADER_STAGE_FRAGMENT].is_empty()) {
 				specialized_fragment = _create_module_with_spec_constants(
-						shader->stage_spirv[SHADER_STAGE_FRAGMENT], p_specialization_constants, SHADER_STAGE_FRAGMENT);
+						shader->stage_spirv[SHADER_STAGE_FRAGMENT], p_specialization_constants, SHADER_STAGE_FRAGMENT, shader);
 				if (specialized_fragment) {
 					fragment_module = specialized_fragment;
 				}
@@ -9743,27 +10507,44 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 	// --- Depth/stencil helpers ---
 	auto map_compare = [](CompareOperator op) -> WGPUCompareFunction {
 		switch (op) {
-			case COMPARE_OP_NEVER: return WGPUCompareFunction_Never;
-			case COMPARE_OP_LESS: return WGPUCompareFunction_Less;
-			case COMPARE_OP_EQUAL: return WGPUCompareFunction_Equal;
-			case COMPARE_OP_LESS_OR_EQUAL: return WGPUCompareFunction_LessEqual;
-			case COMPARE_OP_GREATER: return WGPUCompareFunction_Greater;
-			case COMPARE_OP_NOT_EQUAL: return WGPUCompareFunction_NotEqual;
-			case COMPARE_OP_GREATER_OR_EQUAL: return WGPUCompareFunction_GreaterEqual;
-			default: return WGPUCompareFunction_Always;
+			case COMPARE_OP_NEVER:
+				return WGPUCompareFunction_Never;
+			case COMPARE_OP_LESS:
+				return WGPUCompareFunction_Less;
+			case COMPARE_OP_EQUAL:
+				return WGPUCompareFunction_Equal;
+			case COMPARE_OP_LESS_OR_EQUAL:
+				return WGPUCompareFunction_LessEqual;
+			case COMPARE_OP_GREATER:
+				return WGPUCompareFunction_Greater;
+			case COMPARE_OP_NOT_EQUAL:
+				return WGPUCompareFunction_NotEqual;
+			case COMPARE_OP_GREATER_OR_EQUAL:
+				return WGPUCompareFunction_GreaterEqual;
+			default:
+				return WGPUCompareFunction_Always;
 		}
 	};
 	auto map_stencil_op = [](StencilOperation op) -> WGPUStencilOperation {
 		switch (op) {
-			case STENCIL_OP_KEEP: return WGPUStencilOperation_Keep;
-			case STENCIL_OP_ZERO: return WGPUStencilOperation_Zero;
-			case STENCIL_OP_REPLACE: return WGPUStencilOperation_Replace;
-			case STENCIL_OP_INCREMENT_AND_CLAMP: return WGPUStencilOperation_IncrementClamp;
-			case STENCIL_OP_DECREMENT_AND_CLAMP: return WGPUStencilOperation_DecrementClamp;
-			case STENCIL_OP_INVERT: return WGPUStencilOperation_Invert;
-			case STENCIL_OP_INCREMENT_AND_WRAP: return WGPUStencilOperation_IncrementWrap;
-			case STENCIL_OP_DECREMENT_AND_WRAP: return WGPUStencilOperation_DecrementWrap;
-			default: return WGPUStencilOperation_Keep;
+			case STENCIL_OP_KEEP:
+				return WGPUStencilOperation_Keep;
+			case STENCIL_OP_ZERO:
+				return WGPUStencilOperation_Zero;
+			case STENCIL_OP_REPLACE:
+				return WGPUStencilOperation_Replace;
+			case STENCIL_OP_INCREMENT_AND_CLAMP:
+				return WGPUStencilOperation_IncrementClamp;
+			case STENCIL_OP_DECREMENT_AND_CLAMP:
+				return WGPUStencilOperation_DecrementClamp;
+			case STENCIL_OP_INVERT:
+				return WGPUStencilOperation_Invert;
+			case STENCIL_OP_INCREMENT_AND_WRAP:
+				return WGPUStencilOperation_IncrementWrap;
+			case STENCIL_OP_DECREMENT_AND_WRAP:
+				return WGPUStencilOperation_DecrementWrap;
+			default:
+				return WGPUStencilOperation_Keep;
 		}
 	};
 
@@ -9818,32 +10599,54 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 	// --- Blend factor/op helpers ---
 	auto blend_factor = [](BlendFactor f) -> WGPUBlendFactor {
 		switch (f) {
-			case BLEND_FACTOR_ZERO: return WGPUBlendFactor_Zero;
-			case BLEND_FACTOR_ONE: return WGPUBlendFactor_One;
-			case BLEND_FACTOR_SRC_COLOR: return WGPUBlendFactor_Src;
-			case BLEND_FACTOR_ONE_MINUS_SRC_COLOR: return WGPUBlendFactor_OneMinusSrc;
-			case BLEND_FACTOR_DST_COLOR: return WGPUBlendFactor_Dst;
-			case BLEND_FACTOR_ONE_MINUS_DST_COLOR: return WGPUBlendFactor_OneMinusDst;
-			case BLEND_FACTOR_SRC_ALPHA: return WGPUBlendFactor_SrcAlpha;
-			case BLEND_FACTOR_ONE_MINUS_SRC_ALPHA: return WGPUBlendFactor_OneMinusSrcAlpha;
-			case BLEND_FACTOR_DST_ALPHA: return WGPUBlendFactor_DstAlpha;
-			case BLEND_FACTOR_ONE_MINUS_DST_ALPHA: return WGPUBlendFactor_OneMinusDstAlpha;
-			case BLEND_FACTOR_CONSTANT_COLOR: return WGPUBlendFactor_Constant;
-			case BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR: return WGPUBlendFactor_OneMinusConstant;
-			case BLEND_FACTOR_CONSTANT_ALPHA: return WGPUBlendFactor_Constant;
-			case BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA: return WGPUBlendFactor_OneMinusConstant;
-			case BLEND_FACTOR_SRC_ALPHA_SATURATE: return WGPUBlendFactor_SrcAlphaSaturated;
-			default: return WGPUBlendFactor_Zero;
+			case BLEND_FACTOR_ZERO:
+				return WGPUBlendFactor_Zero;
+			case BLEND_FACTOR_ONE:
+				return WGPUBlendFactor_One;
+			case BLEND_FACTOR_SRC_COLOR:
+				return WGPUBlendFactor_Src;
+			case BLEND_FACTOR_ONE_MINUS_SRC_COLOR:
+				return WGPUBlendFactor_OneMinusSrc;
+			case BLEND_FACTOR_DST_COLOR:
+				return WGPUBlendFactor_Dst;
+			case BLEND_FACTOR_ONE_MINUS_DST_COLOR:
+				return WGPUBlendFactor_OneMinusDst;
+			case BLEND_FACTOR_SRC_ALPHA:
+				return WGPUBlendFactor_SrcAlpha;
+			case BLEND_FACTOR_ONE_MINUS_SRC_ALPHA:
+				return WGPUBlendFactor_OneMinusSrcAlpha;
+			case BLEND_FACTOR_DST_ALPHA:
+				return WGPUBlendFactor_DstAlpha;
+			case BLEND_FACTOR_ONE_MINUS_DST_ALPHA:
+				return WGPUBlendFactor_OneMinusDstAlpha;
+			case BLEND_FACTOR_CONSTANT_COLOR:
+				return WGPUBlendFactor_Constant;
+			case BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR:
+				return WGPUBlendFactor_OneMinusConstant;
+			case BLEND_FACTOR_CONSTANT_ALPHA:
+				return WGPUBlendFactor_Constant;
+			case BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA:
+				return WGPUBlendFactor_OneMinusConstant;
+			case BLEND_FACTOR_SRC_ALPHA_SATURATE:
+				return WGPUBlendFactor_SrcAlphaSaturated;
+			default:
+				return WGPUBlendFactor_Zero;
 		}
 	};
 	auto blend_op = [](BlendOperation op) -> WGPUBlendOperation {
 		switch (op) {
-			case BLEND_OP_ADD: return WGPUBlendOperation_Add;
-			case BLEND_OP_SUBTRACT: return WGPUBlendOperation_Subtract;
-			case BLEND_OP_REVERSE_SUBTRACT: return WGPUBlendOperation_ReverseSubtract;
-			case BLEND_OP_MINIMUM: return WGPUBlendOperation_Min;
-			case BLEND_OP_MAXIMUM: return WGPUBlendOperation_Max;
-			default: return WGPUBlendOperation_Add;
+			case BLEND_OP_ADD:
+				return WGPUBlendOperation_Add;
+			case BLEND_OP_SUBTRACT:
+				return WGPUBlendOperation_Subtract;
+			case BLEND_OP_REVERSE_SUBTRACT:
+				return WGPUBlendOperation_ReverseSubtract;
+			case BLEND_OP_MINIMUM:
+				return WGPUBlendOperation_Min;
+			case BLEND_OP_MAXIMUM:
+				return WGPUBlendOperation_Max;
+			default:
+				return WGPUBlendOperation_Add;
 		}
 	};
 
@@ -9895,10 +10698,18 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 		if (i < (uint32_t)p_blend_state.attachments.size()) {
 			const PipelineColorBlendState::Attachment &ba = p_blend_state.attachments[i];
 			WGPUColorWriteMask mask = WGPUColorWriteMask_None;
-			if (ba.write_r) { mask |= WGPUColorWriteMask_Red; }
-			if (ba.write_g) { mask |= WGPUColorWriteMask_Green; }
-			if (ba.write_b) { mask |= WGPUColorWriteMask_Blue; }
-			if (ba.write_a) { mask |= WGPUColorWriteMask_Alpha; }
+			if (ba.write_r) {
+				mask |= WGPUColorWriteMask_Red;
+			}
+			if (ba.write_g) {
+				mask |= WGPUColorWriteMask_Green;
+			}
+			if (ba.write_b) {
+				mask |= WGPUColorWriteMask_Blue;
+			}
+			if (ba.write_a) {
+				mask |= WGPUColorWriteMask_Alpha;
+			}
 			// Strip alpha writes for ALL pipelines targeting the swap chain format.
 			// Chrome ignores CompositeAlphaMode_Opaque and composites alpha=0
 			// against a gray/white background. The swap chain (BGRA8Unorm) is the
@@ -9910,8 +10721,7 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 				static int _alpha_strip_log = 0;
 				if (_alpha_strip_log < 10) {
 					[[maybe_unused]] const char *sname = (p_shader.id) ? ((WGShader *)(p_shader.id))->name.utf8().get_data() : "?";
-					WEBGPU_DIAG({ console.log('[ALPHA-STRIP] Pipeline #' + $0 + ' fmt=BGRA8Unorm mask=' + $1 + ' blend=' + $2 + ' shader=' + UTF8ToString($3)); },
-							_alpha_strip_log, (int)mask, ba.enable_blend ? 1 : 0, sname);
+					WEBGPU_DIAG({ console.log('[ALPHA-STRIP] Pipeline #' + $0 + ' fmt=BGRA8Unorm mask=' + $1 + ' blend=' + $2 + ' shader=' + UTF8ToString($3)); }, _alpha_strip_log, (int)mask, ba.enable_blend ? 1 : 0, sname);
 					_alpha_strip_log++;
 				}
 			}
@@ -9925,8 +10735,7 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 					static int _f32_blend_skip_log = 0;
 					if (_f32_blend_skip_log < 10) {
 						[[maybe_unused]] const char *sname = (p_shader.id) ? ((WGShader *)(p_shader.id))->name.utf8().get_data() : "?";
-						WEBGPU_DIAG({ console.log('[FLOAT32-BLEND-SKIP] Pipeline fmt=' + $0 + ' shader=' + UTF8ToString($1) + ' — device lacks float32-blendable, disabling blend'); },
-								(int)fmt, sname);
+						WEBGPU_DIAG({ console.log('[FLOAT32-BLEND-SKIP] Pipeline fmt=' + $0 + ' shader=' + UTF8ToString($1) + ' — device lacks float32-blendable, disabling blend'); }, (int)fmt, sname);
 						_f32_blend_skip_log++;
 					}
 					// Don't set blend — leave color_targets[i].blend = nullptr.
@@ -10007,7 +10816,7 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 		pw->pending_creations = is_strip ? 2 : 1;
 
 		WGPUCreateRenderPipelineAsyncCallbackInfo cb = {};
-		cb.mode = WGPUCallbackMode_AllowSpontaneous;
+		cb.mode = PIPELINE_CALLBACK_MODE;
 		cb.callback = _render_pipeline_async_callback;
 		cb.userdata1 = pw;
 		cb.userdata2 = (void *)(uintptr_t)0; // 0 = main variant.
@@ -10017,7 +10826,7 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 		if (is_strip) {
 			desc.primitive.stripIndexFormat = WGPUIndexFormat_Uint16;
 			WGPUCreateRenderPipelineAsyncCallbackInfo cb16 = {};
-			cb16.mode = WGPUCallbackMode_AllowSpontaneous;
+			cb16.mode = PIPELINE_CALLBACK_MODE;
 			cb16.callback = _render_pipeline_async_callback;
 			cb16.userdata1 = pw;
 			cb16.userdata2 = (void *)(uintptr_t)1; // 1 = Uint16 strip variant.
@@ -10037,8 +10846,12 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::render_pipeline_create(
 		print_line(vformat("[PIPETIME] render-sync %s %.1fms", _pipeline_label_str, _create_dt / 1000.0));
 	}
 	if (!pipeline) {
-		if (specialized_vertex) wgpuShaderModuleRelease(specialized_vertex);
-		if (specialized_fragment) wgpuShaderModuleRelease(specialized_fragment);
+		if (specialized_vertex) {
+			wgpuShaderModuleRelease(specialized_vertex);
+		}
+		if (specialized_fragment) {
+			wgpuShaderModuleRelease(specialized_fragment);
+		}
 		ERR_FAIL_V_MSG(PipelineID(), "WebGPU: Failed to create render pipeline.");
 	}
 
@@ -10081,6 +10894,10 @@ void RenderingDeviceDriverWebGPU::command_bind_compute_pipeline(CommandBufferID 
 		WGPUComputePassDescriptor pass_desc = {};
 		cmd->compute_encoder = wgpuCommandEncoderBeginComputePass(cmd->encoder, &pass_desc);
 		cmd->active_encoder = WGCommandBuffer::COMPUTE;
+		for (uint32_t i = 0; i < WGCommandBuffer::MAX_BIND_GROUPS; i++) {
+			cmd->compute_uniform_sets[i] = nullptr;
+			cmd->last_bound_state[i] = {};
+		}
 	}
 
 	bool pipeline_ready = false;
@@ -10115,7 +10932,13 @@ void RenderingDeviceDriverWebGPU::command_bind_compute_uniform_sets(CommandBuffe
 	ERR_FAIL_NULL(cmd);
 	ERR_FAIL_COND(!cmd->compute_encoder);
 
-	WGShader *pipeline_shader = cmd->render_state.current_pipeline ? cmd->render_state.current_pipeline->shader : nullptr;
+	WGShader *pipeline_shader = (WGShader *)p_shader.id;
+	if (!pipeline_shader && cmd->render_state.current_pipeline) {
+		pipeline_shader = cmd->render_state.current_pipeline->shader;
+	}
+	if (pipeline_shader) {
+		ERR_FAIL_COND(!_ensure_shader_layout(pipeline_shader));
+	}
 
 	// Task 7.5: mirror the render path's dynamic offset unpacking.
 	static constexpr uint32_t MAX_DYNAMIC_BUFFERS = 8;
@@ -10165,6 +10988,7 @@ void RenderingDeviceDriverWebGPU::command_bind_compute_uniform_sets(CommandBuffe
 			}
 			// Save full state for mid-pass restart on ring overflow.
 			if (set_idx < WGCommandBuffer::MAX_BIND_GROUPS) {
+				cmd->compute_uniform_sets[set_idx] = us;
 				auto &bs = cmd->last_bound_state[set_idx];
 				bs.group = bg_to_bind;
 				bs.dynamic_offset_count = num_dyn;
@@ -10188,6 +11012,8 @@ void RenderingDeviceDriverWebGPU::command_compute_dispatch(CommandBufferID p_cmd
 		return;
 	}
 
+	_refresh_compute_shadows(cmd);
+
 	if (cmd->render_state.current_pipeline) {
 		_flush_push_constants(cmd, cmd->render_state.current_pipeline->shader);
 	}
@@ -10206,6 +11032,8 @@ void RenderingDeviceDriverWebGPU::command_compute_dispatch_indirect(CommandBuffe
 		perf.compute_dispatches_skipped++;
 		return;
 	}
+
+	_refresh_compute_shadows(cmd);
 
 	if (cmd->render_state.current_pipeline) {
 		_flush_push_constants(cmd, cmd->render_state.current_pipeline->shader);
@@ -10255,7 +11083,7 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::compute_pipeline_create(ShaderID p_
 			}
 		} else if (!shader->stage_spirv[SHADER_STAGE_COMPUTE].is_empty()) {
 			specialized_compute = _create_module_with_spec_constants(
-					shader->stage_spirv[SHADER_STAGE_COMPUTE], p_specialization_constants, SHADER_STAGE_COMPUTE);
+					shader->stage_spirv[SHADER_STAGE_COMPUTE], p_specialization_constants, SHADER_STAGE_COMPUTE, shader);
 			if (specialized_compute) {
 				compute_module = specialized_compute;
 			}
@@ -10286,7 +11114,7 @@ RDD::PipelineID RenderingDeviceDriverWebGPU::compute_pipeline_create(ShaderID p_
 		pw->pending_creations = 1;
 
 		WGPUCreateComputePipelineAsyncCallbackInfo cb = {};
-		cb.mode = WGPUCallbackMode_AllowSpontaneous;
+		cb.mode = PIPELINE_CALLBACK_MODE;
 		cb.callback = _compute_pipeline_async_callback;
 		cb.userdata1 = pw;
 		_pending_async_pipeline_creations.increment();
@@ -10361,9 +11189,18 @@ RDD::QueryPoolID RenderingDeviceDriverWebGPU::timestamp_query_pool_create(uint32
 
 	if (!pool->resolve_buffer || !pool->readback_buffer) {
 		WARN_PRINT("WebGPU: Failed to create timestamp resolve/readback buffers.");
-		if (pool->handle) { wgpuQuerySetRelease(pool->handle); pool->handle = nullptr; }
-		if (pool->resolve_buffer) { wgpuBufferRelease(pool->resolve_buffer); pool->resolve_buffer = nullptr; }
-		if (pool->readback_buffer) { wgpuBufferRelease(pool->readback_buffer); pool->readback_buffer = nullptr; }
+		if (pool->handle) {
+			wgpuQuerySetRelease(pool->handle);
+			pool->handle = nullptr;
+		}
+		if (pool->resolve_buffer) {
+			wgpuBufferRelease(pool->resolve_buffer);
+			pool->resolve_buffer = nullptr;
+		}
+		if (pool->readback_buffer) {
+			wgpuBufferRelease(pool->readback_buffer);
+			pool->readback_buffer = nullptr;
+		}
 		pool->is_real = false;
 		return QueryPoolID(pool);
 	}
@@ -10377,6 +11214,12 @@ void RenderingDeviceDriverWebGPU::timestamp_query_pool_free(QueryPoolID p_pool_i
 	if (!pool) {
 		return;
 	}
+
+#ifndef __EMSCRIPTEN__
+	if (pool->readback_pending) {
+		_wait_for_map(pool->map_future);
+	}
+#endif
 
 	// If an async readback callback is in flight, mark freed and let
 	// the callback handle cleanup (use-after-free prevention).
@@ -10406,6 +11249,15 @@ void RenderingDeviceDriverWebGPU::timestamp_query_pool_get_results(QueryPoolID p
 		memset(r_results, 0, sizeof(uint64_t) * p_query_count);
 		return;
 	}
+
+#ifndef __EMSCRIPTEN__
+	// RD already waited for this frame's GPU work. Deliver its map callback
+	// before reading the CPU copy, rather than racing a spontaneous callback
+	// or returning the previous (initially zero) query results indefinitely.
+	if (pool->readback_pending) {
+		_wait_for_map(pool->map_future);
+	}
+#endif
 
 	// Copy from the CPU shadow buffer (populated by the async readback callback).
 	uint32_t copy_count = MIN(p_query_count, pool->count);
@@ -10468,8 +11320,13 @@ static void _timestamp_readback_callback(WGPUMapAsyncStatus p_status, WGPUString
 		wgpuBufferUnmap(pool->readback_buffer);
 		pool->readback_pending = false;
 	}
-	// On failure/abort: do NOT clear readback_pending.
-	// command_buffer_end() handles cleanup and re-issue.
+#ifndef __EMSCRIPTEN__
+	// A native waiter has now delivered this callback, even on failure. It
+	// must not defer pool destruction to a callback that has already run.
+	pool->readback_pending = false;
+#else
+	// On browser failure/abort, command_buffer_end() handles re-issue.
+#endif
 }
 
 void RenderingDeviceDriverWebGPU::command_timestamp_write(CommandBufferID p_cmd_buffer, QueryPoolID p_pool_id, uint32_t p_index) {
@@ -10481,10 +11338,29 @@ void RenderingDeviceDriverWebGPU::command_timestamp_write(CommandBufferID p_cmd_
 	WGCommandBuffer *cmd = (WGCommandBuffer *)(p_cmd_buffer.id);
 	ERR_FAIL_NULL(cmd);
 
-	// wgpuCommandEncoderWriteTimestamp requires no active render/compute pass.
+	// Standalone WriteTimestamp is a Dawn unsafe extension, even when the
+	// standard TimestampQuery feature is enabled. Pass-boundary timestamp
+	// writes are supported without unsafe toggles.
 	cmd->end_active_encoder();
 
-	wgpuCommandEncoderWriteTimestamp(cmd->encoder, pool->handle, p_index);
+	WGPUPassTimestampWrites timestamp_writes = {};
+	timestamp_writes.querySet = pool->handle;
+	timestamp_writes.beginningOfPassWriteIndex = p_index;
+	timestamp_writes.endOfPassWriteIndex = WGPU_QUERY_SET_INDEX_UNDEFINED;
+	// Metal can leave counters at zero for an empty compute pass. A 1x1
+	// attachment clear supplies real GPU work without compiling a pipeline.
+	WGPURenderPassColorAttachment attachment = {};
+	attachment.view = _get_dummy_attachment_view(1, 1);
+	attachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+	attachment.loadOp = WGPULoadOp_Clear;
+	attachment.storeOp = WGPUStoreOp_Discard;
+	WGPURenderPassDescriptor pass_desc = {};
+	pass_desc.colorAttachmentCount = 1;
+	pass_desc.colorAttachments = &attachment;
+	pass_desc.timestampWrites = &timestamp_writes;
+	WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(cmd->encoder, &pass_desc);
+	wgpuRenderPassEncoderEnd(pass);
+	wgpuRenderPassEncoderRelease(pass);
 
 	// Track this pool so we resolve it in command_buffer_end.
 	bool already_tracked = false;
@@ -10552,6 +11428,11 @@ void RenderingDeviceDriverWebGPU::command_insert_breadcrumb(CommandBufferID p_cm
 void RenderingDeviceDriverWebGPU::begin_segment(uint32_t p_frame_index, uint32_t p_frames_drawn) {
 	frame_index = p_frame_index;
 	frames_drawn = p_frames_drawn;
+#ifndef __EMSCRIPTEN__
+	if (_pending_async_pipeline_creations.get() > 0 && context_driver) {
+		wgpuInstanceProcessEvents(context_driver->get_instance());
+	}
+#endif
 
 	// Performance counter tracking. Opt-in (?aw3_perf) — skipping it here also
 	// skips the per-frame trip into JS for the clock.
@@ -10578,11 +11459,11 @@ void RenderingDeviceDriverWebGPU::begin_segment(uint32_t p_frame_index, uint32_t
 			double elapsed = (now - perf.last_log_time) / 1000.0;
 			uint32_t fps = (uint32_t)(perf.frames_since_log / elapsed);
 			uint32_t f = perf.frames_since_log > 0 ? perf.frames_since_log : 1;
-			print_line(vformat("[PERF] fps=%d draws/f=%d SetBG/f=%d PC/f=%d RP/f=%d SetVB/f=%d FI/f=%d RingOF/f=%d",
+			print_line(vformat("[PERF] fps=%d draws/f=%d SetBG/f=%d PC/f=%d RP/f=%d SetVB/f=%d FI/f=%d RingOF/f=%d ShadowCopy/f=%d ShadowRP/f=%d",
 					fps, perf.draw_calls / f, perf.set_bind_group_calls / f,
 					perf.push_constant_writes / f, perf.render_passes / f,
 					perf.set_vertex_buffer_calls / f, perf.first_instance_draws / f,
-					perf.ring_overflows / f));
+					perf.ring_overflows / f, perf.shadow_copies / f, perf.shadow_pass_restarts / f));
 			perf.reset();
 			perf.frames_since_log = 0;
 			perf.last_log_time = now;
@@ -10666,6 +11547,10 @@ void RenderingDeviceDriverWebGPU::set_object_name(ObjectType p_type, ID p_driver
 				wgpuComputePipelineSetLabel(pw->compute_handle, label);
 			}
 		} break;
+		case OBJECT_TYPE_ACCELERATION_STRUCTURE:
+		case OBJECT_TYPE_RAYTRACING_PIPELINE:
+			// WebGPU does not create ray tracing objects.
+			break;
 	}
 }
 
@@ -10683,75 +11568,132 @@ uint64_t RenderingDeviceDriverWebGPU::get_lazily_memory_used() {
 
 uint64_t RenderingDeviceDriverWebGPU::limit_get(Limit p_limit) {
 	switch (p_limit) {
-		case LIMIT_MAX_BOUND_UNIFORM_SETS: return device_limits.maxBindGroups;
-		case LIMIT_MAX_FRAMEBUFFER_COLOR_ATTACHMENTS: return device_limits.maxColorAttachments;
-		case LIMIT_MAX_TEXTURES_PER_UNIFORM_SET: return device_limits.maxSampledTexturesPerShaderStage;
-		case LIMIT_MAX_SAMPLERS_PER_UNIFORM_SET: return device_limits.maxSamplersPerShaderStage;
-		case LIMIT_MAX_STORAGE_BUFFERS_PER_UNIFORM_SET: return device_limits.maxStorageBuffersPerShaderStage;
-		case LIMIT_MAX_STORAGE_IMAGES_PER_UNIFORM_SET: return device_limits.maxStorageTexturesPerShaderStage;
-		case LIMIT_MAX_UNIFORM_BUFFERS_PER_UNIFORM_SET: return device_limits.maxUniformBuffersPerShaderStage;
-		case LIMIT_MAX_PUSH_CONSTANT_SIZE: return 128; // Emulated via ring buffer.
-		case LIMIT_MAX_UNIFORM_BUFFER_SIZE: return device_limits.maxUniformBufferBindingSize;
-		case LIMIT_MAX_TEXTURES_PER_SHADER_STAGE: return device_limits.maxSampledTexturesPerShaderStage;
-		case LIMIT_MAX_TEXTURE_ARRAY_LAYERS: return device_limits.maxTextureArrayLayers;
-		case LIMIT_MAX_TEXTURE_SIZE_1D: return device_limits.maxTextureDimension1D;
-		case LIMIT_MAX_TEXTURE_SIZE_2D: return device_limits.maxTextureDimension2D;
-		case LIMIT_MAX_TEXTURE_SIZE_3D: return device_limits.maxTextureDimension3D;
-		case LIMIT_MAX_TEXTURE_SIZE_CUBE: return device_limits.maxTextureDimension2D; // Cube faces are 2D.
-		case LIMIT_MAX_VERTEX_INPUT_ATTRIBUTE_OFFSET: return device_limits.maxVertexBufferArrayStride;
-		case LIMIT_MAX_VERTEX_INPUT_ATTRIBUTES: return device_limits.maxVertexAttributes;
-		case LIMIT_MAX_VERTEX_INPUT_BINDINGS: return device_limits.maxVertexBuffers;
-		case LIMIT_MAX_COMPUTE_SHARED_MEMORY_SIZE: return device_limits.maxComputeWorkgroupStorageSize;
-		case LIMIT_MAX_COMPUTE_WORKGROUP_COUNT_X: return device_limits.maxComputeWorkgroupsPerDimension;
-		case LIMIT_MAX_COMPUTE_WORKGROUP_COUNT_Y: return device_limits.maxComputeWorkgroupsPerDimension;
-		case LIMIT_MAX_COMPUTE_WORKGROUP_COUNT_Z: return device_limits.maxComputeWorkgroupsPerDimension;
-		case LIMIT_MAX_COMPUTE_WORKGROUP_INVOCATIONS: return device_limits.maxComputeInvocationsPerWorkgroup;
-		case LIMIT_MAX_COMPUTE_WORKGROUP_SIZE_X: return device_limits.maxComputeWorkgroupSizeX;
-		case LIMIT_MAX_COMPUTE_WORKGROUP_SIZE_Y: return device_limits.maxComputeWorkgroupSizeY;
-		case LIMIT_MAX_COMPUTE_WORKGROUP_SIZE_Z: return device_limits.maxComputeWorkgroupSizeZ;
-		case LIMIT_MAX_SHADER_VARYINGS: return device_limits.maxInterStageShaderVariables;
-		case LIMIT_SUBGROUP_SIZE: return 0; // Subgroups not available in WebGPU.
-		case LIMIT_SUBGROUP_MIN_SIZE: return 0;
-		case LIMIT_SUBGROUP_MAX_SIZE: return 0;
-		case LIMIT_SUBGROUP_IN_SHADERS: return 0;
-		case LIMIT_SUBGROUP_OPERATIONS: return 0;
-		default: return 0;
+		case LIMIT_MAX_BOUND_UNIFORM_SETS:
+			return device_limits.maxBindGroups;
+		case LIMIT_MAX_FRAMEBUFFER_COLOR_ATTACHMENTS:
+			return device_limits.maxColorAttachments;
+		case LIMIT_MAX_TEXTURES_PER_UNIFORM_SET:
+			return device_limits.maxSampledTexturesPerShaderStage;
+		case LIMIT_MAX_SAMPLERS_PER_UNIFORM_SET:
+			return device_limits.maxSamplersPerShaderStage;
+		case LIMIT_MAX_STORAGE_BUFFERS_PER_UNIFORM_SET:
+			return device_limits.maxStorageBuffersPerShaderStage;
+		case LIMIT_MAX_STORAGE_IMAGES_PER_UNIFORM_SET:
+			return device_limits.maxStorageTexturesPerShaderStage;
+		case LIMIT_MAX_UNIFORM_BUFFERS_PER_UNIFORM_SET:
+			return device_limits.maxUniformBuffersPerShaderStage;
+		case LIMIT_MAX_PUSH_CONSTANT_SIZE:
+			return 128; // Emulated via ring buffer.
+		case LIMIT_MAX_UNIFORM_BUFFER_SIZE:
+			return device_limits.maxUniformBufferBindingSize;
+		case LIMIT_MAX_TEXTURES_PER_SHADER_STAGE:
+			return device_limits.maxSampledTexturesPerShaderStage;
+		case LIMIT_MAX_SAMPLERS_PER_SHADER_STAGE:
+			return device_limits.maxSamplersPerShaderStage;
+		case LIMIT_MAX_STORAGE_BUFFERS_PER_SHADER_STAGE:
+			return device_limits.maxStorageBuffersPerShaderStage;
+		case LIMIT_MAX_STORAGE_IMAGES_PER_SHADER_STAGE:
+			return device_limits.maxStorageTexturesPerShaderStage;
+		case LIMIT_MAX_UNIFORM_BUFFERS_PER_SHADER_STAGE:
+			return device_limits.maxUniformBuffersPerShaderStage;
+		case LIMIT_MAX_TEXTURE_ARRAY_LAYERS:
+			return device_limits.maxTextureArrayLayers;
+		case LIMIT_MAX_TEXTURE_SIZE_1D:
+			return device_limits.maxTextureDimension1D;
+		case LIMIT_MAX_TEXTURE_SIZE_2D:
+			return device_limits.maxTextureDimension2D;
+		case LIMIT_MAX_TEXTURE_SIZE_3D:
+			return device_limits.maxTextureDimension3D;
+		case LIMIT_MAX_TEXTURE_SIZE_CUBE:
+			return device_limits.maxTextureDimension2D; // Cube faces are 2D.
+		case LIMIT_MAX_VERTEX_INPUT_ATTRIBUTE_OFFSET:
+			return device_limits.maxVertexBufferArrayStride;
+		case LIMIT_MAX_VERTEX_INPUT_ATTRIBUTES:
+			return device_limits.maxVertexAttributes;
+		case LIMIT_MAX_VERTEX_INPUT_BINDINGS:
+			return device_limits.maxVertexBuffers;
+		case LIMIT_MAX_COMPUTE_SHARED_MEMORY_SIZE:
+			return device_limits.maxComputeWorkgroupStorageSize;
+		case LIMIT_MAX_COMPUTE_WORKGROUP_COUNT_X:
+			return device_limits.maxComputeWorkgroupsPerDimension;
+		case LIMIT_MAX_COMPUTE_WORKGROUP_COUNT_Y:
+			return device_limits.maxComputeWorkgroupsPerDimension;
+		case LIMIT_MAX_COMPUTE_WORKGROUP_COUNT_Z:
+			return device_limits.maxComputeWorkgroupsPerDimension;
+		case LIMIT_MAX_COMPUTE_WORKGROUP_INVOCATIONS:
+			return device_limits.maxComputeInvocationsPerWorkgroup;
+		case LIMIT_MAX_COMPUTE_WORKGROUP_SIZE_X:
+			return device_limits.maxComputeWorkgroupSizeX;
+		case LIMIT_MAX_COMPUTE_WORKGROUP_SIZE_Y:
+			return device_limits.maxComputeWorkgroupSizeY;
+		case LIMIT_MAX_COMPUTE_WORKGROUP_SIZE_Z:
+			return device_limits.maxComputeWorkgroupSizeZ;
+		case LIMIT_MAX_SHADER_VARYINGS:
+			return device_limits.maxInterStageShaderVariables;
+		case LIMIT_SUBGROUP_SIZE:
+			return 0; // Subgroups not available in WebGPU.
+		case LIMIT_SUBGROUP_MIN_SIZE:
+			return 0;
+		case LIMIT_SUBGROUP_MAX_SIZE:
+			return 0;
+		case LIMIT_SUBGROUP_IN_SHADERS:
+			return 0;
+		case LIMIT_SUBGROUP_OPERATIONS:
+			return 0;
+		default:
+			return 0;
 	}
 }
 
 uint64_t RenderingDeviceDriverWebGPU::api_trait_get(ApiTrait p_trait) {
 	switch (p_trait) {
-		case API_TRAIT_HONORS_PIPELINE_BARRIERS: return 0; // No barriers in WebGPU.
-		case API_TRAIT_SHADER_CHANGE_INVALIDATION: return SHADER_CHANGE_INVALIDATION_ALL_BOUND_UNIFORM_SETS;
-		case API_TRAIT_TEXTURE_TRANSFER_ALIGNMENT: return 256;
-		case API_TRAIT_TEXTURE_DATA_ROW_PITCH_STEP: return 256;
-		case API_TRAIT_SECONDARY_VIEWPORT_SCISSOR: return 0;
+		case API_TRAIT_HONORS_PIPELINE_BARRIERS:
+			return 0; // No barriers in WebGPU.
+		case API_TRAIT_SHADER_CHANGE_INVALIDATION:
+			return SHADER_CHANGE_INVALIDATION_ALL_BOUND_UNIFORM_SETS;
+		case API_TRAIT_TEXTURE_TRANSFER_ALIGNMENT:
+			return 256;
+		case API_TRAIT_TEXTURE_DATA_ROW_PITCH_STEP:
+			return 256;
+		case API_TRAIT_SECONDARY_VIEWPORT_SCISSOR:
+			return 0;
 		case API_TRAIT_BUFFER_CLEARS_WITH_COPY_ENGINE:
-		case API_TRAIT_TEXTURE_CLEARS_WITH_COPY_ENGINE: return 0;
-		case API_TRAIT_USE_GENERAL_IN_COPY_QUEUES: return 0;
-		case API_TRAIT_BUFFERS_REQUIRE_TRANSITIONS: return 0;
-		case API_TRAIT_TEXTURE_OUTPUTS_REQUIRE_CLEARS: return 0;
+		case API_TRAIT_TEXTURE_CLEARS_WITH_COPY_ENGINE:
+			return 0;
+		case API_TRAIT_USE_GENERAL_IN_COPY_QUEUES:
+			return 0;
+		case API_TRAIT_BUFFERS_REQUIRE_TRANSITIONS:
+			return 0;
+		case API_TRAIT_TEXTURE_OUTPUTS_REQUIRE_CLEARS:
+			return 0;
 		// Force RD::texture_get_data() to route through driver->texture_get_data()
 		// because the synchronous draw-graph + buffer_map path can't wait for
 		// wgpuBufferMapAsync (no Asyncify, can't yield to JS during a sync C call).
 		// driver->texture_get_data() handles this with a persistent staging buffer
 		// + frame-deferred async map (see ASYNC BUFFER READBACK section).
-		case API_TRAIT_TEXTURE_GET_DATA_VIA_DRIVER: return 1;
+		case API_TRAIT_TEXTURE_GET_DATA_VIA_DRIVER:
+			return 1;
 		// Skip transfer-worker paths for eligible initial texture uploads; we
 		// implement texture_initialize_direct_layered using wgpuQueueWriteTexture
 		// directly (no GPU staging buffer, no command encoder, no barriers).
 		// Eliminates same-size wasted VRAM allocations and the queue
 		// serialization that came with them.
-		case API_TRAIT_TEXTURE_INITIALIZE_DIRECT_WRITE: return 1;
+		case API_TRAIT_TEXTURE_INITIALIZE_DIRECT_WRITE:
+			return 1;
 		// Use mappedAtCreation for buffer creation with initial data —
 		// bypasses staging buffer + wgpuQueueWriteBuffer overhead entirely.
-		case API_TRAIT_BUFFER_CREATE_MAPPED_AT_CREATION: return 1;
+		case API_TRAIT_BUFFER_CREATE_MAPPED_AT_CREATION:
+			return 1;
 		// Cap the staging buffer pool to 16 MB. WebGPU staging blocks use
 		// CPU shadow memory (memalloc), so idle blocks waste heap after
 		// the loading spike. 16 MB is generous for per-frame dynamic
 		// updates; overflow stalls briefly and reuses blocks.
-		case API_TRAIT_STAGING_BUFFER_MAX_SIZE_MB: return 16;
-		case API_TRAIT_SKELETON_BUFFER_DIRECT_WRITE: return 1;
+		case API_TRAIT_STAGING_BUFFER_MAX_SIZE_MB:
+			return 16;
+		case API_TRAIT_UPLOAD_STAGING_FLUSH_WITH_UNMAP:
+			return 1;
+		case API_TRAIT_SKELETON_BUFFER_DIRECT_WRITE:
+			return 1;
 		case API_TRAIT_GPU_CALLS_MAIN_THREAD_ONLY:
 			// Keep pipeline creation on the rendering thread on native Dawn too.
 			// Godot otherwise starts hundreds of concurrent synchronous Dawn/Metal
@@ -10763,14 +11705,20 @@ uint64_t RenderingDeviceDriverWebGPU::api_trait_get(ApiTrait p_trait) {
 		// require 6 render pass encoder cycles + 2 copy-to-atlas ops per
 		// light; dual-paraboloid uses 2 passes directly into the atlas,
 		// saving ~80% of shadow encoder overhead for typical scenes.
-		case API_TRAIT_FORCE_OMNI_DUAL_PARABOLOID: return 1;
+		case API_TRAIT_FORCE_OMNI_DUAL_PARABOLOID:
+			return 1;
 		// Batch consecutive same-mesh shadow draws into instanced draws.
 		// Reduces per-draw IPC from 2 crossings/draw to 2 crossings/batch.
-		case API_TRAIT_BATCH_INSTANCE_DRAWS: return 1;
+		case API_TRAIT_BATCH_INSTANCE_DRAWS:
+			return 1;
 		// Pass instance index via firstInstance instead of push constants.
 		// Eliminates per-draw SetBindGroup for push constant ring buffer.
-		case API_TRAIT_FIRST_INSTANCE_INDEX: return 1;
-		default: return RenderingDeviceDriver::api_trait_get(p_trait);
+		case API_TRAIT_FIRST_INSTANCE_INDEX:
+			return 1;
+		case API_TRAIT_SUPPORTED_TEXTURE_SAMPLE_COUNTS:
+			return (1u << TEXTURE_SAMPLES_1) | (1u << TEXTURE_SAMPLES_4);
+		default:
+			return RenderingDeviceDriver::api_trait_get(p_trait);
 	}
 }
 

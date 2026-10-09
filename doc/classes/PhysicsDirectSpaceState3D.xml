@@ -75,6 +75,20 @@
 				If the ray did not intersect anything, then an empty dictionary is returned instead.
 			</description>
 		</method>
+		<method name="intersect_ray_any">
+			<return type="bool" />
+			<param index="0" name="parameters" type="PhysicsRayQueryParameters3D" />
+			<description>
+				Returns [code]true[/code] if the ray defined by [param parameters] intersects an object in the space. Uses the same query parameters as [method intersect_ray], without returning a dictionary of collision details.
+			</description>
+		</method>
+		<method name="intersect_ray_normal_distance">
+			<return type="Vector4" />
+			<param index="0" name="parameters" type="PhysicsRayQueryParameters3D" />
+			<description>
+				Intersects the ray defined by [param parameters] and returns the surface normal in the [code]x[/code], [code]y[/code], and [code]z[/code] components, and the distance from [member PhysicsRayQueryParameters3D.from] to the intersection point in [code]w[/code]. Returns [code]Vector4(0, 0, 0, -1)[/code] if the ray does not intersect anything. Uses the same query parameters as [method intersect_ray].
+			</description>
+		</method>
 		<method name="intersect_shape">
 			<return type="Dictionary[]" />
 			<param index="0" name="parameters" type="PhysicsShapeQueryParameters3D" />
@@ -87,6 +101,14 @@
 				[code]shape[/code]: The shape index of the colliding shape.
 				The number of intersections can be limited with the [param max_results] parameter, to reduce the processing time.
 				[b]Note:[/b] This method does not take into account the [code]motion[/code] property of the object.
+			</description>
+		</method>
+		<method name="intersect_shape_any">
+			<return type="bool" />
+			<param index="0" name="parameters" type="PhysicsShapeQueryParameters3D" />
+			<description>
+				Returns [code]true[/code] if the shape defined by [param parameters] intersects an object in the space. Uses the same query parameters as [method intersect_shape], without returning an array of collision details.
+				[b]Note:[/b] This method does not take into account the [member PhysicsShapeQueryParameters3D.motion] property.
 			</description>
 		</method>
 	</methods>

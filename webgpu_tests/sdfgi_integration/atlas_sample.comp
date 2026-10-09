@@ -1,0 +1,19 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#define SDFGI_CASCADE_ATLAS
+#include "sdfgi_cascade_inc.glsl"
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+SDFGI_DECLARE_CASCADE_TEXTURES(light_atlas, 100)
+SDFGI_DECLARE_CASCADE_TEXTURES(aniso0_atlas, 110)
+SDFGI_DECLARE_CASCADE_TEXTURES(aniso1_atlas, 130)
+layout(set = 0, binding = 6) uniform sampler linear_sampler;
+layout(set = 0, binding = 1, std430) restrict readonly buffer Queries { vec4 data[]; } queries;
+layout(set = 0, binding = 2, std430) restrict writeonly buffer Results { vec4 data[]; } results;
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    if (index >= queries.data.length()) { return; }
+    vec4 q = queries.data[index];
+    results.data[index * 3u] = light_atlas_sample(uint(q.x), linear_sampler, q.yzw, 0.0);
+    results.data[index * 3u + 1u] = aniso0_atlas_sample(uint(q.x), linear_sampler, q.yzw, 0.0);
+    results.data[index * 3u + 2u] = aniso1_atlas_sample(uint(q.x), linear_sampler, q.yzw, 0.0);
+}

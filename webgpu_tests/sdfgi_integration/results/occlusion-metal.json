@@ -1,0 +1,81 @@
+{
+  "passed": true,
+  "cases": [
+    {
+      "case": "empty",
+      "passed": true,
+      "voxels": 32768,
+      "mismatched_voxels": 0,
+      "max_error_unorm8": 0,
+      "scalar_tolerance_unorm8": 3,
+      "guards_intact": null
+    },
+    {
+      "case": "solid",
+      "passed": true,
+      "voxels": 32768,
+      "mismatched_voxels": 0,
+      "max_error_unorm8": 0,
+      "scalar_tolerance_unorm8": 3,
+      "guards_intact": null
+    },
+    {
+      "case": "walls",
+      "passed": true,
+      "voxels": 32768,
+      "mismatched_voxels": 0,
+      "max_error_unorm8": 1,
+      "scalar_tolerance_unorm8": 3,
+      "guards_intact": null
+    },
+    {
+      "case": "walls_shifted",
+      "passed": true,
+      "voxels": 32768,
+      "mismatched_voxels": 0,
+      "max_error_unorm8": 1,
+      "scalar_tolerance_unorm8": 3,
+      "guards_intact": null
+    },
+    {
+      "case": "sparse",
+      "passed": true,
+      "voxels": 32768,
+      "mismatched_voxels": 0,
+      "max_error_unorm8": 3,
+      "scalar_tolerance_unorm8": 3,
+      "guards_intact": null
+    },
+    {
+      "case": "sparse_shifted",
+      "passed": true,
+      "voxels": 32768,
+      "mismatched_voxels": 0,
+      "max_error_unorm8": 3,
+      "scalar_tolerance_unorm8": 3,
+      "guards_intact": null
+    }
+  ],
+  "returncode": 0,
+  "errors": [],
+  "seconds": 2.1737499579321593,
+  "engine_sha256": "9bff02c4a795126c140e2d280c9f9ca926c5b540178b6c6b1d32564dc1e1f2fb",
+  "shader_sha256": "520c29e93e813c984d27531abe81cdf00396ba988711ea58e771ca98d0f5375c",
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "fallback": false,
+  "texture_reference": true,
+  "command": [
+    "/private/tmp/aw3-webgpu-tint-specialization-atlas-second",
+    "--path",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration",
+    "--rendering-method",
+    "forward_plus",
+    "--rendering-driver",
+    "metal",
+    "--script",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration/occlusion.gd",
+    "--",
+    "--fixture-dir=/private/tmp/aw3-sdfgi-final-occlusion-metal",
+    "--texture-reference"
+  ]
+}

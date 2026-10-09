@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "checks": 2,
+  "tint_sha256": "537a7f2f61be0d240c5a88cfe6b23bb2b46003d4273db973f35eeda717040385",
+  "results": [
+    {
+      "name": "unsigned_sign_extension",
+      "passed": true,
+      "returncode": 1,
+      "diagnostic": "Error: image extension must match the 32-bit texel type for WGSL"
+    },
+    {
+      "name": "volatile_image_access",
+      "passed": true,
+      "returncode": 1,
+      "diagnostic": "Error: unsupported image operand semantics; operands were not stripped"
+    }
+  ]
+}

@@ -497,17 +497,25 @@ void SpdDownsample(FfxUInt32x2 workGroupID, FfxUInt32 localInvocationIndex, FfxU
     FfxUInt32x2        sub_xy = ffxRemapForWaveReduction(localInvocationIndex % 64);
     FfxUInt32 x      = sub_xy.x + 8 * ((localInvocationIndex >> 6) % 2);
     FfxUInt32 y      = sub_xy.y + 8 * ((localInvocationIndex >> 7));
+#ifndef FFX_SPD_SECOND_PASS
     SpdDownsampleMips_0_1(x, y, workGroupID, localInvocationIndex, mips, slice);
 
     SpdDownsampleNextFour(x, y, workGroupID, localInvocationIndex, 2, mips, slice);
 
+#endif
+#ifdef FFX_SPD_FIRST_PASS
+    // The remaining mips run in a separate dispatch, after mip 5 is visible.
+    return;
+#endif
     if (mips <= 6)
         return;
 
+#ifndef FFX_SPD_SECOND_PASS
     if (SpdExitWorkgroup(numWorkGroups, localInvocationIndex, slice))
         return;
 
     SpdResetAtomicCounter(slice);
+#endif
 
     // After mip 6 there is only a single workgroup left that downsamples the remaining up to 64x64 texels.
     SpdDownsampleMips_6_7(x, y, mips, slice);

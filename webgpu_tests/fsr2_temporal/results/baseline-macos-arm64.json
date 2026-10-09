@@ -1,0 +1,890 @@
+{
+  "passed": true,
+  "runs": [
+    {
+      "run_id": "metal-0",
+      "mode": "metal",
+      "repeat": 0,
+      "passed": true,
+      "checks": 87,
+      "failed_checks": 0,
+      "captures": 19,
+      "returncode": 0,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "46dc9ae5ce79ead485786b146e960ed19ea5e6c240475836f3a8be773aa90b62",
+      "errors": []
+    },
+    {
+      "run_id": "metal-1",
+      "mode": "metal",
+      "repeat": 1,
+      "passed": true,
+      "checks": 87,
+      "failed_checks": 0,
+      "captures": 19,
+      "returncode": 0,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "46dc9ae5ce79ead485786b146e960ed19ea5e6c240475836f3a8be773aa90b62",
+      "errors": []
+    },
+    {
+      "run_id": "native-0",
+      "mode": "native",
+      "repeat": 0,
+      "passed": true,
+      "checks": 87,
+      "failed_checks": 0,
+      "captures": 19,
+      "returncode": 0,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "46dc9ae5ce79ead485786b146e960ed19ea5e6c240475836f3a8be773aa90b62",
+      "errors": []
+    },
+    {
+      "run_id": "native-1",
+      "mode": "native",
+      "repeat": 1,
+      "passed": true,
+      "checks": 87,
+      "failed_checks": 0,
+      "captures": 19,
+      "returncode": 0,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "46dc9ae5ce79ead485786b146e960ed19ea5e6c240475836f3a8be773aa90b62",
+      "errors": []
+    },
+    {
+      "run_id": "fallback-0",
+      "mode": "fallback",
+      "repeat": 0,
+      "passed": true,
+      "checks": 87,
+      "failed_checks": 0,
+      "captures": 19,
+      "returncode": 0,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "46dc9ae5ce79ead485786b146e960ed19ea5e6c240475836f3a8be773aa90b62",
+      "errors": []
+    },
+    {
+      "run_id": "fallback-1",
+      "mode": "fallback",
+      "repeat": 1,
+      "passed": true,
+      "checks": 87,
+      "failed_checks": 0,
+      "captures": 19,
+      "returncode": 0,
+      "timed_out": false,
+      "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+      "engine_sha256": "46dc9ae5ce79ead485786b146e960ed19ea5e6c240475836f3a8be773aa90b62",
+      "errors": []
+    }
+  ],
+  "comparisons": [
+    {
+      "left": "metal-0",
+      "right": "metal-1",
+      "captures": [
+        {
+          "label": "motion_start",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 64,
+          "right_frame": 64
+        },
+        {
+          "label": "motion_00",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 65,
+          "right_frame": 65
+        },
+        {
+          "label": "motion_01",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 66,
+          "right_frame": 66
+        },
+        {
+          "label": "motion_02",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 67,
+          "right_frame": 67
+        },
+        {
+          "label": "motion_03",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 68,
+          "right_frame": 68
+        },
+        {
+          "label": "motion_04",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 69,
+          "right_frame": 69
+        },
+        {
+          "label": "motion_05",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 70,
+          "right_frame": 70
+        },
+        {
+          "label": "motion_06",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 71,
+          "right_frame": 71
+        },
+        {
+          "label": "motion_settled",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 87,
+          "right_frame": 87
+        },
+        {
+          "label": "color_change_first",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 88,
+          "right_frame": 88
+        },
+        {
+          "label": "color_change_five",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 92,
+          "right_frame": 92
+        },
+        {
+          "label": "color_change_settled",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 119,
+          "right_frame": 119
+        },
+        {
+          "label": "luminance_dim",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 151,
+          "right_frame": 151
+        },
+        {
+          "label": "luminance_bright_first",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 152,
+          "right_frame": 152
+        },
+        {
+          "label": "luminance_bright_settled",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 183,
+          "right_frame": 183
+        },
+        {
+          "label": "auto_exposure_bright",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 215,
+          "right_frame": 215
+        },
+        {
+          "label": "auto_exposure_dim",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 247,
+          "right_frame": 247
+        },
+        {
+          "label": "resize_reset_first",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 248,
+          "right_frame": 248
+        },
+        {
+          "label": "resize_reset_settled",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 279,
+          "right_frame": 279
+        }
+      ],
+      "kind": "repeat",
+      "passed": true
+    },
+    {
+      "left": "native-0",
+      "right": "native-1",
+      "captures": [
+        {
+          "label": "motion_start",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 8448,
+          "right_frame": 64
+        },
+        {
+          "label": "motion_00",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 8449,
+          "right_frame": 65
+        },
+        {
+          "label": "motion_01",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 8450,
+          "right_frame": 66
+        },
+        {
+          "label": "motion_02",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 8451,
+          "right_frame": 67
+        },
+        {
+          "label": "motion_03",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 8452,
+          "right_frame": 68
+        },
+        {
+          "label": "motion_04",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 8453,
+          "right_frame": 69
+        },
+        {
+          "label": "motion_05",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 8454,
+          "right_frame": 70
+        },
+        {
+          "label": "motion_06",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 8455,
+          "right_frame": 71
+        },
+        {
+          "label": "motion_settled",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 8471,
+          "right_frame": 87
+        },
+        {
+          "label": "color_change_first",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 8472,
+          "right_frame": 88
+        },
+        {
+          "label": "color_change_five",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 8476,
+          "right_frame": 92
+        },
+        {
+          "label": "color_change_settled",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 8503,
+          "right_frame": 119
+        },
+        {
+          "label": "luminance_dim",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 8535,
+          "right_frame": 151
+        },
+        {
+          "label": "luminance_bright_first",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 8536,
+          "right_frame": 152
+        },
+        {
+          "label": "luminance_bright_settled",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 8567,
+          "right_frame": 183
+        },
+        {
+          "label": "auto_exposure_bright",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 8599,
+          "right_frame": 215
+        },
+        {
+          "label": "auto_exposure_dim",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 8631,
+          "right_frame": 247
+        },
+        {
+          "label": "resize_reset_first",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 8632,
+          "right_frame": 248
+        },
+        {
+          "label": "resize_reset_settled",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 8663,
+          "right_frame": 279
+        }
+      ],
+      "kind": "repeat",
+      "passed": true
+    },
+    {
+      "left": "fallback-0",
+      "right": "fallback-1",
+      "captures": [
+        {
+          "label": "motion_start",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 1472,
+          "right_frame": 64
+        },
+        {
+          "label": "motion_00",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 1473,
+          "right_frame": 65
+        },
+        {
+          "label": "motion_01",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 1474,
+          "right_frame": 66
+        },
+        {
+          "label": "motion_02",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 1475,
+          "right_frame": 67
+        },
+        {
+          "label": "motion_03",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 1476,
+          "right_frame": 68
+        },
+        {
+          "label": "motion_04",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 1477,
+          "right_frame": 69
+        },
+        {
+          "label": "motion_05",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 1478,
+          "right_frame": 70
+        },
+        {
+          "label": "motion_06",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 1479,
+          "right_frame": 71
+        },
+        {
+          "label": "motion_settled",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 1495,
+          "right_frame": 87
+        },
+        {
+          "label": "color_change_first",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 1496,
+          "right_frame": 88
+        },
+        {
+          "label": "color_change_five",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 1500,
+          "right_frame": 92
+        },
+        {
+          "label": "color_change_settled",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 1527,
+          "right_frame": 119
+        },
+        {
+          "label": "luminance_dim",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 1559,
+          "right_frame": 151
+        },
+        {
+          "label": "luminance_bright_first",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 1560,
+          "right_frame": 152
+        },
+        {
+          "label": "luminance_bright_settled",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 1591,
+          "right_frame": 183
+        },
+        {
+          "label": "auto_exposure_bright",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 1623,
+          "right_frame": 215
+        },
+        {
+          "label": "auto_exposure_dim",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 1655,
+          "right_frame": 247
+        },
+        {
+          "label": "resize_reset_first",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 1656,
+          "right_frame": 248
+        },
+        {
+          "label": "resize_reset_settled",
+          "mae": 0.0,
+          "p99": 0.0,
+          "max": 0.0,
+          "left_frame": 1687,
+          "right_frame": 279
+        }
+      ],
+      "kind": "repeat",
+      "passed": true
+    },
+    {
+      "left": "metal-0",
+      "right": "native-0",
+      "captures": [
+        {
+          "label": "motion_start",
+          "mae": 0.001005783598278261,
+          "p99": 0.00146484375,
+          "max": 0.47021484375,
+          "left_frame": 64,
+          "right_frame": 8448
+        },
+        {
+          "label": "motion_00",
+          "mae": 0.002236050119083504,
+          "p99": 0.00146484375,
+          "max": 0.8580322265625,
+          "left_frame": 65,
+          "right_frame": 8449
+        },
+        {
+          "label": "motion_01",
+          "mae": 0.0017806899353066303,
+          "p99": 0.00146484375,
+          "max": 0.695556640625,
+          "left_frame": 66,
+          "right_frame": 8450
+        },
+        {
+          "label": "motion_02",
+          "mae": 0.0010935013197013177,
+          "p99": 0.00146484375,
+          "max": 0.617431640625,
+          "left_frame": 67,
+          "right_frame": 8451
+        },
+        {
+          "label": "motion_03",
+          "mae": 0.0014987642656099827,
+          "p99": 0.00146484375,
+          "max": 0.73193359375,
+          "left_frame": 68,
+          "right_frame": 8452
+        },
+        {
+          "label": "motion_04",
+          "mae": 0.0012368874334545883,
+          "p99": 0.00146484375,
+          "max": 0.613037109375,
+          "left_frame": 69,
+          "right_frame": 8453
+        },
+        {
+          "label": "motion_05",
+          "mae": 0.001654486315197169,
+          "p99": 0.00146484375,
+          "max": 0.754150390625,
+          "left_frame": 70,
+          "right_frame": 8454
+        },
+        {
+          "label": "motion_06",
+          "mae": 0.0013084568814115806,
+          "p99": 0.00146484375,
+          "max": 0.71630859375,
+          "left_frame": 71,
+          "right_frame": 8455
+        },
+        {
+          "label": "motion_settled",
+          "mae": 0.0012532390076861095,
+          "p99": 0.00146484375,
+          "max": 0.59765625,
+          "left_frame": 87,
+          "right_frame": 8471
+        },
+        {
+          "label": "color_change_first",
+          "mae": 0.007066173685921563,
+          "p99": 0.2025146484375,
+          "max": 0.6708984375,
+          "left_frame": 88,
+          "right_frame": 8472
+        },
+        {
+          "label": "color_change_five",
+          "mae": 0.005102630290720198,
+          "p99": 0.1514892578125,
+          "max": 0.537841796875,
+          "left_frame": 92,
+          "right_frame": 8476
+        },
+        {
+          "label": "color_change_settled",
+          "mae": 0.0033000539988279343,
+          "p99": 0.09759521484375,
+          "max": 0.37060546875,
+          "left_frame": 119,
+          "right_frame": 8503
+        },
+        {
+          "label": "luminance_dim",
+          "mae": 5.344115197658539e-05,
+          "p99": 0.000911712646484375,
+          "max": 0.014495849609375,
+          "left_frame": 151,
+          "right_frame": 8535
+        },
+        {
+          "label": "luminance_bright_first",
+          "mae": 0.00044851074926555157,
+          "p99": 0.000732421875,
+          "max": 0.399169921875,
+          "left_frame": 152,
+          "right_frame": 8536
+        },
+        {
+          "label": "luminance_bright_settled",
+          "mae": 0.0410195825000604,
+          "p99": 0.75830078125,
+          "max": 1.626953125,
+          "left_frame": 183,
+          "right_frame": 8567
+        },
+        {
+          "label": "auto_exposure_bright",
+          "mae": 0.026431445653239887,
+          "p99": 0.3828125,
+          "max": 0.8974609375,
+          "left_frame": 215,
+          "right_frame": 8599
+        },
+        {
+          "label": "auto_exposure_dim",
+          "mae": 0.293394346954301,
+          "p99": 0.5677490234375,
+          "max": 0.587890625,
+          "left_frame": 247,
+          "right_frame": 8631
+        },
+        {
+          "label": "resize_reset_first",
+          "mae": 5.555745462219292e-06,
+          "p99": 0.0,
+          "max": 0.001953125,
+          "left_frame": 248,
+          "right_frame": 8632
+        },
+        {
+          "label": "resize_reset_settled",
+          "mae": 5.763862353985188e-06,
+          "p99": 0.0,
+          "max": 0.001953125,
+          "left_frame": 279,
+          "right_frame": 8663
+        }
+      ],
+      "kind": "metal_reference"
+    },
+    {
+      "left": "metal-0",
+      "right": "fallback-0",
+      "captures": [
+        {
+          "label": "motion_start",
+          "mae": 0.0010055533530248795,
+          "p99": 0.00146484375,
+          "max": 0.47021484375,
+          "left_frame": 64,
+          "right_frame": 1472
+        },
+        {
+          "label": "motion_00",
+          "mae": 0.0022332979739682437,
+          "p99": 0.00146484375,
+          "max": 0.85791015625,
+          "left_frame": 65,
+          "right_frame": 1473
+        },
+        {
+          "label": "motion_01",
+          "mae": 0.0017765121461302948,
+          "p99": 0.00146484375,
+          "max": 0.69384765625,
+          "left_frame": 66,
+          "right_frame": 1474
+        },
+        {
+          "label": "motion_02",
+          "mae": 0.0010925746412087595,
+          "p99": 0.00146484375,
+          "max": 0.6162109375,
+          "left_frame": 67,
+          "right_frame": 1475
+        },
+        {
+          "label": "motion_03",
+          "mae": 0.0014931242601758437,
+          "p99": 0.00146484375,
+          "max": 0.73291015625,
+          "left_frame": 68,
+          "right_frame": 1476
+        },
+        {
+          "label": "motion_04",
+          "mae": 0.0012321207070474178,
+          "p99": 0.00146484375,
+          "max": 0.61376953125,
+          "left_frame": 69,
+          "right_frame": 1477
+        },
+        {
+          "label": "motion_05",
+          "mae": 0.00164835851501266,
+          "p99": 0.00146484375,
+          "max": 0.751708984375,
+          "left_frame": 70,
+          "right_frame": 1478
+        },
+        {
+          "label": "motion_06",
+          "mae": 0.0013068266675367744,
+          "p99": 0.00146484375,
+          "max": 0.71533203125,
+          "left_frame": 71,
+          "right_frame": 1479
+        },
+        {
+          "label": "motion_settled",
+          "mae": 0.0012529100681098902,
+          "p99": 0.00146484375,
+          "max": 0.59716796875,
+          "left_frame": 87,
+          "right_frame": 1495
+        },
+        {
+          "label": "color_change_first",
+          "mae": 0.007066173685921563,
+          "p99": 0.2025146484375,
+          "max": 0.6708984375,
+          "left_frame": 88,
+          "right_frame": 1496
+        },
+        {
+          "label": "color_change_five",
+          "mae": 0.005102630290720198,
+          "p99": 0.1514892578125,
+          "max": 0.537841796875,
+          "left_frame": 92,
+          "right_frame": 1500
+        },
+        {
+          "label": "color_change_settled",
+          "mae": 0.0033000539988279343,
+          "p99": 0.09759521484375,
+          "max": 0.37060546875,
+          "left_frame": 119,
+          "right_frame": 1527
+        },
+        {
+          "label": "luminance_dim",
+          "mae": 5.323569833611449e-05,
+          "p99": 0.000911712646484375,
+          "max": 0.014495849609375,
+          "left_frame": 151,
+          "right_frame": 1559
+        },
+        {
+          "label": "luminance_bright_first",
+          "mae": 0.00044851074926555157,
+          "p99": 0.000732421875,
+          "max": 0.399169921875,
+          "left_frame": 152,
+          "right_frame": 1560
+        },
+        {
+          "label": "luminance_bright_settled",
+          "mae": 0.04112850253780683,
+          "p99": 0.76318359375,
+          "max": 1.626953125,
+          "left_frame": 183,
+          "right_frame": 1591
+        },
+        {
+          "label": "auto_exposure_bright",
+          "mae": 0.02644919417798519,
+          "p99": 0.3818359375,
+          "max": 0.90185546875,
+          "left_frame": 215,
+          "right_frame": 1623
+        },
+        {
+          "label": "auto_exposure_dim",
+          "mae": 0.2933942473027855,
+          "p99": 0.56787109375,
+          "max": 0.587890625,
+          "left_frame": 247,
+          "right_frame": 1655
+        },
+        {
+          "label": "resize_reset_first",
+          "mae": 5.555745462219292e-06,
+          "p99": 0.0,
+          "max": 0.001953125,
+          "left_frame": 248,
+          "right_frame": 1656
+        },
+        {
+          "label": "resize_reset_settled",
+          "mae": 5.763862353985188e-06,
+          "p99": 0.0,
+          "max": 0.001953125,
+          "left_frame": 279,
+          "right_frame": 1687
+        }
+      ],
+      "kind": "metal_reference"
+    }
+  ],
+  "scope": "Bounded temporal scene checks; Metal comparisons are diagnostic, not a quality-parity claim."
+}

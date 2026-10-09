@@ -1,0 +1,162 @@
+{
+  "passed": true,
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "engine_sha256": "9bff02c4a795126c140e2d280c9f9ca926c5b540178b6c6b1d32564dc1e1f2fb",
+  "command": [
+    "/private/tmp/aw3-webgpu-tint-specialization-atlas-second",
+    "--path",
+    "/private/tmp/aw3-shader-cache-fallback-final/project",
+    "--rendering-driver",
+    "webgpu",
+    "--rendering-method",
+    "forward_plus",
+    "--render-thread",
+    "separate",
+    "--verbose"
+  ],
+  "runs": [
+    {
+      "name": "01-cold",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 5.870620250003412,
+      "expected_cache_hit": null,
+      "errors": [],
+      "cache_hit_count": 0
+    },
+    {
+      "name": "02-both-valid-packaged-first",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.6543828749563545,
+      "expected_cache_hit": "res://.godot/shader_cache/SsaoImportanceMapShaderRD/e07ef59a99c84b7ad10b8b5aedb3f2aed2b77f5b1c7393cc28f9b6fc3691954a/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.webgpu.cache",
+      "errors": [],
+      "cache_hit_count": 61
+    },
+    {
+      "name": "03-bad-header-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.6966755000175908,
+      "expected_cache_hit": "user://shader_cache/SsaoImportanceMapShaderRD/e07ef59a99c84b7ad10b8b5aedb3f2aed2b77f5b1c7393cc28f9b6fc3691954a/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.webgpu.cache",
+      "errors": [],
+      "cache_hit_count": 61
+    },
+    {
+      "name": "04-truncated-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 3.64583670895081,
+      "expected_cache_hit": "user://shader_cache/SsaoImportanceMapShaderRD/e07ef59a99c84b7ad10b8b5aedb3f2aed2b77f5b1c7393cc28f9b6fc3691954a/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.webgpu.cache",
+      "errors": [],
+      "cache_hit_count": 61
+    },
+    {
+      "name": "05-missing-late-variant-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.1242964169941843,
+      "expected_cache_hit": "user://shader_cache/SsaoImportanceMapShaderRD/e07ef59a99c84b7ad10b8b5aedb3f2aed2b77f5b1c7393cc28f9b6fc3691954a/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.webgpu.cache",
+      "errors": [],
+      "cache_hit_count": 61
+    },
+    {
+      "name": "06-late-container-failure-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.1865724169183522,
+      "expected_cache_hit": "user://shader_cache/SsaoImportanceMapShaderRD/e07ef59a99c84b7ad10b8b5aedb3f2aed2b77f5b1c7393cc28f9b6fc3691954a/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.webgpu.cache",
+      "errors": [],
+      "cache_hit_count": 61
+    },
+    {
+      "name": "07-repeat-late-container-failure",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.5463959169574082,
+      "expected_cache_hit": "user://shader_cache/SsaoImportanceMapShaderRD/e07ef59a99c84b7ad10b8b5aedb3f2aed2b77f5b1c7393cc28f9b6fc3691954a/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.webgpu.cache",
+      "errors": [],
+      "cache_hit_count": 61
+    },
+    {
+      "name": "08-inner-short-header-extension-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.1855720420135185,
+      "expected_cache_hit": "user://shader_cache/SsaoImportanceMapShaderRD/e07ef59a99c84b7ad10b8b5aedb3f2aed2b77f5b1c7393cc28f9b6fc3691954a/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.webgpu.cache",
+      "errors": [],
+      "cache_hit_count": 61
+    },
+    {
+      "name": "09-inner-shader-count-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.2122219580924138,
+      "expected_cache_hit": "user://shader_cache/SsaoImportanceMapShaderRD/e07ef59a99c84b7ad10b8b5aedb3f2aed2b77f5b1c7393cc28f9b6fc3691954a/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.webgpu.cache",
+      "errors": [],
+      "cache_hit_count": 61
+    },
+    {
+      "name": "10-inner-set-count-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.0779819169547409,
+      "expected_cache_hit": "user://shader_cache/SsaoImportanceMapShaderRD/e07ef59a99c84b7ad10b8b5aedb3f2aed2b77f5b1c7393cc28f9b6fc3691954a/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.webgpu.cache",
+      "errors": [],
+      "cache_hit_count": 61
+    },
+    {
+      "name": "11-inner-specialization-count-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.0643387089949101,
+      "expected_cache_hit": "user://shader_cache/SsaoImportanceMapShaderRD/e07ef59a99c84b7ad10b8b5aedb3f2aed2b77f5b1c7393cc28f9b6fc3691954a/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.webgpu.cache",
+      "errors": [],
+      "cache_hit_count": 61
+    },
+    {
+      "name": "12-inner-stage-count-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.1030006250366569,
+      "expected_cache_hit": "user://shader_cache/SsaoImportanceMapShaderRD/e07ef59a99c84b7ad10b8b5aedb3f2aed2b77f5b1c7393cc28f9b6fc3691954a/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.webgpu.cache",
+      "errors": [],
+      "cache_hit_count": 61
+    },
+    {
+      "name": "13-inner-uniform-count-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.0908093749312684,
+      "expected_cache_hit": "user://shader_cache/SsaoImportanceMapShaderRD/e07ef59a99c84b7ad10b8b5aedb3f2aed2b77f5b1c7393cc28f9b6fc3691954a/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.webgpu.cache",
+      "errors": [],
+      "cache_hit_count": 61
+    },
+    {
+      "name": "99-both-invalid-recompile",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.220481791999191,
+      "expected_cache_hit": null,
+      "errors": [],
+      "cache_hit_count": 60
+    }
+  ],
+  "user_data": "/Users/jaakkolukkari/Library/Application Support/Godot/app_userdata/WebGPU-cache-test-edfec4cc554d449e8e98022422aba511",
+  "target": "SsaoImportanceMapShaderRD/e07ef59a99c84b7ad10b8b5aedb3f2aed2b77f5b1c7393cc28f9b6fc3691954a/8305c75c1294a9f00656f0f14344bb8bedcfe4e7.webgpu.cache",
+  "nonempty_variants": 3
+}

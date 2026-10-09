@@ -88,11 +88,9 @@ void GradientTexture1D::_queue_update() {
 	callable_mp(this, &GradientTexture1D::update_now).call_deferred();
 }
 
-void GradientTexture1D::_update() const {
-	update_pending = false;
-
+Ref<Image> GradientTexture1D::_generate_image() const {
 	if (gradient.is_null()) {
-		return;
+		return Ref<Image>();
 	}
 
 	if (use_hdr) {
@@ -101,43 +99,46 @@ void GradientTexture1D::_update() const {
 		Gradient &g = **gradient;
 		// `create()` isn't available for non-uint8_t data, so fill in the data manually.
 		for (int i = 0; i < width; i++) {
-			float ofs = float(i) / (width - 1);
+			float ofs = width > 1 ? float(i) / (width - 1) : 0.0f;
 			image->set_pixel(i, 0, g.get_color_at_offset(ofs));
 		}
+		return image;
+	}
 
-		if (texture.is_valid()) {
-			RID new_texture = RS::get_singleton()->texture_2d_create(image);
-			RS::get_singleton()->texture_replace(texture, new_texture);
-		} else {
-			texture = RS::get_singleton()->texture_2d_create(image);
+	// Low dynamic range. "Overbright" colors will be clamped.
+	Vector<uint8_t> data;
+	data.resize(width * 4);
+	{
+		uint8_t *wd8 = data.ptrw();
+		Gradient &g = **gradient;
+
+		for (int i = 0; i < width; i++) {
+			float ofs = width > 1 ? float(i) / (width - 1) : 0.0f;
+			Color color = g.get_color_at_offset(ofs);
+
+			wd8[i * 4 + 0] = uint8_t(color.get_r8());
+			wd8[i * 4 + 1] = uint8_t(color.get_g8());
+			wd8[i * 4 + 2] = uint8_t(color.get_b8());
+			wd8[i * 4 + 3] = uint8_t(color.get_a8());
 		}
+	}
+
+	return Ref<Image>(memnew(Image(width, 1, false, Image::FORMAT_RGBA8, data)));
+}
+
+void GradientTexture1D::_update() const {
+	update_pending = false;
+
+	Ref<Image> image = _generate_image();
+	if (image.is_null()) {
+		return;
+	}
+
+	if (texture.is_valid()) {
+		RID new_texture = RS::get_singleton()->texture_2d_create(image);
+		RS::get_singleton()->texture_replace(texture, new_texture);
 	} else {
-		// Low dynamic range. "Overbright" colors will be clamped.
-		Vector<uint8_t> data;
-		data.resize(width * 4);
-		{
-			uint8_t *wd8 = data.ptrw();
-			Gradient &g = **gradient;
-
-			for (int i = 0; i < width; i++) {
-				float ofs = float(i) / (width - 1);
-				Color color = g.get_color_at_offset(ofs);
-
-				wd8[i * 4 + 0] = uint8_t(color.get_r8());
-				wd8[i * 4 + 1] = uint8_t(color.get_g8());
-				wd8[i * 4 + 2] = uint8_t(color.get_b8());
-				wd8[i * 4 + 3] = uint8_t(color.get_a8());
-			}
-		}
-
-		Ref<Image> image = memnew(Image(width, 1, false, Image::FORMAT_RGBA8, data));
-
-		if (texture.is_valid()) {
-			RID new_texture = RS::get_singleton()->texture_2d_create(image);
-			RS::get_singleton()->texture_replace(texture, new_texture);
-		} else {
-			texture = RS::get_singleton()->texture_2d_create(image);
-		}
+		texture = RS::get_singleton()->texture_2d_create(image);
 	}
 	RS::get_singleton()->texture_set_path(texture, get_path());
 }
@@ -175,11 +176,7 @@ RID GradientTexture1D::get_rid() const {
 }
 
 Ref<Image> GradientTexture1D::get_image() const {
-	update_now();
-	if (!texture.is_valid()) {
-		return Ref<Image>();
-	}
-	return RenderingServer::get_singleton()->texture_2d_get(texture);
+	return _generate_image();
 }
 
 void GradientTexture1D::update_now() const {
@@ -228,11 +225,9 @@ void GradientTexture2D::_queue_update() {
 	callable_mp(this, &GradientTexture2D::update_now).call_deferred();
 }
 
-void GradientTexture2D::_update() const {
-	update_pending = false;
-
+Ref<Image> GradientTexture2D::_generate_image() const {
 	if (gradient.is_null()) {
-		return;
+		return Ref<Image>();
 	}
 	Ref<Image> image;
 	image.instantiate();
@@ -271,6 +266,17 @@ void GradientTexture2D::_update() const {
 			}
 			image->set_data(width, height, false, Image::FORMAT_RGBA8, data);
 		}
+	}
+
+	return image;
+}
+
+void GradientTexture2D::_update() const {
+	update_pending = false;
+
+	Ref<Image> image = _generate_image();
+	if (image.is_null()) {
+		return;
 	}
 
 	if (texture.is_valid()) {
@@ -408,11 +414,7 @@ RID GradientTexture2D::get_rid() const {
 }
 
 Ref<Image> GradientTexture2D::get_image() const {
-	update_now();
-	if (!texture.is_valid()) {
-		return Ref<Image>();
-	}
-	return RenderingServer::get_singleton()->texture_2d_get(texture);
+	return _generate_image();
 }
 
 void GradientTexture2D::update_now() const {

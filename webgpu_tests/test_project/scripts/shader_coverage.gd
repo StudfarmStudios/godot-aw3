@@ -1,8 +1,8 @@
 ## Shader Coverage Test Scene
 ##
-## Programmatically creates a scene that exercises every single shader path
-## in Godot's RenderingDevice renderer. When run, this forces compilation of
-## all shader variants, validating the SPIR-V → WGSL pipeline end-to-end.
+## Programmatically creates a scene exercising many RenderingDevice features.
+## This is a rendering smoke test, not proof that every shader variant ran.
+## The browser runner also checks engine errors and shader validation output.
 ##
 ## The scene renders for a configurable number of frames then exits with
 ## success/failure based on whether any shader compilation errors occurred.
@@ -38,6 +38,14 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	frame_count += 1
+	if frame_count == 1:
+		print("[ShaderCoverage] First frame: FSR2 temporal upscaling")
+	if frame_count == FRAMES_TO_RENDER / 2:
+		# TAA and FSR2 are mutually exclusive. Exercise them in separate frames.
+		get_viewport().scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+		get_viewport().scaling_3d_scale = 1.0
+		get_viewport().use_taa = true
+		print("[ShaderCoverage] Switching to native-resolution TAA")
 	if frame_count >= FRAMES_TO_RENDER:
 		_report_results()
 		get_tree().quit(0 if errors.is_empty() else 1)
@@ -169,19 +177,19 @@ func _setup_environment() -> void:
 func _setup_camera() -> void:
 	var camera := Camera3D.new()
 	camera.position = Vector3(0, 3, 8)
-	camera.look_at(Vector3(0, 1, 0))
 	camera.far = 200.0
 	camera.near = 0.1
 	camera.current = true
 	add_child(camera)
+	camera.look_at(Vector3(0, 1, 0))
 
-	# Enable TAA via viewport (exercises taa_resolve.glsl, motion_vectors.glsl)
-	get_viewport().use_taa = true
+	# TAA is exercised in the second half of the run, after disabling FSR2.
+	get_viewport().use_taa = false
 	# Enable scaling for FSR (exercises FSR shaders)
 	get_viewport().scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR2
 	get_viewport().scaling_3d_scale = 0.75
 
-	print("  [OK] Camera: TAA, FSR2 upscaling, motion vectors")
+	print("  [OK] Camera: FSR2 then TAA, motion vectors")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -314,7 +322,7 @@ func _setup_geometry_with_materials() -> void:
 	refract_mat.albedo_color = Color(0.9, 0.95, 1.0, 0.3)
 	refract_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	refract_mat.refraction_enabled = true
-	refract_mat.refraction = 0.05
+	refract_mat.refraction_scale = 0.05
 	refract_mesh.material_override = refract_mat
 
 	# 8. Heightmap / Parallax (HEIGHT_USED)
@@ -422,8 +430,8 @@ func _setup_geometry_with_materials() -> void:
 	var grow_mesh := _create_mesh_instance(SphereMesh.new(), Vector3(2, 1, -9))
 	var grow_mat := StandardMaterial3D.new()
 	grow_mat.albedo_color = Color(0.1, 0.1, 0.1)
-	grow_mat.grow_enabled = true
-	grow_mat.grow = 0.02
+	grow_mat.grow = true
+	grow_mat.grow_amount = 0.02
 	grow_mesh.material_override = grow_mat
 
 	print("  [OK] Geometry: 20 material variants (normal, emission, metallic, clearcoat, anisotropy,")
@@ -743,7 +751,7 @@ func _report_results() -> void:
 	print("\n[ShaderCoverage] ═══════════════════════════════════════════")
 	print("[ShaderCoverage] Rendered %d frames successfully." % frame_count)
 	if errors.is_empty():
-		print("[ShaderCoverage] PASS — All shader paths exercised without errors.")
+		print("[ShaderCoverage] PASS — Scene frame sequence completed; browser checks validation output.")
 	else:
 		print("[ShaderCoverage] FAIL — %d shader errors:" % errors.size())
 		for err in errors:

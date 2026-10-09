@@ -1,0 +1,120 @@
+{
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "compiler": "clang++",
+  "baseline_ref": "74d783e44d",
+  "variants": [
+    {
+      "variant": "baseline",
+      "driver_sha256": "49088f02390a1c2d8cc1e7a163881c4d1f905e434553ff99995f5b4549ffa3bb",
+      "objects_sha256": "1c65423733e9e4efd4cd3b0f5494c07e21a8eda83be95354096473a2b87ed4e9",
+      "extracted_test_sha256": "9cca0eae69f66028eaabcc889c6bcae4470edae95e23dab99e8d289f25a80a48",
+      "checks": [
+        {
+          "case": "empty",
+          "passed": true,
+          "expected_failure": false,
+          "returncode": 0,
+          "heap_use_after_free": false,
+          "premature_signal": false
+        },
+        {
+          "case": "single_pending",
+          "passed": true,
+          "expected_failure": false,
+          "returncode": 0,
+          "heap_use_after_free": false,
+          "premature_signal": false
+        },
+        {
+          "case": "free_before_first",
+          "passed": true,
+          "expected_failure": true,
+          "returncode": -6,
+          "heap_use_after_free": true,
+          "premature_signal": false
+        },
+        {
+          "case": "free_after_first",
+          "passed": true,
+          "expected_failure": true,
+          "returncode": -6,
+          "heap_use_after_free": true,
+          "premature_signal": false
+        },
+        {
+          "case": "last_signal",
+          "passed": true,
+          "expected_failure": true,
+          "returncode": -6,
+          "heap_use_after_free": false,
+          "premature_signal": true
+        },
+        {
+          "case": "resubmit",
+          "passed": true,
+          "expected_failure": true,
+          "returncode": -6,
+          "heap_use_after_free": true,
+          "premature_signal": false
+        }
+      ]
+    },
+    {
+      "variant": "current",
+      "driver_sha256": "f230fb6dc82504ed2880284caf3d6036d14378d797aaba88b463992696afefb3",
+      "objects_sha256": "c21147a6e9696fc0d670066a8c5bf687eb996ead717c5d16d0f3c5fb88fe06db",
+      "extracted_test_sha256": "d0ca1d71f2060a6b7882ae52de80fd0cd5609f0e834c333b7b846b355cd58805",
+      "checks": [
+        {
+          "case": "empty",
+          "passed": true,
+          "expected_failure": false,
+          "returncode": 0,
+          "heap_use_after_free": false,
+          "premature_signal": false
+        },
+        {
+          "case": "single_pending",
+          "passed": true,
+          "expected_failure": false,
+          "returncode": 0,
+          "heap_use_after_free": false,
+          "premature_signal": false
+        },
+        {
+          "case": "free_before_first",
+          "passed": true,
+          "expected_failure": false,
+          "returncode": 0,
+          "heap_use_after_free": false,
+          "premature_signal": false
+        },
+        {
+          "case": "free_after_first",
+          "passed": true,
+          "expected_failure": false,
+          "returncode": 0,
+          "heap_use_after_free": false,
+          "premature_signal": false
+        },
+        {
+          "case": "last_signal",
+          "passed": true,
+          "expected_failure": false,
+          "returncode": 0,
+          "heap_use_after_free": false,
+          "premature_signal": false
+        },
+        {
+          "case": "resubmit",
+          "passed": true,
+          "expected_failure": false,
+          "returncode": 0,
+          "heap_use_after_free": false,
+          "premature_signal": false
+        }
+      ]
+    }
+  ],
+  "passed": true
+}

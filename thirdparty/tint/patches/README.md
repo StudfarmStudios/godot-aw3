@@ -24,6 +24,7 @@ done
 | 0005 | ir_to_program.cc | Spec constants | `@size` emission guard + capability |
 | 0006 | parse_num.cc | Vendoring | Replace `absl::from_chars` with `std::from_chars` |
 | 0007 | parse_num.cc | macOS | Use locale-explicit float parsing below the macOS 26 deployment target |
+| 0008 | parser.cc, texture.cc, atomics.cc, reader.cc | SPIR-V 1.4 | Accept resource interfaces and matching integer image extension operands |
 
 ## Logical Groups
 
@@ -46,6 +47,20 @@ Always necessary when vendoring without Abseil.
 **Group E — macOS compatibility (0007)**: Apple's libc++ declares floating-point
 `std::from_chars` unavailable below macOS 26. Use `strtof_l` / `strtod_l` with
 the C locale while retaining `std::from_chars` for integers and other platforms.
+
+**Group F — SPIR-V resource interfaces (0008)**: SPIR-V 1.4 includes resource
+variables in entry-point interfaces. Accept the newer module environment, avoid
+creating addressable phony uses for opaque handles, and remove interface-only
+uses when lowering textures and atomic buffers. Retain phony instructions through
+final IR validation. Adapted from patches 0007–0009 and 0011–0012 in
+[Shane-Gadsby/godotwebgpu at 470f89e](https://github.com/Shane-Gadsby/godotwebgpu/tree/470f89e78eece1c7a73285345e2ca39b8f8706ad/thirdparty/tint/patches).
+The matrix/vector atomic traversal in their patch 0010 is already present in
+our vendored Tint; it requires no additional change. The driver wrapper separately
+changes vertex storage pointer types in Tint IR and validates the result, so real
+vertex writes remain errors. See `webgpu_tests/tint_translation/`.
+The additional parser change handles matching 32-bit `SignExtend`/`ZeroExtend`
+image flags, preserves `Lod`/`Sample`, and rejects other operand semantics before
+the operand parser. It does not import blanket image-operand stripping.
 
 ## Upstream Source
 

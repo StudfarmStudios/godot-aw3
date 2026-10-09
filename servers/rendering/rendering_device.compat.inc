@@ -167,6 +167,10 @@ RID RenderingDevice::_texture_create_from_extension_compat_105570(TextureType p_
 	return texture_create_from_extension(p_type, p_format, p_samples, p_usage, p_image, p_width, p_height, p_depth, p_layers, 1);
 }
 
+void RenderingDevice::_draw_list_draw_bind_compat_4_6(DrawListID p_list, bool p_use_indices, uint32_t p_instances, uint32_t p_procedural_vertices) {
+	draw_list_draw(p_list, p_use_indices, p_instances, p_procedural_vertices, 0);
+}
+
 void RenderingDevice::_bind_compatibility_methods() {
 	ClassDB::bind_compatibility_method(D_METHOD("shader_create_from_bytecode", "binary_data"), &RenderingDevice::_shader_create_from_bytecode_bind_compat_79606);
 
@@ -197,6 +201,9 @@ void RenderingDevice::_bind_compatibility_methods() {
 	ClassDB::bind_compatibility_method(D_METHOD("index_buffer_create", "size_indices", "format", "data", "use_restart_indices"), &RenderingDevice::_index_buffer_create_bind_compat_101561, DEFVAL(Vector<uint8_t>()), DEFVAL(false));
 
 	ClassDB::bind_compatibility_method(D_METHOD("texture_create_from_extension", "type", "format", "samples", "usage_flags", "image", "width", "height", "depth", "layers"), &RenderingDevice::_texture_create_from_extension_compat_105570);
+
+	ClassDB::bind_compatibility_method(D_METHOD("draw_list_draw", "draw_list", "use_indices", "instances", "procedural_vertex_count"), &RenderingDevice::_draw_list_draw_bind_compat_4_6, DEFVAL(0));
+	ClassDB::bind_compatibility_method(D_METHOD("draw_list_draw", "draw_list", "use_indices", "instances", "procedural_vertex_count", "first_instance"), &RenderingDevice::draw_list_draw, DEFVAL(0));
 }
 
 #endif // DISABLE_DEPRECATED

@@ -1,0 +1,111 @@
+{
+  "passed": true,
+  "exported": {
+    "passed": true,
+    "engine": "/private/tmp/aw3-webgpu-fence-editor",
+    "template": "/private/tmp/aw3-webgpu-fence-nonthreaded.zip",
+    "threads": false,
+    "bake": false,
+    "source": "/private/tmp/aw3-browser-fixture-exit7-3525",
+    "runs": [
+      {
+        "stage": "import",
+        "command": [
+          "/private/tmp/aw3-webgpu-fence-editor",
+          "--path",
+          "/private/tmp/aw3-browser-fence-exit7/project",
+          "--verbose",
+          "--headless",
+          "--editor",
+          "--import",
+          "--quit"
+        ],
+        "returncode": 0,
+        "errors": [],
+        "seconds": 3.2420700000366196
+      },
+      {
+        "stage": "export",
+        "command": [
+          "/private/tmp/aw3-webgpu-fence-editor",
+          "--path",
+          "/private/tmp/aw3-browser-fence-exit7/project",
+          "--verbose",
+          "--headless",
+          "--export-release",
+          "Candidate WebGPU",
+          "/private/tmp/aw3-browser-fence-exit7/export/index.html"
+        ],
+        "returncode": 0,
+        "errors": [],
+        "seconds": 2.6211442910134792
+      }
+    ],
+    "engine_sha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+    "template_sha256": "ee65410042ef7242388b759161af645ea46a93f8bac666a2657da11517d4f528",
+    "files": {
+      "index.html": {
+        "bytes": 5789,
+        "sha256": "72ff828c79d174a18d3e182744d9bd2d35f9c7f3d2ee8be919293856e7b6f2f8"
+      },
+      "index.js": {
+        "bytes": 337310,
+        "sha256": "10778005a1c963be6e946799bf6e34568226fbec24f944f02abf5d29c184e7f1"
+      },
+      "index.wasm": {
+        "bytes": 47078325,
+        "sha256": "c6e80d1058f4ecd54655f300a7858f6c8f14498d00d9d8d7a447fede1fdf095c"
+      },
+      "index.pck": {
+        "bytes": 124088,
+        "sha256": "c7a084bd22849355cfb50676aded11d9732997e5a698595b3e1d106db720ea28"
+      }
+    }
+  },
+  "records": [
+    {
+      "browser": "chrome",
+      "expectedExitCode": 7,
+      "warnings": [],
+      "errors": [],
+      "version": "Chrome/154.0.8037.98",
+      "exitCode": 7,
+      "postExitObservationMs": 1000,
+      "passed": true,
+      "markers": [
+        "[WGSLCACHE] translator/profile 3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce",
+        "NONZERO_DRIVER webgpu method=forward_plus",
+        "NONZERO_REQUEST 7"
+      ]
+    },
+    {
+      "browser": "firefox",
+      "expectedExitCode": 7,
+      "warnings": [
+        "WARNING: WebGPU: float32-blendable feature NOT available \u2014 blend on float32 targets will be disabled.",
+        "   at: _check_capabilities (drivers/webgpu/rendering_device_driver_webgpu.cpp:1997)"
+      ],
+      "errors": [],
+      "version": "firefox/155.0.1",
+      "exitCode": 7,
+      "postExitObservationMs": 1000,
+      "passed": true,
+      "markers": [
+        "[WGSLCACHE] translator/profile 3525def07f23b8da85012785acdd34b1ed0f6073b7fe0a5dc60d6487ee3481ce",
+        "NONZERO_DRIVER webgpu method=forward_plus",
+        "NONZERO_REQUEST 7"
+      ]
+    }
+  ],
+  "purpose": "Private non-threaded SceneTree.quit(7) probe: engine onExit preserves status 7 after pending GPU callbacks drain; both installed browsers pass with one additional second of error observation.",
+  "source_result": "/private/tmp/aw3-browser-fence-exit7-results/result.json",
+  "host": {
+    "os": "macOS",
+    "version": "26.5.2",
+    "build": "25F84",
+    "architecture": "arm64"
+  },
+  "windows_d3d12_verified": false,
+  "firefox_backend": "unknown; not captured from about:support",
+  "private_fixture_gd": "extends Node3D\n\nfunc _ready() -> void:\n\tprint(\"NONZERO_DRIVER \", RenderingServer.get_current_rendering_driver_name(), \" method=\", RenderingServer.get_current_rendering_method())\n\tfor index in 60:\n\t\tawait get_tree().process_frame\n\tprint(\"NONZERO_REQUEST 7\")\n\tget_tree().quit(7)\n"
+}

@@ -44,7 +44,12 @@ layout(location = 0) in vec2 uv_interp;
 #ifdef MODE_GEN_BLUR_SIZE
 layout(location = 0) out float weight;
 
+#ifdef SOURCE_DEPTH
+layout(set = 0, binding = 0) uniform sampler2D godot_depth_source;
+#define source_depth godot_depth_source
+#else
 layout(set = 0, binding = 0) uniform sampler2D source_depth;
+#endif
 #else
 layout(location = 0) out vec4 frag_color;
 #ifdef OUTPUT_WEIGHT

@@ -1,0 +1,3186 @@
+{
+  "passed": true,
+  "scope": "Native seeded CPU layout initialization; excludes GLSL compilation, shader pipelines, GPU work and deferred frees. Capability omission changes both source analysis and layout contracts; this is not a parser-only timing or browser startup benchmark.",
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "engine_sha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
+  "manifest": {
+    "stages": [
+      {
+        "name": "hiz",
+        "path": "prepared_project/hiz.glsl",
+        "bindings": [
+          "s:r32",
+          "i:r32"
+        ],
+        "source": "servers/rendering/renderer_rd/shaders/effects/screen_space_reflection_hiz.glsl",
+        "source_sha256": "14fe727a1a6c39e94e36702c694e08f64c769460b8495be0330e2ca4d566c1bd",
+        "prepared_sha256": "facdff376a40f9e82dc745851462e1e807f263712555cf97290a8649b5c1e402"
+      },
+      {
+        "name": "hiz_odd",
+        "path": "prepared_project/hiz_odd.glsl",
+        "bindings": [
+          "s:r32",
+          "i:r32"
+        ],
+        "source": "servers/rendering/renderer_rd/shaders/effects/screen_space_reflection_hiz.glsl",
+        "source_sha256": "14fe727a1a6c39e94e36702c694e08f64c769460b8495be0330e2ca4d566c1bd",
+        "prepared_sha256": "e0e617ff878a89f1573da34193bc5a163492d63e7d4d295210c1f049b6228373"
+      },
+      {
+        "name": "downsample",
+        "path": "prepared_project/downsample.glsl",
+        "bindings": [
+          "s:r32",
+          "s:rgba8",
+          "i:r32",
+          "i:rgba8"
+        ],
+        "source": "servers/rendering/renderer_rd/shaders/effects/screen_space_reflection_downsample.glsl",
+        "source_sha256": "d182cbc2c377715e39433bf23e993ca2c415c532a2fbd5f07b3d491a9099a200",
+        "prepared_sha256": "e382c8c3eb02dff7fd509e39954a9d3cb01df92b4682e7963f1d5f48b970da0b"
+      },
+      {
+        "name": "trace",
+        "path": "prepared_project/trace.glsl",
+        "bindings": [
+          "s:rgba16",
+          "s:r32",
+          "s:rgba8",
+          "i:rgba16",
+          "i:r8",
+          "u:scene"
+        ],
+        "source": "servers/rendering/renderer_rd/shaders/effects/screen_space_reflection.glsl",
+        "source_sha256": "2cb54ee45a9c405365ec168dce49b2e2c419ecd93f1926ccd18ef4b830f615a1",
+        "prepared_sha256": "c914a94687627ccaaa0c36c75e1cb06875be656ff30d11fa05bc47bc07d713f4"
+      },
+      {
+        "name": "filter",
+        "path": "prepared_project/filter.glsl",
+        "bindings": [
+          "s:rgba16",
+          "i:rgba16"
+        ],
+        "source": "servers/rendering/renderer_rd/shaders/effects/screen_space_reflection_filter.glsl",
+        "source_sha256": "6c61cdcba6004a9c3814985c6b977b7d88f793e6efd003b1bf408866b18e108a",
+        "prepared_sha256": "6112e855f1e34e26f6964735ff5bee481ad93eba79181ed33b0acbf5f8737794"
+      },
+      {
+        "name": "resolve",
+        "path": "prepared_project/resolve.glsl",
+        "bindings": [
+          "s:r32",
+          "s:rgba8",
+          "s:r32",
+          "s:rgba8",
+          "s:rgba16",
+          "s:r8",
+          "i:rgba16"
+        ],
+        "source": "servers/rendering/renderer_rd/shaders/effects/screen_space_reflection_resolve.glsl",
+        "source_sha256": "8f3a6d2e0f9a7cf71b8acf40e13816754dae5f193c8184f7a628e5c060d68073",
+        "prepared_sha256": "b27c5da4c246adee6b03113aa93e9b2fc6f80a0afa2c8d9ef6c90db7c80a1518"
+      }
+    ],
+    "batches": 7,
+    "iterations": 32
+  },
+  "runs": [
+    {
+      "pair": 1,
+      "mode": "native",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "errors": [],
+      "float32_filterable_omitted": false,
+      "samples": [
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 672,
+          "iterations": 32,
+          "reused_layout_uniform_us": 60,
+          "shader_create_us": 368,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 795,
+          "iterations": 32,
+          "reused_layout_uniform_us": 54,
+          "shader_create_us": 490,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 1149,
+          "iterations": 32,
+          "reused_layout_uniform_us": 103,
+          "shader_create_us": 705,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 3918,
+          "iterations": 32,
+          "reused_layout_uniform_us": 113,
+          "shader_create_us": 6326,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 1620,
+          "iterations": 32,
+          "reused_layout_uniform_us": 58,
+          "shader_create_us": 2567,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 2143,
+          "iterations": 32,
+          "reused_layout_uniform_us": 129,
+          "shader_create_us": 1661,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 716,
+          "iterations": 32,
+          "reused_layout_uniform_us": 59,
+          "shader_create_us": 391,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 808,
+          "iterations": 32,
+          "reused_layout_uniform_us": 56,
+          "shader_create_us": 492,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 1071,
+          "iterations": 32,
+          "reused_layout_uniform_us": 83,
+          "shader_create_us": 664,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 3858,
+          "iterations": 32,
+          "reused_layout_uniform_us": 102,
+          "shader_create_us": 6281,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 1661,
+          "iterations": 32,
+          "reused_layout_uniform_us": 59,
+          "shader_create_us": 2636,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 2122,
+          "iterations": 32,
+          "reused_layout_uniform_us": 121,
+          "shader_create_us": 1662,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 617,
+          "iterations": 32,
+          "reused_layout_uniform_us": 55,
+          "shader_create_us": 344,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 764,
+          "iterations": 32,
+          "reused_layout_uniform_us": 54,
+          "shader_create_us": 465,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 1035,
+          "iterations": 32,
+          "reused_layout_uniform_us": 80,
+          "shader_create_us": 632,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 3859,
+          "iterations": 32,
+          "reused_layout_uniform_us": 107,
+          "shader_create_us": 6278,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 1680,
+          "iterations": 32,
+          "reused_layout_uniform_us": 56,
+          "shader_create_us": 2674,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 2083,
+          "iterations": 32,
+          "reused_layout_uniform_us": 112,
+          "shader_create_us": 1633,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 626,
+          "iterations": 32,
+          "reused_layout_uniform_us": 55,
+          "shader_create_us": 351,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 773,
+          "iterations": 32,
+          "reused_layout_uniform_us": 57,
+          "shader_create_us": 483,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 1065,
+          "iterations": 32,
+          "reused_layout_uniform_us": 83,
+          "shader_create_us": 644,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 3750,
+          "iterations": 32,
+          "reused_layout_uniform_us": 103,
+          "shader_create_us": 6041,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 1663,
+          "iterations": 32,
+          "reused_layout_uniform_us": 59,
+          "shader_create_us": 2585,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 2195,
+          "iterations": 32,
+          "reused_layout_uniform_us": 121,
+          "shader_create_us": 1709,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 635,
+          "iterations": 32,
+          "reused_layout_uniform_us": 53,
+          "shader_create_us": 350,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 757,
+          "iterations": 32,
+          "reused_layout_uniform_us": 51,
+          "shader_create_us": 464,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 1076,
+          "iterations": 32,
+          "reused_layout_uniform_us": 78,
+          "shader_create_us": 669,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 3953,
+          "iterations": 32,
+          "reused_layout_uniform_us": 113,
+          "shader_create_us": 6327,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 1711,
+          "iterations": 32,
+          "reused_layout_uniform_us": 64,
+          "shader_create_us": 2668,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 2134,
+          "iterations": 32,
+          "reused_layout_uniform_us": 121,
+          "shader_create_us": 1666,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 628,
+          "iterations": 32,
+          "reused_layout_uniform_us": 49,
+          "shader_create_us": 347,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 775,
+          "iterations": 32,
+          "reused_layout_uniform_us": 54,
+          "shader_create_us": 473,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 1041,
+          "iterations": 32,
+          "reused_layout_uniform_us": 78,
+          "shader_create_us": 635,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 3955,
+          "iterations": 32,
+          "reused_layout_uniform_us": 110,
+          "shader_create_us": 6264,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 1641,
+          "iterations": 32,
+          "reused_layout_uniform_us": 53,
+          "shader_create_us": 2550,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 2156,
+          "iterations": 32,
+          "reused_layout_uniform_us": 111,
+          "shader_create_us": 1694,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 630,
+          "iterations": 32,
+          "reused_layout_uniform_us": 52,
+          "shader_create_us": 348,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 822,
+          "iterations": 32,
+          "reused_layout_uniform_us": 63,
+          "shader_create_us": 504,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 1041,
+          "iterations": 32,
+          "reused_layout_uniform_us": 77,
+          "shader_create_us": 638,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 3950,
+          "iterations": 32,
+          "reused_layout_uniform_us": 113,
+          "shader_create_us": 6320,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 1643,
+          "iterations": 32,
+          "reused_layout_uniform_us": 54,
+          "shader_create_us": 2583,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 2149,
+          "iterations": 32,
+          "reused_layout_uniform_us": 114,
+          "shader_create_us": 1681,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        }
+      ]
+    },
+    {
+      "pair": 1,
+      "mode": "nofilter",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "errors": [],
+      "float32_filterable_omitted": true,
+      "samples": [
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 1481,
+          "iterations": 32,
+          "reused_layout_uniform_us": 77,
+          "shader_create_us": 382,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 1987,
+          "iterations": 32,
+          "reused_layout_uniform_us": 59,
+          "shader_create_us": 479,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 2286,
+          "iterations": 32,
+          "reused_layout_uniform_us": 94,
+          "shader_create_us": 707,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 12919,
+          "iterations": 32,
+          "reused_layout_uniform_us": 126,
+          "shader_create_us": 6620,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 5511,
+          "iterations": 32,
+          "reused_layout_uniform_us": 67,
+          "shader_create_us": 2653,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 5180,
+          "iterations": 32,
+          "reused_layout_uniform_us": 138,
+          "shader_create_us": 1705,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 1424,
+          "iterations": 32,
+          "reused_layout_uniform_us": 58,
+          "shader_create_us": 352,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 1875,
+          "iterations": 32,
+          "reused_layout_uniform_us": 56,
+          "shader_create_us": 451,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 2200,
+          "iterations": 32,
+          "reused_layout_uniform_us": 80,
+          "shader_create_us": 653,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 13007,
+          "iterations": 32,
+          "reused_layout_uniform_us": 150,
+          "shader_create_us": 6619,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 5471,
+          "iterations": 32,
+          "reused_layout_uniform_us": 64,
+          "shader_create_us": 2637,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 5185,
+          "iterations": 32,
+          "reused_layout_uniform_us": 128,
+          "shader_create_us": 1717,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 1443,
+          "iterations": 32,
+          "reused_layout_uniform_us": 60,
+          "shader_create_us": 365,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 1898,
+          "iterations": 32,
+          "reused_layout_uniform_us": 54,
+          "shader_create_us": 451,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 2229,
+          "iterations": 32,
+          "reused_layout_uniform_us": 80,
+          "shader_create_us": 662,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 13183,
+          "iterations": 32,
+          "reused_layout_uniform_us": 124,
+          "shader_create_us": 6663,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 5645,
+          "iterations": 32,
+          "reused_layout_uniform_us": 76,
+          "shader_create_us": 2720,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 5252,
+          "iterations": 32,
+          "reused_layout_uniform_us": 126,
+          "shader_create_us": 1748,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 1432,
+          "iterations": 32,
+          "reused_layout_uniform_us": 65,
+          "shader_create_us": 350,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 2025,
+          "iterations": 32,
+          "reused_layout_uniform_us": 60,
+          "shader_create_us": 490,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 2217,
+          "iterations": 32,
+          "reused_layout_uniform_us": 75,
+          "shader_create_us": 646,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 12826,
+          "iterations": 32,
+          "reused_layout_uniform_us": 100,
+          "shader_create_us": 6410,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 5627,
+          "iterations": 32,
+          "reused_layout_uniform_us": 69,
+          "shader_create_us": 2669,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 5330,
+          "iterations": 32,
+          "reused_layout_uniform_us": 128,
+          "shader_create_us": 1755,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 1513,
+          "iterations": 32,
+          "reused_layout_uniform_us": 60,
+          "shader_create_us": 380,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 1954,
+          "iterations": 32,
+          "reused_layout_uniform_us": 59,
+          "shader_create_us": 477,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 2155,
+          "iterations": 32,
+          "reused_layout_uniform_us": 82,
+          "shader_create_us": 637,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 13089,
+          "iterations": 32,
+          "reused_layout_uniform_us": 125,
+          "shader_create_us": 6684,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 5496,
+          "iterations": 32,
+          "reused_layout_uniform_us": 64,
+          "shader_create_us": 2623,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 5465,
+          "iterations": 32,
+          "reused_layout_uniform_us": 137,
+          "shader_create_us": 1801,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 1461,
+          "iterations": 32,
+          "reused_layout_uniform_us": 62,
+          "shader_create_us": 375,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 1911,
+          "iterations": 32,
+          "reused_layout_uniform_us": 58,
+          "shader_create_us": 476,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 2432,
+          "iterations": 32,
+          "reused_layout_uniform_us": 91,
+          "shader_create_us": 728,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 12824,
+          "iterations": 32,
+          "reused_layout_uniform_us": 124,
+          "shader_create_us": 6458,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 5565,
+          "iterations": 32,
+          "reused_layout_uniform_us": 69,
+          "shader_create_us": 2644,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 5309,
+          "iterations": 32,
+          "reused_layout_uniform_us": 124,
+          "shader_create_us": 1753,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 1439,
+          "iterations": 32,
+          "reused_layout_uniform_us": 58,
+          "shader_create_us": 375,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 2119,
+          "iterations": 32,
+          "reused_layout_uniform_us": 58,
+          "shader_create_us": 553,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 2158,
+          "iterations": 32,
+          "reused_layout_uniform_us": 76,
+          "shader_create_us": 670,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 12990,
+          "iterations": 32,
+          "reused_layout_uniform_us": 120,
+          "shader_create_us": 6539,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 5336,
+          "iterations": 32,
+          "reused_layout_uniform_us": 63,
+          "shader_create_us": 2579,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 5228,
+          "iterations": 32,
+          "reused_layout_uniform_us": 125,
+          "shader_create_us": 1739,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        }
+      ]
+    },
+    {
+      "pair": 2,
+      "mode": "nofilter",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "errors": [],
+      "float32_filterable_omitted": true,
+      "samples": [
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 1486,
+          "iterations": 32,
+          "reused_layout_uniform_us": 70,
+          "shader_create_us": 381,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 1967,
+          "iterations": 32,
+          "reused_layout_uniform_us": 54,
+          "shader_create_us": 480,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 2223,
+          "iterations": 32,
+          "reused_layout_uniform_us": 93,
+          "shader_create_us": 657,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 13306,
+          "iterations": 32,
+          "reused_layout_uniform_us": 134,
+          "shader_create_us": 6708,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 5486,
+          "iterations": 32,
+          "reused_layout_uniform_us": 72,
+          "shader_create_us": 2625,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 5394,
+          "iterations": 32,
+          "reused_layout_uniform_us": 142,
+          "shader_create_us": 1761,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 1618,
+          "iterations": 32,
+          "reused_layout_uniform_us": 72,
+          "shader_create_us": 425,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 2039,
+          "iterations": 32,
+          "reused_layout_uniform_us": 65,
+          "shader_create_us": 517,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 2245,
+          "iterations": 32,
+          "reused_layout_uniform_us": 80,
+          "shader_create_us": 653,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 12614,
+          "iterations": 32,
+          "reused_layout_uniform_us": 113,
+          "shader_create_us": 6325,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 5546,
+          "iterations": 32,
+          "reused_layout_uniform_us": 66,
+          "shader_create_us": 2654,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 5250,
+          "iterations": 32,
+          "reused_layout_uniform_us": 123,
+          "shader_create_us": 1705,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 1423,
+          "iterations": 32,
+          "reused_layout_uniform_us": 58,
+          "shader_create_us": 353,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 1989,
+          "iterations": 32,
+          "reused_layout_uniform_us": 54,
+          "shader_create_us": 490,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 2224,
+          "iterations": 32,
+          "reused_layout_uniform_us": 78,
+          "shader_create_us": 648,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 12892,
+          "iterations": 32,
+          "reused_layout_uniform_us": 120,
+          "shader_create_us": 6493,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 5600,
+          "iterations": 32,
+          "reused_layout_uniform_us": 60,
+          "shader_create_us": 2678,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 5210,
+          "iterations": 32,
+          "reused_layout_uniform_us": 118,
+          "shader_create_us": 1688,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 1412,
+          "iterations": 32,
+          "reused_layout_uniform_us": 60,
+          "shader_create_us": 352,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 1984,
+          "iterations": 32,
+          "reused_layout_uniform_us": 60,
+          "shader_create_us": 505,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 2203,
+          "iterations": 32,
+          "reused_layout_uniform_us": 79,
+          "shader_create_us": 640,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 12800,
+          "iterations": 32,
+          "reused_layout_uniform_us": 105,
+          "shader_create_us": 6492,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 5374,
+          "iterations": 32,
+          "reused_layout_uniform_us": 54,
+          "shader_create_us": 2593,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 5455,
+          "iterations": 32,
+          "reused_layout_uniform_us": 133,
+          "shader_create_us": 1810,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 1409,
+          "iterations": 32,
+          "reused_layout_uniform_us": 62,
+          "shader_create_us": 375,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 2069,
+          "iterations": 32,
+          "reused_layout_uniform_us": 66,
+          "shader_create_us": 518,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 2246,
+          "iterations": 32,
+          "reused_layout_uniform_us": 82,
+          "shader_create_us": 685,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 13081,
+          "iterations": 32,
+          "reused_layout_uniform_us": 128,
+          "shader_create_us": 6601,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 5524,
+          "iterations": 32,
+          "reused_layout_uniform_us": 63,
+          "shader_create_us": 2693,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 5195,
+          "iterations": 32,
+          "reused_layout_uniform_us": 126,
+          "shader_create_us": 1705,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 1453,
+          "iterations": 32,
+          "reused_layout_uniform_us": 59,
+          "shader_create_us": 383,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 1933,
+          "iterations": 32,
+          "reused_layout_uniform_us": 54,
+          "shader_create_us": 478,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 2177,
+          "iterations": 32,
+          "reused_layout_uniform_us": 76,
+          "shader_create_us": 634,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 13289,
+          "iterations": 32,
+          "reused_layout_uniform_us": 135,
+          "shader_create_us": 6627,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 5634,
+          "iterations": 32,
+          "reused_layout_uniform_us": 70,
+          "shader_create_us": 2701,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 5229,
+          "iterations": 32,
+          "reused_layout_uniform_us": 120,
+          "shader_create_us": 1724,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 1401,
+          "iterations": 32,
+          "reused_layout_uniform_us": 53,
+          "shader_create_us": 351,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 1932,
+          "iterations": 32,
+          "reused_layout_uniform_us": 57,
+          "shader_create_us": 481,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 2252,
+          "iterations": 32,
+          "reused_layout_uniform_us": 81,
+          "shader_create_us": 664,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 12948,
+          "iterations": 32,
+          "reused_layout_uniform_us": 118,
+          "shader_create_us": 6557,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 5698,
+          "iterations": 32,
+          "reused_layout_uniform_us": 68,
+          "shader_create_us": 2747,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 5220,
+          "iterations": 32,
+          "reused_layout_uniform_us": 117,
+          "shader_create_us": 1697,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        }
+      ]
+    },
+    {
+      "pair": 2,
+      "mode": "native",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "errors": [],
+      "float32_filterable_omitted": false,
+      "samples": [
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 679,
+          "iterations": 32,
+          "reused_layout_uniform_us": 72,
+          "shader_create_us": 371,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 760,
+          "iterations": 32,
+          "reused_layout_uniform_us": 52,
+          "shader_create_us": 465,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 1091,
+          "iterations": 32,
+          "reused_layout_uniform_us": 91,
+          "shader_create_us": 680,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 3827,
+          "iterations": 32,
+          "reused_layout_uniform_us": 98,
+          "shader_create_us": 6165,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 1607,
+          "iterations": 32,
+          "reused_layout_uniform_us": 64,
+          "shader_create_us": 2547,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 2252,
+          "iterations": 32,
+          "reused_layout_uniform_us": 142,
+          "shader_create_us": 1712,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 664,
+          "iterations": 32,
+          "reused_layout_uniform_us": 56,
+          "shader_create_us": 367,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 756,
+          "iterations": 32,
+          "reused_layout_uniform_us": 55,
+          "shader_create_us": 466,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 1055,
+          "iterations": 32,
+          "reused_layout_uniform_us": 79,
+          "shader_create_us": 654,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 3908,
+          "iterations": 32,
+          "reused_layout_uniform_us": 100,
+          "shader_create_us": 6319,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 1638,
+          "iterations": 32,
+          "reused_layout_uniform_us": 60,
+          "shader_create_us": 2607,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 2241,
+          "iterations": 32,
+          "reused_layout_uniform_us": 124,
+          "shader_create_us": 1712,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 641,
+          "iterations": 32,
+          "reused_layout_uniform_us": 54,
+          "shader_create_us": 359,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 765,
+          "iterations": 32,
+          "reused_layout_uniform_us": 53,
+          "shader_create_us": 471,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 1058,
+          "iterations": 32,
+          "reused_layout_uniform_us": 76,
+          "shader_create_us": 663,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 3838,
+          "iterations": 32,
+          "reused_layout_uniform_us": 97,
+          "shader_create_us": 6259,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 1638,
+          "iterations": 32,
+          "reused_layout_uniform_us": 59,
+          "shader_create_us": 2593,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 2140,
+          "iterations": 32,
+          "reused_layout_uniform_us": 121,
+          "shader_create_us": 1681,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 649,
+          "iterations": 32,
+          "reused_layout_uniform_us": 56,
+          "shader_create_us": 357,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 772,
+          "iterations": 32,
+          "reused_layout_uniform_us": 51,
+          "shader_create_us": 473,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 1092,
+          "iterations": 32,
+          "reused_layout_uniform_us": 80,
+          "shader_create_us": 683,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 4025,
+          "iterations": 32,
+          "reused_layout_uniform_us": 106,
+          "shader_create_us": 6358,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 1617,
+          "iterations": 32,
+          "reused_layout_uniform_us": 57,
+          "shader_create_us": 2619,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 2163,
+          "iterations": 32,
+          "reused_layout_uniform_us": 116,
+          "shader_create_us": 1658,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 636,
+          "iterations": 32,
+          "reused_layout_uniform_us": 52,
+          "shader_create_us": 352,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 761,
+          "iterations": 32,
+          "reused_layout_uniform_us": 53,
+          "shader_create_us": 473,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 1028,
+          "iterations": 32,
+          "reused_layout_uniform_us": 77,
+          "shader_create_us": 632,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 3816,
+          "iterations": 32,
+          "reused_layout_uniform_us": 102,
+          "shader_create_us": 6148,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 1625,
+          "iterations": 32,
+          "reused_layout_uniform_us": 56,
+          "shader_create_us": 2572,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 2158,
+          "iterations": 32,
+          "reused_layout_uniform_us": 119,
+          "shader_create_us": 1678,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 647,
+          "iterations": 32,
+          "reused_layout_uniform_us": 54,
+          "shader_create_us": 358,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 817,
+          "iterations": 32,
+          "reused_layout_uniform_us": 56,
+          "shader_create_us": 491,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 1027,
+          "iterations": 32,
+          "reused_layout_uniform_us": 75,
+          "shader_create_us": 628,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 4068,
+          "iterations": 32,
+          "reused_layout_uniform_us": 103,
+          "shader_create_us": 6393,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 1624,
+          "iterations": 32,
+          "reused_layout_uniform_us": 55,
+          "shader_create_us": 2565,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 2116,
+          "iterations": 32,
+          "reused_layout_uniform_us": 111,
+          "shader_create_us": 1650,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 636,
+          "iterations": 32,
+          "reused_layout_uniform_us": 54,
+          "shader_create_us": 356,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 728,
+          "iterations": 32,
+          "reused_layout_uniform_us": 57,
+          "shader_create_us": 458,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 1031,
+          "iterations": 32,
+          "reused_layout_uniform_us": 76,
+          "shader_create_us": 640,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 3904,
+          "iterations": 32,
+          "reused_layout_uniform_us": 107,
+          "shader_create_us": 6255,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 1634,
+          "iterations": 32,
+          "reused_layout_uniform_us": 57,
+          "shader_create_us": 2563,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 2125,
+          "iterations": 32,
+          "reused_layout_uniform_us": 117,
+          "shader_create_us": 1663,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        }
+      ]
+    },
+    {
+      "pair": 3,
+      "mode": "native",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "errors": [],
+      "float32_filterable_omitted": false,
+      "samples": [
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 675,
+          "iterations": 32,
+          "reused_layout_uniform_us": 71,
+          "shader_create_us": 354,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 797,
+          "iterations": 32,
+          "reused_layout_uniform_us": 61,
+          "shader_create_us": 484,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 1035,
+          "iterations": 32,
+          "reused_layout_uniform_us": 82,
+          "shader_create_us": 639,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 3946,
+          "iterations": 32,
+          "reused_layout_uniform_us": 112,
+          "shader_create_us": 6335,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 1642,
+          "iterations": 32,
+          "reused_layout_uniform_us": 61,
+          "shader_create_us": 2574,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 2162,
+          "iterations": 32,
+          "reused_layout_uniform_us": 123,
+          "shader_create_us": 1695,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 624,
+          "iterations": 32,
+          "reused_layout_uniform_us": 52,
+          "shader_create_us": 347,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 818,
+          "iterations": 32,
+          "reused_layout_uniform_us": 65,
+          "shader_create_us": 504,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 1068,
+          "iterations": 32,
+          "reused_layout_uniform_us": 79,
+          "shader_create_us": 663,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 3829,
+          "iterations": 32,
+          "reused_layout_uniform_us": 101,
+          "shader_create_us": 6213,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 1642,
+          "iterations": 32,
+          "reused_layout_uniform_us": 57,
+          "shader_create_us": 2575,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 2147,
+          "iterations": 32,
+          "reused_layout_uniform_us": 117,
+          "shader_create_us": 1691,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 644,
+          "iterations": 32,
+          "reused_layout_uniform_us": 58,
+          "shader_create_us": 363,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 788,
+          "iterations": 32,
+          "reused_layout_uniform_us": 55,
+          "shader_create_us": 486,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 1048,
+          "iterations": 32,
+          "reused_layout_uniform_us": 72,
+          "shader_create_us": 651,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 3993,
+          "iterations": 32,
+          "reused_layout_uniform_us": 103,
+          "shader_create_us": 6473,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 1638,
+          "iterations": 32,
+          "reused_layout_uniform_us": 55,
+          "shader_create_us": 2590,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 2130,
+          "iterations": 32,
+          "reused_layout_uniform_us": 116,
+          "shader_create_us": 1672,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 636,
+          "iterations": 32,
+          "reused_layout_uniform_us": 59,
+          "shader_create_us": 359,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 764,
+          "iterations": 32,
+          "reused_layout_uniform_us": 56,
+          "shader_create_us": 473,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 1068,
+          "iterations": 32,
+          "reused_layout_uniform_us": 75,
+          "shader_create_us": 668,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 3872,
+          "iterations": 32,
+          "reused_layout_uniform_us": 100,
+          "shader_create_us": 6288,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 1601,
+          "iterations": 32,
+          "reused_layout_uniform_us": 54,
+          "shader_create_us": 2553,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 2137,
+          "iterations": 32,
+          "reused_layout_uniform_us": 112,
+          "shader_create_us": 1686,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 633,
+          "iterations": 32,
+          "reused_layout_uniform_us": 54,
+          "shader_create_us": 352,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 781,
+          "iterations": 32,
+          "reused_layout_uniform_us": 53,
+          "shader_create_us": 498,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 1022,
+          "iterations": 32,
+          "reused_layout_uniform_us": 76,
+          "shader_create_us": 639,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 3794,
+          "iterations": 32,
+          "reused_layout_uniform_us": 98,
+          "shader_create_us": 6148,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 1643,
+          "iterations": 32,
+          "reused_layout_uniform_us": 56,
+          "shader_create_us": 2565,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 2156,
+          "iterations": 32,
+          "reused_layout_uniform_us": 119,
+          "shader_create_us": 1687,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 695,
+          "iterations": 32,
+          "reused_layout_uniform_us": 55,
+          "shader_create_us": 389,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 782,
+          "iterations": 32,
+          "reused_layout_uniform_us": 56,
+          "shader_create_us": 487,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 1043,
+          "iterations": 32,
+          "reused_layout_uniform_us": 74,
+          "shader_create_us": 646,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 3878,
+          "iterations": 32,
+          "reused_layout_uniform_us": 99,
+          "shader_create_us": 6311,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 1607,
+          "iterations": 32,
+          "reused_layout_uniform_us": 58,
+          "shader_create_us": 2535,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 2149,
+          "iterations": 32,
+          "reused_layout_uniform_us": 115,
+          "shader_create_us": 1676,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 646,
+          "iterations": 32,
+          "reused_layout_uniform_us": 55,
+          "shader_create_us": 363,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 746,
+          "iterations": 32,
+          "reused_layout_uniform_us": 52,
+          "shader_create_us": 466,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 1032,
+          "iterations": 32,
+          "reused_layout_uniform_us": 70,
+          "shader_create_us": 629,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 3817,
+          "iterations": 32,
+          "reused_layout_uniform_us": 112,
+          "shader_create_us": 6135,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 1617,
+          "iterations": 32,
+          "reused_layout_uniform_us": 52,
+          "shader_create_us": 2549,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 2119,
+          "iterations": 32,
+          "reused_layout_uniform_us": 110,
+          "shader_create_us": 1654,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        }
+      ]
+    },
+    {
+      "pair": 3,
+      "mode": "nofilter",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "errors": [],
+      "float32_filterable_omitted": true,
+      "samples": [
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 1481,
+          "iterations": 32,
+          "reused_layout_uniform_us": 63,
+          "shader_create_us": 370,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 1975,
+          "iterations": 32,
+          "reused_layout_uniform_us": 61,
+          "shader_create_us": 486,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 2189,
+          "iterations": 32,
+          "reused_layout_uniform_us": 87,
+          "shader_create_us": 647,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 13025,
+          "iterations": 32,
+          "reused_layout_uniform_us": 128,
+          "shader_create_us": 6580,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 5588,
+          "iterations": 32,
+          "reused_layout_uniform_us": 68,
+          "shader_create_us": 2791,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 0,
+          "fresh_layout_uniform_us": 5265,
+          "iterations": 32,
+          "reused_layout_uniform_us": 141,
+          "shader_create_us": 1744,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 1385,
+          "iterations": 32,
+          "reused_layout_uniform_us": 53,
+          "shader_create_us": 354,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 1994,
+          "iterations": 32,
+          "reused_layout_uniform_us": 61,
+          "shader_create_us": 496,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 2310,
+          "iterations": 32,
+          "reused_layout_uniform_us": 100,
+          "shader_create_us": 700,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 12731,
+          "iterations": 32,
+          "reused_layout_uniform_us": 106,
+          "shader_create_us": 6420,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 5618,
+          "iterations": 32,
+          "reused_layout_uniform_us": 65,
+          "shader_create_us": 2729,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 1,
+          "fresh_layout_uniform_us": 5416,
+          "iterations": 32,
+          "reused_layout_uniform_us": 137,
+          "shader_create_us": 1791,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 1473,
+          "iterations": 32,
+          "reused_layout_uniform_us": 58,
+          "shader_create_us": 389,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 1979,
+          "iterations": 32,
+          "reused_layout_uniform_us": 56,
+          "shader_create_us": 496,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 2214,
+          "iterations": 32,
+          "reused_layout_uniform_us": 74,
+          "shader_create_us": 652,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 12928,
+          "iterations": 32,
+          "reused_layout_uniform_us": 107,
+          "shader_create_us": 6498,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 5483,
+          "iterations": 32,
+          "reused_layout_uniform_us": 63,
+          "shader_create_us": 2639,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 2,
+          "fresh_layout_uniform_us": 5390,
+          "iterations": 32,
+          "reused_layout_uniform_us": 125,
+          "shader_create_us": 1793,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 1402,
+          "iterations": 32,
+          "reused_layout_uniform_us": 53,
+          "shader_create_us": 350,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 1969,
+          "iterations": 32,
+          "reused_layout_uniform_us": 54,
+          "shader_create_us": 492,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 2202,
+          "iterations": 32,
+          "reused_layout_uniform_us": 79,
+          "shader_create_us": 652,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 12865,
+          "iterations": 32,
+          "reused_layout_uniform_us": 112,
+          "shader_create_us": 6518,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 5693,
+          "iterations": 32,
+          "reused_layout_uniform_us": 72,
+          "shader_create_us": 2747,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 3,
+          "fresh_layout_uniform_us": 5320,
+          "iterations": 32,
+          "reused_layout_uniform_us": 130,
+          "shader_create_us": 1741,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 1424,
+          "iterations": 32,
+          "reused_layout_uniform_us": 57,
+          "shader_create_us": 372,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 2059,
+          "iterations": 32,
+          "reused_layout_uniform_us": 57,
+          "shader_create_us": 503,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 2366,
+          "iterations": 32,
+          "reused_layout_uniform_us": 96,
+          "shader_create_us": 717,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 13073,
+          "iterations": 32,
+          "reused_layout_uniform_us": 117,
+          "shader_create_us": 6616,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 5474,
+          "iterations": 32,
+          "reused_layout_uniform_us": 64,
+          "shader_create_us": 2650,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 4,
+          "fresh_layout_uniform_us": 5564,
+          "iterations": 32,
+          "reused_layout_uniform_us": 134,
+          "shader_create_us": 1840,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 1515,
+          "iterations": 32,
+          "reused_layout_uniform_us": 60,
+          "shader_create_us": 392,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 1969,
+          "iterations": 32,
+          "reused_layout_uniform_us": 60,
+          "shader_create_us": 491,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 2194,
+          "iterations": 32,
+          "reused_layout_uniform_us": 77,
+          "shader_create_us": 659,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 13168,
+          "iterations": 32,
+          "reused_layout_uniform_us": 113,
+          "shader_create_us": 6663,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 5518,
+          "iterations": 32,
+          "reused_layout_uniform_us": 63,
+          "shader_create_us": 2668,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 5,
+          "fresh_layout_uniform_us": 5217,
+          "iterations": 32,
+          "reused_layout_uniform_us": 121,
+          "shader_create_us": 1725,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 1482,
+          "iterations": 32,
+          "reused_layout_uniform_us": 59,
+          "shader_create_us": 382,
+          "spirv_bytes": 2300,
+          "stage": "hiz",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 2040,
+          "iterations": 32,
+          "reused_layout_uniform_us": 60,
+          "shader_create_us": 497,
+          "spirv_bytes": 3460,
+          "stage": "hiz_odd",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 2176,
+          "iterations": 32,
+          "reused_layout_uniform_us": 75,
+          "shader_create_us": 653,
+          "spirv_bytes": 3572,
+          "stage": "downsample",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 12954,
+          "iterations": 32,
+          "reused_layout_uniform_us": 116,
+          "shader_create_us": 6628,
+          "spirv_bytes": 25596,
+          "stage": "trace",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 5551,
+          "iterations": 32,
+          "reused_layout_uniform_us": 67,
+          "shader_create_us": 2700,
+          "spirv_bytes": 11676,
+          "stage": "filter",
+          "valid": true
+        },
+        {
+          "batch": 6,
+          "fresh_layout_uniform_us": 5318,
+          "iterations": 32,
+          "reused_layout_uniform_us": 132,
+          "shader_create_us": 1838,
+          "spirv_bytes": 9468,
+          "stage": "resolve",
+          "valid": true
+        }
+      ]
+    }
+  ],
+  "summaries": [
+    {
+      "stage": "hiz",
+      "measurement": "shader_create_us",
+      "paired_median_additional_us": 0.53125,
+      "pairs": [
+        {
+          "pair": 1,
+          "native_us_per_creation": 10.9375,
+          "nofilter_us_per_creation": 11.71875,
+          "additional_us": 0.78125,
+          "ratio": 1.0714285714285714
+        },
+        {
+          "pair": 2,
+          "native_us_per_creation": 11.1875,
+          "nofilter_us_per_creation": 11.71875,
+          "additional_us": 0.53125,
+          "ratio": 1.047486033519553
+        },
+        {
+          "pair": 3,
+          "native_us_per_creation": 11.21875,
+          "nofilter_us_per_creation": 11.625,
+          "additional_us": 0.40625,
+          "ratio": 1.0362116991643453
+        }
+      ]
+    },
+    {
+      "stage": "hiz",
+      "measurement": "fresh_layout_uniform_us",
+      "paired_median_additional_us": 25.40625,
+      "pairs": [
+        {
+          "pair": 1,
+          "native_us_per_creation": 19.6875,
+          "nofilter_us_per_creation": 45.09375,
+          "additional_us": 25.40625,
+          "ratio": 2.2904761904761903
+        },
+        {
+          "pair": 2,
+          "native_us_per_creation": 20.21875,
+          "nofilter_us_per_creation": 44.46875,
+          "additional_us": 24.25,
+          "ratio": 2.1993817619783615
+        },
+        {
+          "pair": 3,
+          "native_us_per_creation": 20.125,
+          "nofilter_us_per_creation": 46.03125,
+          "additional_us": 25.90625,
+          "ratio": 2.2872670807453415
+        }
+      ]
+    },
+    {
+      "stage": "hiz",
+      "measurement": "reused_layout_uniform_us",
+      "paired_median_additional_us": 0.15625,
+      "pairs": [
+        {
+          "pair": 1,
+          "native_us_per_creation": 1.71875,
+          "nofilter_us_per_creation": 1.875,
+          "additional_us": 0.15625,
+          "ratio": 1.0909090909090908
+        },
+        {
+          "pair": 2,
+          "native_us_per_creation": 1.6875,
+          "nofilter_us_per_creation": 1.875,
+          "additional_us": 0.1875,
+          "ratio": 1.1111111111111112
+        },
+        {
+          "pair": 3,
+          "native_us_per_creation": 1.71875,
+          "nofilter_us_per_creation": 1.8125,
+          "additional_us": 0.09375,
+          "ratio": 1.0545454545454545
+        }
+      ]
+    },
+    {
+      "stage": "hiz_odd",
+      "measurement": "shader_create_us",
+      "paired_median_additional_us": 0.3125,
+      "pairs": [
+        {
+          "pair": 1,
+          "native_us_per_creation": 15.09375,
+          "nofilter_us_per_creation": 14.90625,
+          "additional_us": -0.1875,
+          "ratio": 0.9875776397515528
+        },
+        {
+          "pair": 2,
+          "native_us_per_creation": 14.71875,
+          "nofilter_us_per_creation": 15.3125,
+          "additional_us": 0.59375,
+          "ratio": 1.040339702760085
+        },
+        {
+          "pair": 3,
+          "native_us_per_creation": 15.1875,
+          "nofilter_us_per_creation": 15.5,
+          "additional_us": 0.3125,
+          "ratio": 1.0205761316872428
+        }
+      ]
+    },
+    {
+      "stage": "hiz_odd",
+      "measurement": "fresh_layout_uniform_us",
+      "paired_median_additional_us": 37.40625,
+      "pairs": [
+        {
+          "pair": 1,
+          "native_us_per_creation": 24.21875,
+          "nofilter_us_per_creation": 61.0625,
+          "additional_us": 36.84375,
+          "ratio": 2.5212903225806453
+        },
+        {
+          "pair": 2,
+          "native_us_per_creation": 23.78125,
+          "nofilter_us_per_creation": 62.0,
+          "additional_us": 38.21875,
+          "ratio": 2.607095926412615
+        },
+        {
+          "pair": 3,
+          "native_us_per_creation": 24.4375,
+          "nofilter_us_per_creation": 61.84375,
+          "additional_us": 37.40625,
+          "ratio": 2.530690537084399
+        }
+      ]
+    },
+    {
+      "stage": "hiz_odd",
+      "measurement": "reused_layout_uniform_us",
+      "paired_median_additional_us": 0.125,
+      "pairs": [
+        {
+          "pair": 1,
+          "native_us_per_creation": 1.6875,
+          "nofilter_us_per_creation": 1.8125,
+          "additional_us": 0.125,
+          "ratio": 1.0740740740740742
+        },
+        {
+          "pair": 2,
+          "native_us_per_creation": 1.65625,
+          "nofilter_us_per_creation": 1.78125,
+          "additional_us": 0.125,
+          "ratio": 1.0754716981132075
+        },
+        {
+          "pair": 3,
+          "native_us_per_creation": 1.75,
+          "nofilter_us_per_creation": 1.875,
+          "additional_us": 0.125,
+          "ratio": 1.0714285714285714
+        }
+      ]
+    },
+    {
+      "stage": "downsample",
+      "measurement": "shader_create_us",
+      "paired_median_additional_us": 0.21875,
+      "pairs": [
+        {
+          "pair": 1,
+          "native_us_per_creation": 20.125,
+          "nofilter_us_per_creation": 20.6875,
+          "additional_us": 0.5625,
+          "ratio": 1.0279503105590062
+        },
+        {
+          "pair": 2,
+          "native_us_per_creation": 20.4375,
+          "nofilter_us_per_creation": 20.40625,
+          "additional_us": -0.03125,
+          "ratio": 0.9984709480122325
+        },
+        {
+          "pair": 3,
+          "native_us_per_creation": 20.1875,
+          "nofilter_us_per_creation": 20.40625,
+          "additional_us": 0.21875,
+          "ratio": 1.0108359133126934
+        }
+      ]
+    },
+    {
+      "stage": "downsample",
+      "measurement": "fresh_layout_uniform_us",
+      "paired_median_additional_us": 36.21875,
+      "pairs": [
+        {
+          "pair": 1,
+          "native_us_per_creation": 33.28125,
+          "nofilter_us_per_creation": 69.28125,
+          "additional_us": 36.0,
+          "ratio": 2.0816901408450703
+        },
+        {
+          "pair": 2,
+          "native_us_per_creation": 32.96875,
+          "nofilter_us_per_creation": 69.5,
+          "additional_us": 36.53125,
+          "ratio": 2.1080568720379147
+        },
+        {
+          "pair": 3,
+          "native_us_per_creation": 32.59375,
+          "nofilter_us_per_creation": 68.8125,
+          "additional_us": 36.21875,
+          "ratio": 2.1112176414189836
+        }
+      ]
+    },
+    {
+      "stage": "downsample",
+      "measurement": "reused_layout_uniform_us",
+      "paired_median_additional_us": 0.09375,
+      "pairs": [
+        {
+          "pair": 1,
+          "native_us_per_creation": 2.5,
+          "nofilter_us_per_creation": 2.5,
+          "additional_us": 0.0,
+          "ratio": 1.0
+        },
+        {
+          "pair": 2,
+          "native_us_per_creation": 2.40625,
+          "nofilter_us_per_creation": 2.5,
+          "additional_us": 0.09375,
+          "ratio": 1.0389610389610389
+        },
+        {
+          "pair": 3,
+          "native_us_per_creation": 2.34375,
+          "nofilter_us_per_creation": 2.46875,
+          "additional_us": 0.125,
+          "ratio": 1.0533333333333332
+        }
+      ]
+    },
+    {
+      "stage": "trace",
+      "measurement": "shader_create_us",
+      "paired_median_additional_us": 9.3125,
+      "pairs": [
+        {
+          "pair": 1,
+          "native_us_per_creation": 196.28125,
+          "nofilter_us_per_creation": 206.84375,
+          "additional_us": 10.5625,
+          "ratio": 1.0538130870880433
+        },
+        {
+          "pair": 2,
+          "native_us_per_creation": 195.59375,
+          "nofilter_us_per_creation": 204.90625,
+          "additional_us": 9.3125,
+          "ratio": 1.047611439527081
+        },
+        {
+          "pair": 3,
+          "native_us_per_creation": 196.5,
+          "nofilter_us_per_creation": 205.625,
+          "additional_us": 9.125,
+          "ratio": 1.0464376590330788
+        }
+      ]
+    },
+    {
+      "stage": "trace",
+      "measurement": "fresh_layout_uniform_us",
+      "paired_median_additional_us": 283.5,
+      "pairs": [
+        {
+          "pair": 1,
+          "native_us_per_creation": 122.4375,
+          "nofilter_us_per_creation": 405.9375,
+          "additional_us": 283.5,
+          "ratio": 3.315467075038285
+        },
+        {
+          "pair": 2,
+          "native_us_per_creation": 122.0,
+          "nofilter_us_per_creation": 404.625,
+          "additional_us": 282.625,
+          "ratio": 3.3165983606557377
+        },
+        {
+          "pair": 3,
+          "native_us_per_creation": 121.0,
+          "nofilter_us_per_creation": 404.8125,
+          "additional_us": 283.8125,
+          "ratio": 3.3455578512396693
+        }
+      ]
+    },
+    {
+      "stage": "trace",
+      "measurement": "reused_layout_uniform_us",
+      "paired_median_additional_us": 0.4375,
+      "pairs": [
+        {
+          "pair": 1,
+          "native_us_per_creation": 3.4375,
+          "nofilter_us_per_creation": 3.875,
+          "additional_us": 0.4375,
+          "ratio": 1.1272727272727272
+        },
+        {
+          "pair": 2,
+          "native_us_per_creation": 3.1875,
+          "nofilter_us_per_creation": 3.75,
+          "additional_us": 0.5625,
+          "ratio": 1.1764705882352942
+        },
+        {
+          "pair": 3,
+          "native_us_per_creation": 3.15625,
+          "nofilter_us_per_creation": 3.53125,
+          "additional_us": 0.375,
+          "ratio": 1.118811881188119
+        }
+      ]
+    },
+    {
+      "stage": "filter",
+      "measurement": "shader_create_us",
+      "paired_median_additional_us": 3.3125,
+      "pairs": [
+        {
+          "pair": 1,
+          "native_us_per_creation": 80.78125,
+          "nofilter_us_per_creation": 82.625,
+          "additional_us": 1.84375,
+          "ratio": 1.0228239845261122
+        },
+        {
+          "pair": 2,
+          "native_us_per_creation": 80.375,
+          "nofilter_us_per_creation": 83.6875,
+          "additional_us": 3.3125,
+          "ratio": 1.0412130637636081
+        },
+        {
+          "pair": 3,
+          "native_us_per_creation": 80.15625,
+          "nofilter_us_per_creation": 84.375,
+          "additional_us": 4.21875,
+          "ratio": 1.0526315789473684
+        }
+      ]
+    },
+    {
+      "stage": "filter",
+      "measurement": "fresh_layout_uniform_us",
+      "paired_median_additional_us": 122.28125,
+      "pairs": [
+        {
+          "pair": 1,
+          "native_us_per_creation": 51.90625,
+          "nofilter_us_per_creation": 172.21875,
+          "additional_us": 120.3125,
+          "ratio": 3.3178807947019866
+        },
+        {
+          "pair": 2,
+          "native_us_per_creation": 50.78125,
+          "nofilter_us_per_creation": 173.3125,
+          "additional_us": 122.53125,
+          "ratio": 3.412923076923077
+        },
+        {
+          "pair": 3,
+          "native_us_per_creation": 51.1875,
+          "nofilter_us_per_creation": 173.46875,
+          "additional_us": 122.28125,
+          "ratio": 3.388888888888889
+        }
+      ]
+    },
+    {
+      "stage": "filter",
+      "measurement": "reused_layout_uniform_us",
+      "paired_median_additional_us": 0.28125,
+      "pairs": [
+        {
+          "pair": 1,
+          "native_us_per_creation": 1.8125,
+          "nofilter_us_per_creation": 2.09375,
+          "additional_us": 0.28125,
+          "ratio": 1.1551724137931034
+        },
+        {
+          "pair": 2,
+          "native_us_per_creation": 1.78125,
+          "nofilter_us_per_creation": 2.0625,
+          "additional_us": 0.28125,
+          "ratio": 1.1578947368421053
+        },
+        {
+          "pair": 3,
+          "native_us_per_creation": 1.75,
+          "nofilter_us_per_creation": 2.03125,
+          "additional_us": 0.28125,
+          "ratio": 1.1607142857142858
+        }
+      ]
+    },
+    {
+      "stage": "resolve",
+      "measurement": "shader_create_us",
+      "paired_median_additional_us": 2.5625,
+      "pairs": [
+        {
+          "pair": 1,
+          "native_us_per_creation": 52.0625,
+          "nofilter_us_per_creation": 54.625,
+          "additional_us": 2.5625,
+          "ratio": 1.04921968787515
+        },
+        {
+          "pair": 2,
+          "native_us_per_creation": 52.4375,
+          "nofilter_us_per_creation": 53.28125,
+          "additional_us": 0.84375,
+          "ratio": 1.0160905840286054
+        },
+        {
+          "pair": 3,
+          "native_us_per_creation": 52.6875,
+          "nofilter_us_per_creation": 55.96875,
+          "additional_us": 3.28125,
+          "ratio": 1.0622775800711743
+        }
+      ]
+    },
+    {
+      "stage": "resolve",
+      "measurement": "fresh_layout_uniform_us",
+      "paired_median_additional_us": 97.15625,
+      "pairs": [
+        {
+          "pair": 1,
+          "native_us_per_creation": 66.96875,
+          "nofilter_us_per_creation": 164.125,
+          "additional_us": 97.15625,
+          "ratio": 2.4507699486700885
+        },
+        {
+          "pair": 2,
+          "native_us_per_creation": 67.4375,
+          "nofilter_us_per_creation": 163.40625,
+          "additional_us": 95.96875,
+          "ratio": 2.423076923076923
+        },
+        {
+          "pair": 3,
+          "native_us_per_creation": 67.09375,
+          "nofilter_us_per_creation": 166.25,
+          "additional_us": 99.15625,
+          "ratio": 2.47787610619469
+        }
+      ]
+    },
+    {
+      "stage": "resolve",
+      "measurement": "reused_layout_uniform_us",
+      "paired_median_additional_us": 0.21875,
+      "pairs": [
+        {
+          "pair": 1,
+          "native_us_per_creation": 3.78125,
+          "nofilter_us_per_creation": 4.0,
+          "additional_us": 0.21875,
+          "ratio": 1.0578512396694215
+        },
+        {
+          "pair": 2,
+          "native_us_per_creation": 3.71875,
+          "nofilter_us_per_creation": 3.84375,
+          "additional_us": 0.125,
+          "ratio": 1.0336134453781514
+        },
+        {
+          "pair": 3,
+          "native_us_per_creation": 3.625,
+          "nofilter_us_per_creation": 4.125,
+          "additional_us": 0.5,
+          "ratio": 1.1379310344827587
+        }
+      ]
+    }
+  ],
+  "exclusive_slot": true,
+  "timed_shader_creations": 8064,
+  "timed_uniform_creations": 16128
+}

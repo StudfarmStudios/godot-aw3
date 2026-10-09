@@ -1,0 +1,153 @@
+{
+  "summary": {
+    "baseline_depth_median_ms": 7.587,
+    "candidate_depth_median_ms": 7.58,
+    "candidate_color_median_ms": 9.656,
+    "paired_depth_ratio_median": 0.9982694355697551
+  },
+  "results": [
+    {
+      "adapter": "Apple M1 Ultra",
+      "batches": 120,
+      "clears_per_batch": 128,
+      "median_ms": 7.512,
+      "mode": "depth",
+      "p90_ms": 7.701,
+      "engine": "baseline",
+      "round": 0,
+      "sha256": "180d7f82a0f00404fb8fcabc58a9a7609cde1f52c4e9a36a6cd5486385d689d4"
+    },
+    {
+      "adapter": "Apple M1 Ultra",
+      "batches": 120,
+      "clears_per_batch": 128,
+      "median_ms": 7.499,
+      "mode": "depth",
+      "p90_ms": 7.735,
+      "engine": "candidate",
+      "round": 0,
+      "sha256": "14a27a10f7b5c290deea6479808590f7ccd43daef2f61fb3024883fc2b945c55"
+    },
+    {
+      "adapter": "Apple M1 Ultra",
+      "batches": 120,
+      "clears_per_batch": 128,
+      "median_ms": 9.432,
+      "mode": "depth",
+      "p90_ms": 10.712,
+      "engine": "candidate",
+      "round": 1,
+      "sha256": "14a27a10f7b5c290deea6479808590f7ccd43daef2f61fb3024883fc2b945c55"
+    },
+    {
+      "adapter": "Apple M1 Ultra",
+      "batches": 120,
+      "clears_per_batch": 128,
+      "median_ms": 7.539,
+      "mode": "depth",
+      "p90_ms": 7.745,
+      "engine": "baseline",
+      "round": 1,
+      "sha256": "180d7f82a0f00404fb8fcabc58a9a7609cde1f52c4e9a36a6cd5486385d689d4"
+    },
+    {
+      "adapter": "Apple M1 Ultra",
+      "batches": 120,
+      "clears_per_batch": 128,
+      "median_ms": 9.377,
+      "mode": "depth",
+      "p90_ms": 10.4,
+      "engine": "baseline",
+      "round": 2,
+      "sha256": "180d7f82a0f00404fb8fcabc58a9a7609cde1f52c4e9a36a6cd5486385d689d4"
+    },
+    {
+      "adapter": "Apple M1 Ultra",
+      "batches": 120,
+      "clears_per_batch": 128,
+      "median_ms": 7.553,
+      "mode": "depth",
+      "p90_ms": 7.787,
+      "engine": "candidate",
+      "round": 2,
+      "sha256": "14a27a10f7b5c290deea6479808590f7ccd43daef2f61fb3024883fc2b945c55"
+    },
+    {
+      "adapter": "Apple M1 Ultra",
+      "batches": 120,
+      "clears_per_batch": 128,
+      "median_ms": 9.471,
+      "mode": "depth",
+      "p90_ms": 10.727,
+      "engine": "candidate",
+      "round": 3,
+      "sha256": "14a27a10f7b5c290deea6479808590f7ccd43daef2f61fb3024883fc2b945c55"
+    },
+    {
+      "adapter": "Apple M1 Ultra",
+      "batches": 120,
+      "clears_per_batch": 128,
+      "median_ms": 7.587,
+      "mode": "depth",
+      "p90_ms": 7.995,
+      "engine": "baseline",
+      "round": 3,
+      "sha256": "180d7f82a0f00404fb8fcabc58a9a7609cde1f52c4e9a36a6cd5486385d689d4"
+    },
+    {
+      "adapter": "Apple M1 Ultra",
+      "batches": 120,
+      "clears_per_batch": 128,
+      "median_ms": 9.534,
+      "mode": "depth",
+      "p90_ms": 10.563,
+      "engine": "baseline",
+      "round": 4,
+      "sha256": "180d7f82a0f00404fb8fcabc58a9a7609cde1f52c4e9a36a6cd5486385d689d4"
+    },
+    {
+      "adapter": "Apple M1 Ultra",
+      "batches": 120,
+      "clears_per_batch": 128,
+      "median_ms": 7.58,
+      "mode": "depth",
+      "p90_ms": 7.932,
+      "engine": "candidate",
+      "round": 4,
+      "sha256": "14a27a10f7b5c290deea6479808590f7ccd43daef2f61fb3024883fc2b945c55"
+    },
+    {
+      "adapter": "Apple M1 Ultra",
+      "batches": 120,
+      "clears_per_batch": 128,
+      "median_ms": 8.337,
+      "mode": "color",
+      "p90_ms": 11.138,
+      "engine": "candidate",
+      "round": 0,
+      "sha256": "14a27a10f7b5c290deea6479808590f7ccd43daef2f61fb3024883fc2b945c55"
+    },
+    {
+      "adapter": "Apple M1 Ultra",
+      "batches": 120,
+      "clears_per_batch": 128,
+      "median_ms": 10.072,
+      "mode": "color",
+      "p90_ms": 11.632,
+      "engine": "candidate",
+      "round": 1,
+      "sha256": "14a27a10f7b5c290deea6479808590f7ccd43daef2f61fb3024883fc2b945c55"
+    },
+    {
+      "adapter": "Apple M1 Ultra",
+      "batches": 120,
+      "clears_per_batch": 128,
+      "median_ms": 9.656,
+      "mode": "color",
+      "p90_ms": 11.352,
+      "engine": "candidate",
+      "round": 2,
+      "sha256": "14a27a10f7b5c290deea6479808590f7ccd43daef2f61fb3024883fc2b945c55"
+    }
+  ]
+}

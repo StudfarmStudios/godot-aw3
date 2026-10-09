@@ -1656,6 +1656,24 @@ RID RenderingDevice::texture_buffer_create(uint32_t p_size_elements, DataFormat 
 /**** TEXTURE ****/
 /*****************/
 
+RenderingDevice::TextureSamples RenderingDevice::get_effective_texture_samples(TextureSamples p_requested) const {
+	ERR_FAIL_INDEX_V(p_requested, TEXTURE_SAMPLES_MAX, TEXTURE_SAMPLES_1);
+	const uint64_t counts = driver->api_trait_get(RDD::API_TRAIT_SUPPORTED_TEXTURE_SAMPLE_COUNTS);
+	// Round up across gaps (2x -> 4x on WebGPU), then clamp to the largest
+	// supported count if the request exceeds the API's maximum (8x -> 4x).
+	for (int sample = p_requested; sample < TEXTURE_SAMPLES_MAX; sample++) {
+		if (counts & (uint64_t(1) << sample)) {
+			return TextureSamples(sample);
+		}
+	}
+	for (int sample = p_requested - 1; sample >= 0; sample--) {
+		if (counts & (uint64_t(1) << sample)) {
+			return TextureSamples(sample);
+		}
+	}
+	ERR_FAIL_V(TEXTURE_SAMPLES_1);
+}
+
 RID RenderingDevice::texture_create(const TextureFormat &p_format, const TextureView &p_view, const Vector<Vector<uint8_t>> &p_data) {
 	// Some adjustments will happen.
 	TextureFormat format = p_format;
@@ -1694,6 +1712,7 @@ RID RenderingDevice::texture_create(const TextureFormat &p_format, const Texture
 	}
 
 	ERR_FAIL_INDEX_V(format.samples, TEXTURE_SAMPLES_MAX, RID());
+	format.samples = get_effective_texture_samples(format.samples);
 
 	ERR_FAIL_COND_V_MSG(format.usage_bits == 0, RID(), "No usage bits specified (at least one is needed)");
 
@@ -2342,8 +2361,7 @@ Error RenderingDevice::_texture_initialize(RID p_texture, uint32_t p_layer, cons
 			upload.logical_width = logical_width;
 			upload.logical_height = logical_height;
 
-			if (depth != 1 || !_texture_direct_upload_layout(aligned_width, aligned_height, pixel_size, staging_pixel_size,
-					pixel_rshift, block_w, block_h, driver->api_trait_get(RDD::API_TRAIT_TEXTURE_DATA_ROW_PITCH_STEP), upload.layout) ||
+			if (depth != 1 || !_texture_direct_upload_layout(aligned_width, aligned_height, pixel_size, staging_pixel_size, pixel_rshift, block_w, block_h, driver->api_trait_get(RDD::API_TRAIT_TEXTURE_DATA_ROW_PITCH_STEP), upload.layout) ||
 					(uint64_t)upload.layout.source_row_pitch * upload.layout.rows_per_image != upload.source_size) {
 				layouts_valid = false;
 				break;
@@ -3564,7 +3582,7 @@ Error RenderingDevice::texture_resolve_multisample(RID p_from_texture, RID p_to_
 	ERR_FAIL_COND_V_MSG(dst_tex->samples != TEXTURE_SAMPLES_1, ERR_INVALID_PARAMETER, "Destination texture must not be multisampled.");
 
 	ERR_FAIL_COND_V_MSG(src_tex->format != dst_tex->format, ERR_INVALID_PARAMETER, "Source and Destination textures must be the same format.");
-	ERR_FAIL_COND_V_MSG(src_tex->width != dst_tex->width && src_tex->height != dst_tex->height && src_tex->depth != dst_tex->depth, ERR_INVALID_PARAMETER, "Source and Destination textures must have the same dimensions.");
+	ERR_FAIL_COND_V_MSG(src_tex->width != dst_tex->width || src_tex->height != dst_tex->height || src_tex->depth != dst_tex->depth, ERR_INVALID_PARAMETER, "Source and Destination textures must have the same dimensions.");
 
 	ERR_FAIL_COND_V_MSG(src_tex->read_aspect_flags != dst_tex->read_aspect_flags, ERR_INVALID_PARAMETER,
 			"Source and destination texture must be of the same type (color or depth).");
@@ -4667,7 +4685,7 @@ Vector<uint8_t> RenderingDevice::shader_compile_binary_from_spirv(const Vector<S
 	// Dump SPIR-V to disk when GODOT_DUMP_SPIRV is set (for CI shader validation).
 	static const String dump_dir = OS::get_singleton()->get_environment("GODOT_DUMP_SPIRV");
 	if (!dump_dir.is_empty()) {
-		static const char *stage_suffixes[] = { "vert", "frag", "tesc", "tese", "comp" };
+		static const char *stage_suffixes[] = { "vert", "frag", "tesc", "tese", "comp" }; // codespell:ignore tese
 		Ref<DirAccess> da = DirAccess::open(dump_dir);
 		if (da.is_null()) {
 			DirAccess::make_dir_recursive_absolute(dump_dir);
@@ -4801,6 +4819,59 @@ RID RenderingDevice::shader_create_from_bytecode_with_samplers(const Vector<uint
 	set_resource_name(id, "RID:" + itos(id.get_id()));
 #endif
 	return id;
+}
+
+Vector<RID> RenderingDevice::shader_create_from_bytecode_batch(const Vector<Vector<uint8_t>> &p_shader_binaries, const Vector<RID> &p_placeholders, const Vector<PipelineImmutableSampler> &p_immutable_samplers) {
+	_THREAD_SAFE_METHOD_
+
+	ERR_FAIL_COND_V(p_shader_binaries.size() != p_placeholders.size(), Vector<RID>());
+	HashSet<RID> destinations;
+	for (int i = 0; i < p_placeholders.size(); i++) {
+		if (p_placeholders[i].is_null()) {
+			continue;
+		}
+		Shader *placeholder = shader_owner.get_or_null(p_placeholders[i]);
+		ERR_FAIL_COND_V(placeholder == nullptr || placeholder->driver_id || p_shader_binaries[i].is_empty() || destinations.has(p_placeholders[i]), Vector<RID>());
+		destinations.insert(p_placeholders[i]);
+	}
+
+	// Create into private RIDs first. A later malformed variant or driver
+	// failure must not populate earlier placeholders before cache fallback.
+	Vector<RID> shaders;
+	shaders.resize(p_shader_binaries.size());
+	for (int i = 0; i < p_shader_binaries.size(); i++) {
+		if (p_shader_binaries[i].is_empty()) {
+			continue;
+		}
+		shaders.write[i] = shader_create_from_bytecode_with_samplers(p_shader_binaries[i], RID(), p_immutable_samplers);
+		if (shaders[i].is_null()) {
+			for (RID shader : shaders) {
+				if (shader.is_valid()) {
+					free_rid(shader);
+				}
+			}
+			return Vector<RID>();
+		}
+	}
+
+	// The private RIDs have never been published, so they have no resource
+	// dependencies. Copy the complete Shader (reflection, formats, stage bits
+	// and driver ownership) while preserving the destination RID and its
+	// existing dependency graph. Owner-only removal must not queue the moved
+	// driver shader for destruction. All fallible work precedes this loop.
+	for (int i = 0; i < shaders.size(); i++) {
+		if (p_placeholders[i].is_null()) {
+			continue;
+		}
+		DEV_ASSERT(!dependency_map.has(shaders[i]) && !reverse_dependency_map.has(shaders[i]));
+		*shader_owner.get_or_null(p_placeholders[i]) = *shader_owner.get_or_null(shaders[i]);
+#ifdef DEV_ENABLED
+		resource_names.erase(shaders[i]);
+#endif
+		shader_owner.free(shaders[i]);
+		shaders.write[i] = p_placeholders[i];
+	}
+	return shaders;
 }
 
 void RenderingDevice::shader_destroy_modules(RID p_shader) {
@@ -8648,23 +8719,13 @@ void RenderingDevice::_end_frame() {
 		ERR_PRINT("Found open raytracing list at the end of the frame, this should never happen (further raytracing will likely not work).");
 	}
 
-	// Flush upload staging buffers to the GPU. On backends where buffer_map()
-	// returns a CPU shadow copy (e.g. WebGPU), the data written during
-	// texture_update() / buffer_update() lives only in the shadow until
-	// buffer_unmap() flushes it via wgpuQueueWriteBuffer. This must happen
-	// before the command buffer that references these staging buffers is submitted.
-	// On Vulkan/Metal this is a no-op since buffer_map() returns GPU-visible memory.
-	//
-	// Note: we do NOT re-map after unmapping. The shadow buffer persists and
-	// data_ptr remains valid. Re-mapping would unconditionally set map_dirty,
-	// causing the next frame to redundantly flush ALL staging blocks (69 × 256KB
-	// on a typical scene) via wgpuQueueWriteBuffer — even those not written to.
-	// Since command_copy_buffer/command_copy_buffer_to_texture already flush the
-	// specific dirty regions and clear map_dirty, the unmap here is typically a
-	// no-op. Only blocks that weren't handled by command_copy need flushing
-	// (e.g. persistent dynamic buffers).
-	for (int i = 0; i < upload_staging_buffers.blocks.size(); i++) {
-		driver->buffer_unmap(upload_staging_buffers.blocks[i].driver_id);
+	// Flush remaining dirty upload staging shadows before submission. WebGPU's
+	// unmap preserves the CPU pointer and skips ranges already flushed by copies.
+	// Other backends must keep their real memory mappings until destruction.
+	if (driver->api_trait_get(RDD::API_TRAIT_UPLOAD_STAGING_FLUSH_WITH_UNMAP)) {
+		for (int i = 0; i < upload_staging_buffers.blocks.size(); i++) {
+			driver->buffer_unmap(upload_staging_buffers.blocks[i].driver_id);
+		}
 	}
 
 	// The command buffer must be copied into a stack variable as the driver workarounds can change the command buffer in use.
@@ -9756,7 +9817,7 @@ void RenderingDevice::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("draw_list_bind_index_array", "draw_list", "index_array"), &RenderingDevice::draw_list_bind_index_array);
 	ClassDB::bind_method(D_METHOD("draw_list_set_push_constant", "draw_list", "buffer", "size_bytes"), &RenderingDevice::_draw_list_set_push_constant);
 
-	ClassDB::bind_method(D_METHOD("draw_list_draw", "draw_list", "use_indices", "instances", "procedural_vertex_count"), &RenderingDevice::draw_list_draw, DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("draw_list_draw", "draw_list", "use_indices", "instances", "procedural_vertex_count", "first_instance"), &RenderingDevice::draw_list_draw, DEFVAL(0), DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("draw_list_draw_indirect", "draw_list", "use_indices", "buffer", "offset", "draw_count", "stride"), &RenderingDevice::draw_list_draw_indirect, DEFVAL(0), DEFVAL(1), DEFVAL(0));
 
 	ClassDB::bind_method(D_METHOD("draw_list_enable_scissor", "draw_list", "rect"), &RenderingDevice::draw_list_enable_scissor, DEFVAL(Rect2()));

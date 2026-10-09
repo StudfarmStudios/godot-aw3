@@ -1,0 +1,10 @@
+config_version=5
+[application]
+config/name="Reflection atlas ownership lifecycle"
+[display]
+window/size/viewport_width=160
+window/size/viewport_height=120
+[rendering]
+renderer/rendering_method="forward_plus"
+reflections/reflection_atlas/reflection_size=256
+reflections/reflection_atlas/reflection_count=2

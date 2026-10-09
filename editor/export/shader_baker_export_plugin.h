@@ -45,6 +45,11 @@ class ShaderBakerExportPluginPlatform : public RefCounted {
 public:
 	virtual RenderingShaderContainerFormat *create_shader_container_format(const Ref<EditorExportPlatform> &p_platform, const Ref<EditorExportPreset> &p_preset) = 0;
 	virtual bool matches_driver(const String &p_driver) = 0;
+	// Workers may call collect_spirv concurrently. Extra files are requested only
+	// after every worker has finished and are optional acceleration data.
+	virtual void collect_spirv(const Vector<uint8_t> &p_spirv) {}
+	virtual HashMap<String, PackedByteArray> create_extra_files() { return {}; }
+	virtual void clear_collected_data() {}
 	virtual ~ShaderBakerExportPluginPlatform() {}
 };
 
@@ -75,12 +80,16 @@ protected:
 	String shader_cache_renderer_name;
 	String shader_cache_export_path;
 	RBSet<String> shader_paths_processed;
+	HashSet<ShaderRD *> shader_sources_seen;
+	HashSet<ObjectID> resources_visited;
+	HashSet<const void *> containers_in_progress;
 	HashMap<String, WorkResult> shader_work_results;
 	Mutex shader_work_results_mutex;
 	LocalVector<ShaderGroupItem> shader_group_items;
 	RenderingShaderContainerFormat *shader_container_format = nullptr;
 	String shader_container_driver;
 	Vector<Ref<ShaderBakerExportPluginPlatform>> platforms;
+	Ref<ShaderBakerExportPluginPlatform> active_platform;
 	uint64_t customization_configuration_hash = 0;
 	uint32_t tasks_processed = 0;
 	uint32_t tasks_total = 0;
@@ -101,6 +110,8 @@ protected:
 	virtual uint64_t _get_customization_configuration_hash() const override;
 	virtual void _customize_shader_version(ShaderRD *p_shader, RID p_version);
 	void _process_work_item(WorkItem p_work_item);
+	void _customize_nested_materials(const Variant &p_value, int p_depth = 0);
+	void _customize_live_shader_versions();
 
 public:
 	ShaderBakerExportPlugin();

@@ -44,6 +44,7 @@ private:
 	bool use_hdr = false;
 
 	void _queue_update();
+	Ref<Image> _generate_image() const;
 	void _update() const;
 
 protected:
@@ -105,6 +106,7 @@ private:
 
 	mutable bool update_pending = false;
 	void _queue_update();
+	Ref<Image> _generate_image() const;
 	void _update() const;
 
 protected:

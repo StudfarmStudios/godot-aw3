@@ -10,10 +10,13 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 #define MAX_CASCADES 8
 
-layout(set = 0, binding = 1) uniform texture3D sdf_cascades[MAX_CASCADES];
-layout(set = 0, binding = 2) uniform texture3D light_cascades[MAX_CASCADES];
-layout(set = 0, binding = 3) uniform texture3D aniso0_cascades[MAX_CASCADES];
-layout(set = 0, binding = 4) uniform texture3D aniso1_cascades[MAX_CASCADES];
+#include "../sdfgi_cascade_inc.glsl"
+
+// Cascade arrays on native drivers; one tiled atlas per field on WebGPU.
+SDFGI_DECLARE_CASCADE_TEXTURES(sdf_cascades, 100)
+SDFGI_DECLARE_CASCADE_TEXTURES(light_cascades, 110)
+SDFGI_DECLARE_CASCADE_TEXTURES(aniso0_cascades, 130)
+SDFGI_DECLARE_CASCADE_TEXTURES(aniso1_cascades, 140)
 
 layout(set = 0, binding = 6) uniform sampler linear_sampler;
 
@@ -30,7 +33,12 @@ layout(set = 0, binding = 7, std140) uniform Cascades {
 }
 cascades;
 
+// WebGPU stores decoded channels because integer/float format aliasing is unavailable.
+#ifdef SDFGI_NATIVE_STORAGE_FORMAT
+layout(rgba16f, set = 0, binding = 8) uniform restrict image2DArray lightprobe_texture_data;
+#else
 layout(r32ui, set = 0, binding = 8) uniform restrict uimage2DArray lightprobe_texture_data;
+#endif
 layout(rgba16i, set = 0, binding = 9) uniform restrict iimage2DArray lightprobe_history_texture;
 layout(rgba32i, set = 0, binding = 10) uniform restrict iimage2D lightprobe_average_texture;
 
@@ -224,7 +232,7 @@ void main() {
 				//read how much to advance from SDF
 				uvw = (pos + ray_dir * advance) * pos_to_uvw;
 
-				float distance = texture(sampler3D(sdf_cascades[j], linear_sampler), uvw).r * 255.0 - 1.0;
+				float distance = sdf_cascades_sample(j, linear_sampler, uvw, 0.0).r * 255.0 - 1.0;
 				if (distance < 0.05) {
 					//consider hit
 					hit = true;
@@ -253,14 +261,14 @@ void main() {
 				if (j == hit_cascade) {
 					const float EPSILON = 0.001;
 					vec3 hit_normal = normalize(vec3(
-							texture(sampler3D(sdf_cascades[hit_cascade], linear_sampler), uvw + vec3(EPSILON, 0.0, 0.0)).r - texture(sampler3D(sdf_cascades[hit_cascade], linear_sampler), uvw - vec3(EPSILON, 0.0, 0.0)).r,
-							texture(sampler3D(sdf_cascades[hit_cascade], linear_sampler), uvw + vec3(0.0, EPSILON, 0.0)).r - texture(sampler3D(sdf_cascades[hit_cascade], linear_sampler), uvw - vec3(0.0, EPSILON, 0.0)).r,
-							texture(sampler3D(sdf_cascades[hit_cascade], linear_sampler), uvw + vec3(0.0, 0.0, EPSILON)).r - texture(sampler3D(sdf_cascades[hit_cascade], linear_sampler), uvw - vec3(0.0, 0.0, EPSILON)).r));
+							sdf_cascades_sample(hit_cascade, linear_sampler, uvw + vec3(EPSILON, 0.0, 0.0), 0.0).r - sdf_cascades_sample(hit_cascade, linear_sampler, uvw - vec3(EPSILON, 0.0, 0.0), 0.0).r,
+							sdf_cascades_sample(hit_cascade, linear_sampler, uvw + vec3(0.0, EPSILON, 0.0), 0.0).r - sdf_cascades_sample(hit_cascade, linear_sampler, uvw - vec3(0.0, EPSILON, 0.0), 0.0).r,
+							sdf_cascades_sample(hit_cascade, linear_sampler, uvw + vec3(0.0, 0.0, EPSILON), 0.0).r - sdf_cascades_sample(hit_cascade, linear_sampler, uvw - vec3(0.0, 0.0, EPSILON), 0.0).r));
 
-					vec3 hit_light = texture(sampler3D(light_cascades[hit_cascade], linear_sampler), uvw).rgb;
-					vec4 aniso0 = texture(sampler3D(aniso0_cascades[hit_cascade], linear_sampler), uvw);
+					vec3 hit_light = light_cascades_sample(hit_cascade, linear_sampler, uvw, 0.0).rgb;
+					vec4 aniso0 = aniso0_cascades_sample(hit_cascade, linear_sampler, uvw, 0.0);
 					vec3 hit_aniso0 = aniso0.rgb;
-					vec3 hit_aniso1 = vec3(aniso0.a, texture(sampler3D(aniso1_cascades[hit_cascade], linear_sampler), uvw).rg);
+					vec3 hit_aniso1 = vec3(aniso0.a, aniso1_cascades_sample(hit_cascade, linear_sampler, uvw, 0.0).rg);
 
 					//one liner magic
 					light.rgb = hit_light * (dot(max(vec3(0.0), (hit_normal * hit_aniso0)), vec3(1.0)) + dot(max(vec3(0.0), (-hit_normal * hit_aniso1)), vec3(1.0)));
@@ -466,8 +474,13 @@ void main() {
 		if (copy_to[i] == ivec3(-2, -2, -2)) {
 			continue;
 		}
+#ifdef SDFGI_NATIVE_STORAGE_FORMAT
+		imageStore(lightprobe_texture_data, copy_to[i], vec4(clamp(irradiance, 0.0, 65408.0), 0.0));
+		imageStore(lightprobe_texture_data, copy_to[i] + ivec3(0, 0, int(params.max_cascades)), vec4(clamp(radiance, 0.0, 65408.0), 0.0));
+#else
 		imageStore(lightprobe_texture_data, copy_to[i], uvec4(irradiance_rgbe));
 		imageStore(lightprobe_texture_data, copy_to[i] + ivec3(0, 0, int(params.max_cascades)), uvec4(radiance_rgbe));
+#endif
 	}
 
 #endif

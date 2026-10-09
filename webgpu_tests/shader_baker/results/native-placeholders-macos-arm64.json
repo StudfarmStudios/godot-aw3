@@ -1,0 +1,164 @@
+{
+  "passed": true,
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "engine_sha256": "413b6443bc377c8bf83f06c2344b36f1c4525d3b6b16bf387c70f7ea1e54562d",
+  "command": [
+    "/private/tmp/aw3-webgpu-ssr-sampler",
+    "--path",
+    "/private/tmp/aw3-placeholders-ssr-sampler/project",
+    "--rendering-driver",
+    "webgpu",
+    "--rendering-method",
+    "forward_plus",
+    "--render-thread",
+    "separate",
+    "--verbose",
+    "--",
+    "--placeholders"
+  ],
+  "runs": [
+    {
+      "name": "01-cold",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 8.03376845899038,
+      "expected_cache_hit": null,
+      "errors": [],
+      "cache_hits_count": 0
+    },
+    {
+      "name": "02-both-valid-packaged-first",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 4.272664917050861,
+      "expected_cache_hit": "res://.godot/shader_cache/SceneForwardClusteredShaderRD/c48c52efde35cd17417fe4025bdca7ec991db4330b3103af8ee7331f056df543/347259af253e6bbec7ad5c69332af5ca731015aa.webgpu.cache",
+      "errors": [],
+      "cache_hits_count": 72
+    },
+    {
+      "name": "03-bad-header-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.3230915000895038,
+      "expected_cache_hit": "user://shader_cache/SceneForwardClusteredShaderRD/c48c52efde35cd17417fe4025bdca7ec991db4330b3103af8ee7331f056df543/347259af253e6bbec7ad5c69332af5ca731015aa.webgpu.cache",
+      "errors": [],
+      "cache_hits_count": 72
+    },
+    {
+      "name": "04-truncated-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.347403958090581,
+      "expected_cache_hit": "user://shader_cache/SceneForwardClusteredShaderRD/c48c52efde35cd17417fe4025bdca7ec991db4330b3103af8ee7331f056df543/347259af253e6bbec7ad5c69332af5ca731015aa.webgpu.cache",
+      "errors": [],
+      "cache_hits_count": 72
+    },
+    {
+      "name": "05-missing-late-variant-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.3552127920556813,
+      "expected_cache_hit": "user://shader_cache/SceneForwardClusteredShaderRD/c48c52efde35cd17417fe4025bdca7ec991db4330b3103af8ee7331f056df543/347259af253e6bbec7ad5c69332af5ca731015aa.webgpu.cache",
+      "errors": [],
+      "cache_hits_count": 72
+    },
+    {
+      "name": "06-late-container-failure-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.3381745000369847,
+      "expected_cache_hit": "user://shader_cache/SceneForwardClusteredShaderRD/c48c52efde35cd17417fe4025bdca7ec991db4330b3103af8ee7331f056df543/347259af253e6bbec7ad5c69332af5ca731015aa.webgpu.cache",
+      "errors": [],
+      "cache_hits_count": 72
+    },
+    {
+      "name": "07-repeat-late-container-failure",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.441256291931495,
+      "expected_cache_hit": "user://shader_cache/SceneForwardClusteredShaderRD/c48c52efde35cd17417fe4025bdca7ec991db4330b3103af8ee7331f056df543/347259af253e6bbec7ad5c69332af5ca731015aa.webgpu.cache",
+      "errors": [],
+      "cache_hits_count": 72
+    },
+    {
+      "name": "08-inner-short-header-extension-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.3596873749047518,
+      "expected_cache_hit": "user://shader_cache/SceneForwardClusteredShaderRD/c48c52efde35cd17417fe4025bdca7ec991db4330b3103af8ee7331f056df543/347259af253e6bbec7ad5c69332af5ca731015aa.webgpu.cache",
+      "errors": [],
+      "cache_hits_count": 72
+    },
+    {
+      "name": "09-inner-shader-count-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.4288679999299347,
+      "expected_cache_hit": "user://shader_cache/SceneForwardClusteredShaderRD/c48c52efde35cd17417fe4025bdca7ec991db4330b3103af8ee7331f056df543/347259af253e6bbec7ad5c69332af5ca731015aa.webgpu.cache",
+      "errors": [],
+      "cache_hits_count": 72
+    },
+    {
+      "name": "10-inner-set-count-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.3480066671036184,
+      "expected_cache_hit": "user://shader_cache/SceneForwardClusteredShaderRD/c48c52efde35cd17417fe4025bdca7ec991db4330b3103af8ee7331f056df543/347259af253e6bbec7ad5c69332af5ca731015aa.webgpu.cache",
+      "errors": [],
+      "cache_hits_count": 72
+    },
+    {
+      "name": "11-inner-specialization-count-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.305482416995801,
+      "expected_cache_hit": "user://shader_cache/SceneForwardClusteredShaderRD/c48c52efde35cd17417fe4025bdca7ec991db4330b3103af8ee7331f056df543/347259af253e6bbec7ad5c69332af5ca731015aa.webgpu.cache",
+      "errors": [],
+      "cache_hits_count": 72
+    },
+    {
+      "name": "12-inner-stage-count-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.2759032089961693,
+      "expected_cache_hit": "user://shader_cache/SceneForwardClusteredShaderRD/c48c52efde35cd17417fe4025bdca7ec991db4330b3103af8ee7331f056df543/347259af253e6bbec7ad5c69332af5ca731015aa.webgpu.cache",
+      "errors": [],
+      "cache_hits_count": 72
+    },
+    {
+      "name": "13-inner-uniform-count-falls-back",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.2347392500378191,
+      "expected_cache_hit": "user://shader_cache/SceneForwardClusteredShaderRD/c48c52efde35cd17417fe4025bdca7ec991db4330b3103af8ee7331f056df543/347259af253e6bbec7ad5c69332af5ca731015aa.webgpu.cache",
+      "errors": [],
+      "cache_hits_count": 72
+    },
+    {
+      "name": "99-both-invalid-recompile",
+      "passed": true,
+      "returncode": 0,
+      "timed_out": false,
+      "seconds": 1.8136919159442186,
+      "expected_cache_hit": null,
+      "errors": [],
+      "cache_hits_count": 71
+    }
+  ],
+  "user_data": "/Users/jaakkolukkari/Library/Application Support/Godot/app_userdata/WebGPU-cache-test-24a929e112f942889750b48267c0145a",
+  "target": "SceneForwardClusteredShaderRD/c48c52efde35cd17417fe4025bdca7ec991db4330b3103af8ee7331f056df543/347259af253e6bbec7ad5c69332af5ca731015aa.webgpu.cache",
+  "nonempty_variants": 18
+}

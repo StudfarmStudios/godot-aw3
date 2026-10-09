@@ -1,0 +1,181 @@
+{
+  "scope": "Actual headless editor ClassDB metadata; no GPU initialization or draw dispatch. Temporary script enumerates RenderingDevice.draw_list_draw and checks five names plus two zero defaults.",
+  "script_sha256": "dc8a3adbf409efc355e9efef72db20f4aaddff0c883ed1d9dc4298c9350db320",
+  "runs": [
+    {
+      "variant": "before_fix",
+      "engine_sha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+      "returncode": 1,
+      "metadata": {
+        "defaults": [
+          0
+        ],
+        "names": [
+          "draw_list",
+          "use_indices",
+          "instances",
+          "procedural_vertex_count",
+          "_unnamed_arg4"
+        ],
+        "passed": false
+      },
+      "errors": []
+    },
+    {
+      "variant": "corrected",
+      "engine_sha256": "71c87dd637e47135b57d4333874595cb41502600e9b4dfe6bb36676d9153590c",
+      "returncode": 0,
+      "metadata": {
+        "defaults": [
+          0,
+          0
+        ],
+        "names": [
+          "draw_list",
+          "use_indices",
+          "instances",
+          "procedural_vertex_count",
+          "first_instance"
+        ],
+        "passed": true
+      },
+      "errors": []
+    }
+  ],
+  "abi_compatibility": {
+    "passed": true,
+    "scope": "Full old-fork API dump compared using the actual rebuilt editor --validate-extension-api. Diagnostics are checked because both negative and positive invocations return zero. No unrelated upstream four-argument compatibility added.",
+    "snapshots": [
+      {
+        "variant": "before_fix",
+        "engine_sha256": "a396288297a3c8a4b765b33ca2c51e574facd584ce5b623710522c26100fc5a1",
+        "api_dump_sha256": "8ff04cc3661ec6d8ed0546afa0339b63e38fe67f9995fca33a5277233f62c1b5",
+        "method": {
+          "name": "draw_list_draw",
+          "is_const": false,
+          "is_vararg": false,
+          "is_static": false,
+          "is_virtual": false,
+          "hash": 2557042334,
+          "arguments": [
+            {
+              "name": "draw_list",
+              "type": "int",
+              "meta": "int64"
+            },
+            {
+              "name": "use_indices",
+              "type": "bool"
+            },
+            {
+              "name": "instances",
+              "type": "int",
+              "meta": "uint32"
+            },
+            {
+              "name": "procedural_vertex_count",
+              "type": "int",
+              "meta": "uint32"
+            },
+            {
+              "name": "_unnamed_arg4",
+              "type": "int",
+              "meta": "uint32",
+              "default_value": "0"
+            }
+          ]
+        }
+      },
+      {
+        "variant": "public_metadata_only",
+        "engine_sha256": "71c87dd637e47135b57d4333874595cb41502600e9b4dfe6bb36676d9153590c",
+        "api_dump_sha256": "9749c919a4d16710748f5d3c9bc29b77dfa60ec7f73e69bea5e5579d74f69ac1",
+        "method": {
+          "name": "draw_list_draw",
+          "is_const": false,
+          "is_vararg": false,
+          "is_static": false,
+          "is_virtual": false,
+          "hash": 1293414739,
+          "arguments": [
+            {
+              "name": "draw_list",
+              "type": "int",
+              "meta": "int64"
+            },
+            {
+              "name": "use_indices",
+              "type": "bool"
+            },
+            {
+              "name": "instances",
+              "type": "int",
+              "meta": "uint32"
+            },
+            {
+              "name": "procedural_vertex_count",
+              "type": "int",
+              "meta": "uint32",
+              "default_value": "0"
+            },
+            {
+              "name": "first_instance",
+              "type": "int",
+              "meta": "uint32",
+              "default_value": "0"
+            }
+          ]
+        }
+      },
+      {
+        "variant": "compatible",
+        "engine_sha256": "d32389ec7575ff0b0cef96589f087352366da194a851fc4428744fe1076be2af",
+        "api_dump_sha256": "00d6e4f36c1d3c158983986b6ae9abefbb01c7d2ecf42b8718cc693bb11395cd",
+        "method": {
+          "name": "draw_list_draw",
+          "is_const": false,
+          "is_vararg": false,
+          "is_static": false,
+          "is_virtual": false,
+          "hash": 1293414739,
+          "hash_compatibility": [
+            2557042334
+          ],
+          "arguments": [
+            {
+              "name": "draw_list",
+              "type": "int",
+              "meta": "int64"
+            },
+            {
+              "name": "use_indices",
+              "type": "bool"
+            },
+            {
+              "name": "instances",
+              "type": "int",
+              "meta": "uint32"
+            },
+            {
+              "name": "procedural_vertex_count",
+              "type": "int",
+              "meta": "uint32",
+              "default_value": "0"
+            },
+            {
+              "name": "first_instance",
+              "type": "int",
+              "meta": "uint32",
+              "default_value": "0"
+            }
+          ]
+        }
+      }
+    ],
+    "negative_validator_errors": [
+      "Validate extension JSON: Error: Hash changed for 'classes/RenderingDevice/methods/draw_list_draw', from 98695E9E to 4D17F153. This means that the function has changed and no compatibility function was provided."
+    ],
+    "positive_validator_errors": [],
+    "unchanged_warning": "All snapshots report pre-existing legacy hash3710874499 mapped to nonexistent4230067973; this upstream four-argument API is outside the prior fork five-argument ABI repair."
+  }
+}

@@ -87,8 +87,9 @@ struct ReplacementValue {
     uint32_t value_id;
 };
 
-/// The SPIR-V environment that we validate against.
-constexpr auto kTargetEnv = SPV_ENV_VULKAN_1_1;
+/// Accept SPIR-V 1.4/1.5 interface lists without downgrading newer semantics.
+/// Handle and atomic interface references are lowered alongside this change.
+constexpr auto kTargetEnv = SPV_ENV_VULKAN_1_2;
 
 /// PIMPL class for SPIR-V parser.
 /// Validates the SPIR-V module and then parses it to produce a Tint IR module.
@@ -162,6 +163,53 @@ class Parser {
                 }
                 default:
                     break;
+            }
+        }
+
+        // WGSL's typed integer textures already perform matching sign/zero extension.
+        // These SPIR-V 1.4 flags have no following operand; treating every nonzero
+        // mask as an operand-bearing mask would read beyond the instruction.
+        // Preserve Lod/Sample, and reject other semantics rather than discarding them.
+        for (auto& function : *spirv_context_->module()) {
+            for (auto& block : function) {
+                for (auto& inst : block) {
+                    const bool write = inst.opcode() == spv::Op::OpImageWrite;
+                    if (!write && inst.opcode() != spv::Op::OpImageRead &&
+                        inst.opcode() != spv::Op::OpImageFetch) {
+                        continue;
+                    }
+                    const uint32_t mask_index = write ? 3u : 2u;
+                    if (inst.NumInOperands() <= mask_index) {
+                        continue;
+                    }
+                    const uint32_t mask = inst.GetSingleWordInOperand(mask_index);
+                    constexpr uint32_t sign = static_cast<uint32_t>(spv::ImageOperandsMask::SignExtend);
+                    constexpr uint32_t zero = static_cast<uint32_t>(spv::ImageOperandsMask::ZeroExtend);
+                    const uint32_t remaining = mask & ~(sign | zero);
+                    const uint32_t allowed = write ? 0u :
+                        static_cast<uint32_t>(spv::ImageOperandsMask::Lod) |
+                        static_cast<uint32_t>(spv::ImageOperandsMask::Sample);
+                    if (remaining & ~allowed) {
+                        return Failure("unsupported image operand semantics; operands were not stripped");
+                    }
+                    if (mask & (sign | zero)) {
+                        uint32_t type_id = inst.type_id();
+                        if (write) {
+                            type_id = spirv_context_->get_def_use_mgr()
+                                          ->GetDef(inst.GetSingleWordInOperand(2))->type_id();
+                        }
+                        const auto* type = spirv_context_->get_type_mgr()->GetType(type_id);
+                        if (const auto* vector = type->AsVector()) {
+                            type = vector->element_type();
+                        }
+                        const auto* integer = type->AsInteger();
+                        if (!integer || integer->width() != 32 ||
+                            integer->IsSigned() != ((mask & sign) != 0)) {
+                            return Failure("image extension must match the 32-bit texel type for WGSL");
+                        }
+                        inst.SetInOperand(mask_index, {remaining});
+                    }
+                }
             }
         }
 
@@ -263,6 +311,12 @@ class Parser {
             auto* func = *(functions_.Get(spv_id));
             for (uint32_t i = 3; i < entry_point.NumInOperands(); ++i) {
                 auto* val = Value(entry_point.GetSingleWordInOperand(i));
+                // A handle cannot be addressed by WGSL's phony assignment.
+                // Real texture/sampler uses retain their binding without one.
+                if (auto* ptr = val->Type()->As<core::type::Pointer>();
+                    ptr && ptr->AddressSpace() == core::AddressSpace::kHandle) {
+                    continue;
+                }
                 b_.Phony(val)->InsertBefore(func->Block()->Front());
             }
         }

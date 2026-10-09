@@ -1,0 +1,149 @@
+{
+  "passed": true,
+  "engine": "/private/tmp/aw3-webgpu-ssr-fetch",
+  "engine_sha256": "0d7e35d8d83399eb8884a1f43b45d44d7d291e1f03895d636ba98d4dd8b5d904",
+  "scope": "Native fixture calibration only; does not prove browser behavior",
+  "checks": [
+    {
+      "name": "canvas_dimensions",
+      "passed": true,
+      "detail": {
+        "font": [
+          512,
+          384
+        ],
+        "canvas_sdf": [
+          512,
+          384
+        ],
+        "ssr_off": [
+          512,
+          384
+        ],
+        "ssr_on": [
+          512,
+          384
+        ],
+        "dof_off": [
+          512,
+          384
+        ],
+        "dof_on": [
+          512,
+          384
+        ]
+      }
+    },
+    {
+      "name": "font_mask",
+      "passed": true,
+      "detail": 1924
+    },
+    {
+      "name": "font_lcd",
+      "passed": true,
+      "detail": 1796
+    },
+    {
+      "name": "font_msdf",
+      "passed": true,
+      "detail": 2188
+    },
+    {
+      "name": "font_svg_retains_blue_under_red_modulation",
+      "passed": true,
+      "detail": 5168
+    },
+    {
+      "name": "canvas_sdf_inside",
+      "passed": true
+    },
+    {
+      "name": "canvas_sdf_outside",
+      "passed": true
+    },
+    {
+      "name": "ssr_visible_source",
+      "passed": true
+    },
+    {
+      "name": "ssr_red_reflection",
+      "passed": true,
+      "detail": {
+        "pixels": 7020,
+        "sum": 2146.5411764704463
+      }
+    },
+    {
+      "name": "dof_sharp_panels",
+      "passed": true,
+      "detail": [
+        0.5,
+        0.5,
+        0.5
+      ]
+    },
+    {
+      "name": "dof_near_blurred",
+      "passed": true,
+      "detail": {
+        "sharp": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "blur": [
+          0.0017454349427978954,
+          0.5,
+          0.0017454349427978954
+        ]
+      }
+    },
+    {
+      "name": "dof_focus_preserved",
+      "passed": true,
+      "detail": {
+        "sharp": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "blur": [
+          0.0017454349427978954,
+          0.5,
+          0.0017454349427978954
+        ]
+      }
+    },
+    {
+      "name": "dof_far_blurred",
+      "passed": true,
+      "detail": {
+        "sharp": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "blur": [
+          0.0017454349427978954,
+          0.5,
+          0.0017454349427978954
+        ]
+      }
+    }
+  ],
+  "negative_controls": [
+    {
+      "name": "missing-font",
+      "rejected": true
+    },
+    {
+      "name": "no-ssr-reflection",
+      "rejected": true
+    },
+    {
+      "name": "no-dof-blur",
+      "rejected": true
+    }
+  ]
+}

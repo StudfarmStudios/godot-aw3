@@ -1209,9 +1209,7 @@ void ParticlesStorage::_particles_process_prepare(Particles *p_particles, double
 	// ~40x. Systems with live colliders or attractors (and trail systems,
 	// which index whole entries per pose) keep full uploads.
 	uint64_t frames_drawn = RSG::rasterizer->get_frame_number();
-	bool full_upload = p_particles->frame_params_full_upload_frame != frames_drawn
-			|| p_particles->trail_params.size() > 1
-			|| frame_params.collider_count > 0 || frame_params.attractor_count > 0;
+	bool full_upload = p_particles->frame_params_full_upload_frame != frames_drawn || p_particles->trail_params.size() > 1 || frame_params.collider_count > 0 || frame_params.attractor_count > 0;
 	if (full_upload) {
 		RD::get_singleton()->buffer_update(p_particles->frame_params_buffer, 0, sizeof(ParticlesFrameParams) * p_particles->trail_params.size(), p_particles->trail_params.ptr());
 		p_particles->frame_params_full_upload_frame = frames_drawn;
@@ -1590,7 +1588,7 @@ void ParticlesStorage::update_particles() {
 		float frame_time = 0.0f;
 		int32_t steps = 0;
 		int fixed_fps = 0;
-		ParticlesShader::PushConstant push_constant;
+		ParticlesShader::PushConstant push_constant = {};
 		int process_amount = 0;
 	};
 	thread_local LocalVector<PendingParticles> pending;

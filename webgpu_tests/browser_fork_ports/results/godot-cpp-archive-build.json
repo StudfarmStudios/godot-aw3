@@ -1,0 +1,48 @@
+{
+  "ci_negative": {
+    "revision": "e8ad3299937a1159bc4596865a2d43065288596c",
+    "job": 113556435422,
+    "failure": "godot-cpp archive: sh: Argument list too long",
+    "display_command_bytes": 129008,
+    "posix_escaped_command_bytes": 131192,
+    "linux_max_arg_strlen": 131072,
+    "object_count": 1089
+  },
+  "godot_cpp_revision": "27d9dd23c83871e0619fca5dc2cddfbfd69e926a",
+  "isolated_dry_run": {
+    "api_editor_sha256": "74727596c51c06b001e2a25f103eeb5a13d7c8e1783a16749089e80158f47cb9",
+    "original_absolute_command_bytes": 136518,
+    "proper_root_relative_command_bytes": 76623,
+    "object_count_original": 1088,
+    "object_count_root": 1088,
+    "same_object_set": true,
+    "second_stage_build_library": false,
+    "second_stage_test_translation_units": 3,
+    "second_stage_archive_commands": 0
+  },
+  "actual_build": {
+    "host": "macOS arm64; default godot-cpp universal x86_64+arm64 target",
+    "maximum_jobs": 8,
+    "common_flags": [
+      "target=template_debug",
+      "dev_build=yes",
+      "verbose=yes"
+    ],
+    "phases": [
+      {
+        "phase": "library",
+        "exit_code": 0,
+        "seconds": 177.8513908330351
+      },
+      {
+        "phase": "test",
+        "exit_code": 0,
+        "seconds": 10.063053042045794
+      }
+    ],
+    "library_sha256": "cf5b86506d40751261482d0cd30d3a0fab7466ba1f1d5036dae776b0b1d885c8",
+    "test_extension_sha256": "1dc72042a8df355ff9f541a37f882c59330fde52bd47743196910485d041f197",
+    "api_json_sha256": "48b8d19f1d454639ea40249e01f643775990e68cd8fb927f61f34f0fa0cfae27"
+  },
+  "scope": "Full existing godot-cpp library and test-extension build preserved. Actual corrected build passed on macOS; corrected Linux CI remains required. No shared engine or Tint build outputs modified."
+}

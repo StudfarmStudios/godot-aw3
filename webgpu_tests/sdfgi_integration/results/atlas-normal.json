@@ -1,0 +1,26 @@
+{
+  "passed": true,
+  "checks": 32,
+  "errors": [],
+  "returncode": 0,
+  "seconds": 1.887243750039488,
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "engine_sha256": "59ecacbe71a4a99e4645d992a263c5e6bf13f3b10ea330548e98702cacf23c54",
+  "sampling_helper_sha256": "26258044743c52f76e64a34754be49b788ad093e81b81a673436657a49b18df6",
+  "preprocess_shader_sha256": "5a25e48327fa8696289a145837230e5e482c657864685943c61e6431af9fb45a",
+  "fallback": false,
+  "no_float32_filterable": false,
+  "command": [
+    "/private/tmp/aw3-webgpu-ordered-clear",
+    "--path",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration",
+    "--rendering-method",
+    "forward_plus",
+    "--rendering-driver",
+    "webgpu",
+    "--script",
+    "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/sdfgi_integration/atlas.gd",
+    "--",
+    "--fixture-dir=/private/tmp/aw3-sdfgi-final-atlas-normal"
+  ]
+}

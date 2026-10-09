@@ -433,7 +433,14 @@ layout(set = 1, binding = 12 + 11) uniform sampler SAMPLER_LINEAR_WITH_MIPMAPS_A
 layout(r16ui, set = 1, binding = 24) uniform restrict writeonly uimage3D albedo_volume_grid;
 layout(r32ui, set = 1, binding = 25) uniform restrict writeonly uimage3D emission_grid;
 layout(r32ui, set = 1, binding = 26) uniform restrict writeonly uimage3D emission_aniso_grid;
+#ifdef SDFGI_BUFFER_STORAGE
+layout(set = 1, binding = 27, std430) restrict buffer GeometryFacingGrid {
+	uint data[];
+}
+geom_facing_grid;
+#else
 layout(r32ui, set = 1, binding = 27) uniform restrict uimage3D geom_facing_grid;
+#endif
 
 //still need to be present for shaders that use it, so remap them to something
 #define depth_buffer shadow_atlas

@@ -33,19 +33,18 @@
 #include "spirv-tools/libspirv.h"
 #include "spirv-tools/optimizer.hpp"
 
-#include <string>
-#include <unordered_map>
-#include <vector>
-
 #include "core/templates/hash_map.h"
 #include "core/templates/hash_set.h"
 #include "core/templates/vector.h"
 
 #include <cfloat>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <cmath>
 #include <cstring>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace spirv_preprocess {
 
@@ -100,21 +99,7 @@ static constexpr uint16_t OP_ATOMIC_STORE = 228;
 static constexpr uint16_t OP_IN_BOUNDS_PTR_ACCESS_CHAIN = 216;
 static constexpr uint16_t OP_DECORATION_GROUP = 73;
 
-// OpAtomicLoad .. OpAtomicXor, all of which carry <result-type> <result-id>
-// <pointer>. OpAtomicStore sits inside the range but has no result and is handled
-// with the other pointer-first instructions.
-static constexpr uint16_t OP_ATOMIC_LOAD = 227;
-static constexpr uint16_t OP_ATOMIC_XOR = 242;
-static constexpr uint16_t OP_ATOMIC_FLAG_TEST_AND_SET = 247;
 static constexpr uint16_t OP_ATOMIC_FLAG_CLEAR = 248;
-
-// WGSL has no read-only atomic: `var<storage, read>` cannot hold an `atomic<T>`.
-// So a buffer the shader only ever atomically *reads* still has to be declared
-// read_write, which makes every atomic instruction a write for our purposes.
-static bool _is_atomic_with_result(uint16_t p_op) {
-	return (p_op >= OP_ATOMIC_LOAD && p_op <= OP_ATOMIC_XOR && p_op != OP_ATOMIC_STORE) ||
-			p_op == OP_ATOMIC_FLAG_TEST_AND_SET;
-}
 
 // SPIR-V storage class values.
 static constexpr uint32_t SC_UNIFORM_CONSTANT = 0;
@@ -131,7 +116,6 @@ static constexpr uint32_t DECO_DESCRIPTOR_SET = 34;
 
 // SPIR-V BuiltIn values.
 static constexpr uint32_t BUILTIN_POSITION = 0;
-static constexpr uint32_t BUILTIN_POINT_SIZE = 1;
 static constexpr uint32_t BUILTIN_HELPER_INVOCATION = 23;
 
 static constexpr uint16_t OP_CAPABILITY = 17;
@@ -189,50 +173,80 @@ static uint64_t eval_spec_op(uint32_t p_opcode, const Vector<uint64_t> &p_operan
 
 	switch (p_opcode) {
 		// Integer arithmetic.
-		case 126: return (uint64_t)(-(int32_t)a()); // SNegate
-		case 128: return a() + b(); // IAdd (wrapping)
-		case 130: return a() - b(); // ISub (wrapping)
-		case 132: return a() * b(); // IMul (wrapping)
-		case 134: return b() != 0 ? a() / b() : 0; // UDiv
+		case 126:
+			return (uint64_t)(-(int32_t)a()); // SNegate
+		case 128:
+			return a() + b(); // IAdd (wrapping)
+		case 130:
+			return a() - b(); // ISub (wrapping)
+		case 132:
+			return a() * b(); // IMul (wrapping)
+		case 134:
+			return b() != 0 ? a() / b() : 0; // UDiv
 		case 135: { // SDiv
 			int32_t d = (int32_t)b();
 			return d != 0 ? (uint64_t)((int32_t)a() / d) : 0;
 		}
-		case 137: return b() != 0 ? a() % b() : 0; // UMod
+		case 137:
+			return b() != 0 ? a() % b() : 0; // UMod
 
 		// Logical.
-		case 164: return (uint64_t)(a() == b()); // LogicalEqual
-		case 165: return (uint64_t)(a() != b()); // LogicalNotEqual
-		case 166: return (uint64_t)((a() != 0) || (b() != 0)); // LogicalOr
-		case 167: return (uint64_t)((a() != 0) && (b() != 0)); // LogicalAnd
-		case 168: return (uint64_t)(a() == 0); // LogicalNot
+		case 164:
+			return (uint64_t)(a() == b()); // LogicalEqual
+		case 165:
+			return (uint64_t)(a() != b()); // LogicalNotEqual
+		case 166:
+			return (uint64_t)((a() != 0) || (b() != 0)); // LogicalOr
+		case 167:
+			return (uint64_t)((a() != 0) && (b() != 0)); // LogicalAnd
+		case 168:
+			return (uint64_t)(a() == 0); // LogicalNot
 
 		// Select: condition, true_val, false_val.
-		case 169: return a() != 0 ? b() : c(); // Select
+		case 169:
+			return a() != 0 ? b() : c(); // Select
 
 		// Integer comparison.
-		case 170: return (uint64_t)(a() == b()); // IEqual
-		case 171: return (uint64_t)(a() != b()); // INotEqual
-		case 172: return (uint64_t)((uint32_t)a() > (uint32_t)b()); // UGreaterThan
-		case 173: return (uint64_t)((int32_t)a() > (int32_t)b()); // SGreaterThan
-		case 174: return (uint64_t)((uint32_t)a() >= (uint32_t)b()); // UGreaterThanEqual
-		case 175: return (uint64_t)((int32_t)a() >= (int32_t)b()); // SGreaterThanEqual
-		case 176: return (uint64_t)((uint32_t)a() < (uint32_t)b()); // ULessThan
-		case 177: return (uint64_t)((int32_t)a() < (int32_t)b()); // SLessThan
-		case 178: return (uint64_t)((uint32_t)a() <= (uint32_t)b()); // ULessThanEqual
-		case 179: return (uint64_t)((int32_t)a() <= (int32_t)b()); // SLessThanEqual
+		case 170:
+			return (uint64_t)(a() == b()); // IEqual
+		case 171:
+			return (uint64_t)(a() != b()); // INotEqual
+		case 172:
+			return (uint64_t)((uint32_t)a() > (uint32_t)b()); // UGreaterThan
+		case 173:
+			return (uint64_t)((int32_t)a() > (int32_t)b()); // SGreaterThan
+		case 174:
+			return (uint64_t)((uint32_t)a() >= (uint32_t)b()); // UGreaterThanEqual
+		case 175:
+			return (uint64_t)((int32_t)a() >= (int32_t)b()); // SGreaterThanEqual
+		case 176:
+			return (uint64_t)((uint32_t)a() < (uint32_t)b()); // ULessThan
+		case 177:
+			return (uint64_t)((int32_t)a() < (int32_t)b()); // SLessThan
+		case 178:
+			return (uint64_t)((uint32_t)a() <= (uint32_t)b()); // ULessThanEqual
+		case 179:
+			return (uint64_t)((int32_t)a() <= (int32_t)b()); // SLessThanEqual
 
 		// Bitwise.
-		case 194: return (uint64_t)((uint32_t)a() >> ((uint32_t)b() & 31)); // ShiftRightLogical
-		case 195: return (uint64_t)((int32_t)a() >> ((uint32_t)b() & 31)); // ShiftRightArithmetic
-		case 196: return (uint64_t)((uint32_t)a() << ((uint32_t)b() & 31)); // ShiftLeftLogical
-		case 197: return a() | b(); // BitwiseOr
-		case 198: return a() ^ b(); // BitwiseXor
-		case 199: return a() & b(); // BitwiseAnd
-		case 200: return (uint64_t)(~(uint32_t)a()); // Not
+		case 194:
+			return (uint64_t)((uint32_t)a() >> ((uint32_t)b() & 31)); // ShiftRightLogical
+		case 195:
+			return (uint64_t)((int32_t)a() >> ((uint32_t)b() & 31)); // ShiftRightArithmetic
+		case 196:
+			return (uint64_t)((uint32_t)a() << ((uint32_t)b() & 31)); // ShiftLeftLogical
+		case 197:
+			return a() | b(); // BitwiseOr
+		case 198:
+			return a() ^ b(); // BitwiseXor
+		case 199:
+			return a() & b(); // BitwiseAnd
+		case 200:
+			return (uint64_t)(~(uint32_t)a()); // Not
 
 		// Composite.
-		case 81: return a(); // CompositeExtract (return first operand)
+		case 81:
+			return a(); // CompositeExtract (return first operand)
 
 		// Conversion (values unchanged for const-eval of integers).
 		case 109:
@@ -240,10 +254,12 @@ static uint64_t eval_spec_op(uint32_t p_opcode, const Vector<uint64_t> &p_operan
 		case 111:
 		case 112:
 		case 113:
-		case 114: return a(); // ConvertF/S/U, UConvert, SConvert
+		case 114:
+			return a(); // ConvertF/S/U, UConvert, SConvert
 
 		// Default: return 0 for unhandled operations.
-		default: return 0;
+		default:
+			return 0;
 	}
 }
 
@@ -593,58 +609,222 @@ Vector<uint8_t> convert_push_constants_to_uniforms(const Vector<uint8_t> &p_byte
 
 // ---- rewrite_copy_logical ----
 
+// Interface-block members and local values can have different decorated struct
+// and array types. OpCopyObject requires identical types, so a logical copy must
+// extract source-typed members and reconstruct destination-typed composites.
+struct LogicalCopyState {
+	const uint32_t *words = nullptr;
+	uint32_t bound = 0;
+	HashMap<uint32_t, uint32_t> definitions;
+	HashMap<uint32_t, uint32_t> value_types;
+	std::vector<uint32_t> emitted;
+	uint32_t next_id = 0;
+
+	// Prevent hostile or accidentally enormous aggregate copies from exploding
+	// shader compilation time/memory. This budget is shared by every copy in the
+	// module, and counts words (4 MiB), not just the number of top-level members.
+	static constexpr size_t MAX_EMITTED_WORDS = 1u << 20;
+	static constexpr uint32_t MAX_DEPTH = 64;
+	static constexpr uint32_t OP_TYPE_STRUCT = 30;
+	static constexpr uint32_t OP_COMPOSITE_CONSTRUCT = 80;
+	static constexpr uint32_t OP_COMPOSITE_EXTRACT = 81;
+
+	const uint32_t *definition(uint32_t p_id) const {
+		const uint32_t *offset = definitions.getptr(p_id);
+		return offset ? words + *offset : nullptr;
+	}
+
+	bool array_length(uint32_t p_id, uint32_t &r_length) const {
+		const uint32_t *constant = definition(p_id);
+		if (!constant || (constant[0] & 0xFFFF) != OP_CONSTANT) {
+			// run_all freezes specialization constants used by types before this
+			// pass. Never assume an unresolved array length is its default value.
+			return false;
+		}
+		const uint32_t *type = definition(constant[1]);
+		if (!type || (type[0] & 0xFFFF) != OP_TYPE_INT || type[2] > 64 || type[2] == 0) {
+			return false;
+		}
+		uint64_t value = constant[3];
+		if (type[2] > 32) {
+			value |= uint64_t(constant[4]) << 32;
+		}
+		if (type[3] && (value & (uint64_t(1) << (type[2] - 1)))) {
+			return false;
+		}
+		// OpCompositeConstruct's 16-bit word count includes its three header
+		// words. Larger arrays cannot be constructed by this decomposition.
+		if (value == 0 || value > 0xFFFF - 3) {
+			return false;
+		}
+		r_length = uint32_t(value);
+		return true;
+	}
+
+	uint32_t allocate_id() {
+		// Keep the resulting module within the validator's universal ID limit.
+		if (next_id >= kDefaultMaxIdBound) {
+			return 0;
+		}
+		return next_id++;
+	}
+
+	uint32_t copy(uint32_t p_source, uint32_t p_source_type, uint32_t p_destination_type, uint32_t p_depth, uint32_t p_result = 0) {
+		if (p_source_type == p_destination_type) {
+			if (!definition(p_source_type)) {
+				return 0;
+			}
+			if (!p_result) {
+				return p_source;
+			}
+			if (emitted.size() + 4 > MAX_EMITTED_WORDS) {
+				return 0;
+			}
+			emitted.insert(emitted.end(), { (4u << 16) | OP_COPY_OBJECT, p_destination_type, p_result, p_source });
+			return p_result;
+		}
+		if (p_depth == 0) {
+			return 0;
+		}
+		const uint32_t *source_type = definition(p_source_type);
+		const uint32_t *destination_type = definition(p_destination_type);
+		if (!source_type || !destination_type || (source_type[0] & 0xFFFF) != (destination_type[0] & 0xFFFF)) {
+			return 0;
+		}
+
+		const bool is_struct = (source_type[0] & 0xFFFF) == OP_TYPE_STRUCT;
+		uint32_t count = 0;
+		if (is_struct) {
+			count = (source_type[0] >> 16) - 2;
+			if (count != (destination_type[0] >> 16) - 2 || count > 0xFFFF - 3) {
+				return 0;
+			}
+		} else if ((source_type[0] & 0xFFFF) == OP_TYPE_ARRAY) {
+			uint32_t destination_count = 0;
+			if (!array_length(source_type[3], count) || !array_length(destination_type[3], destination_count) || count != destination_count) {
+				return 0;
+			}
+		} else {
+			// Only structs/arrays can have distinct but logically matching type
+			// IDs. Identical vectors, matrices and scalar leaves were handled above.
+			return 0;
+		}
+
+		// At least one five-word extract per member and the final constructor.
+		// Check this minimum cost before recursing; nested copies check the same limit.
+		if (emitted.size() + size_t(count) * 6 + 3 > MAX_EMITTED_WORDS) {
+			return 0;
+		}
+		std::vector<uint32_t> components;
+		components.reserve(count);
+		for (uint32_t i = 0; i < count; i++) {
+			uint32_t member_source_type = source_type[is_struct ? i + 2 : 2];
+			uint32_t member_destination_type = destination_type[is_struct ? i + 2 : 2];
+			uint32_t extracted = allocate_id();
+			if (!extracted || emitted.size() + 5 > MAX_EMITTED_WORDS) {
+				return 0;
+			}
+			emitted.insert(emitted.end(), { (5u << 16) | OP_COMPOSITE_EXTRACT, member_source_type, extracted, p_source, i });
+			uint32_t component = copy(extracted, member_source_type, member_destination_type, p_depth - 1);
+			if (!component) {
+				return 0;
+			}
+			components.push_back(component);
+		}
+		uint32_t result = p_result ? p_result : allocate_id();
+		if (!result || emitted.size() + count + 3 > MAX_EMITTED_WORDS) {
+			return 0;
+		}
+		emitted.insert(emitted.end(), { ((count + 3) << 16) | OP_COMPOSITE_CONSTRUCT, p_destination_type, result });
+		emitted.insert(emitted.end(), components.begin(), components.end());
+		return result;
+	}
+};
+
 Vector<uint8_t> rewrite_copy_logical(const Vector<uint8_t> &p_bytes) {
 	const int64_t len = p_bytes.size();
-	const uint32_t total_words = (uint32_t)(len / 4);
-
-	if (total_words < 5) {
+	if (len < 20 || (len % 4) != 0 || uint64_t(len / 4) > UINT32_MAX) {
+		return p_bytes;
+	}
+	const uint32_t total_words = uint32_t(len / 4);
+	const uint8_t *data = p_bytes.ptr();
+	if (read_word(data, len, 0) != 0x07230203) {
 		return p_bytes;
 	}
 
-	const uint8_t *data = p_bytes.ptr();
-
-	// Quick scan: if no CopyLogical present, return as-is.
+	// Avoid building any maps for the usual module with no logical copies. Scan
+	// the entire stream first so a malformed suffix cannot be silently dropped.
 	bool found = false;
-	uint32_t pos = 5;
-	while (pos < total_words) {
-		uint32_t w0 = read_word(data, len, pos);
-		uint32_t wc = (w0 >> 16);
-		uint16_t op = (uint16_t)(w0 & 0xFFFF);
-		if (wc == 0 || pos + wc > total_words) {
-			break;
+	for (uint32_t pos = 5; pos < total_words;) {
+		uint32_t instruction = read_word(data, len, pos);
+		uint32_t count = instruction >> 16;
+		if (!count || count > total_words - pos) {
+			return p_bytes;
 		}
-		if (op == OP_COPY_LOGICAL) {
-			found = true;
-			break;
-		}
-		pos += wc;
+		found |= (instruction & 0xFFFF) == OP_COPY_LOGICAL;
+		pos += count;
 	}
-
 	if (!found) {
 		return p_bytes;
 	}
 
-	// Rewrite: replace OpCopyLogical with OpCopyObject (same word count and layout).
-	Vector<uint8_t> out = p_bytes;
-	uint8_t *out_data = out.ptrw();
-
-	pos = 5;
-	while (pos < total_words) {
-		uint32_t w0 = read_word(out_data, len, pos);
-		uint32_t wc = (w0 >> 16);
-		uint16_t op = (uint16_t)(w0 & 0xFFFF);
-		if (wc == 0 || pos + wc > total_words) {
-			break;
-		}
-		if (op == OP_COPY_LOGICAL) {
-			// Replace opcode in-place: keep word count, change opcode to CopyObject.
-			uint32_t new_w0 = (wc << 16) | (uint32_t)OP_COPY_OBJECT;
-			uint32_t off = pos * 4;
-			memcpy(out_data + off, &new_w0, 4);
-		}
-		pos += wc;
+	Vector<uint32_t> words;
+	words.resize(total_words);
+	memcpy(words.ptrw(), data, size_t(len));
+	LogicalCopyState state;
+	state.words = words.ptr();
+	state.bound = state.next_id = state.words[3];
+	if (state.bound == 0 || state.bound > kDefaultMaxIdBound) {
+		return p_bytes;
 	}
 
+	// Grammar-derived result types cover every producer (including constants,
+	// function calls/parameters, phi/select and previous logical copies), without
+	// mistaking an instruction's literal operands for result/type IDs.
+	auto collect = [](void *p_user, const spv_parsed_instruction_t *p_instruction) -> spv_result_t {
+		LogicalCopyState &st = *static_cast<LogicalCopyState *>(p_user);
+		if (p_instruction->result_id) {
+			if (p_instruction->result_id >= st.bound || st.definitions.has(p_instruction->result_id)) {
+				return SPV_ERROR_INVALID_ID;
+			}
+			st.definitions[p_instruction->result_id] = uint32_t(p_instruction->words - st.words);
+			if (p_instruction->type_id) {
+				st.value_types[p_instruction->result_id] = p_instruction->type_id;
+			}
+		}
+		return SPV_SUCCESS;
+	};
+	spv_context context = spvContextCreate(SPV_ENV_UNIVERSAL_1_6);
+	spv_diagnostic diagnostic = nullptr;
+	spv_result_t parsed = spvBinaryParse(context, &state, words.ptr(), size_t(total_words), nullptr, collect, &diagnostic);
+	spvDiagnosticDestroy(diagnostic);
+	spvContextDestroy(context);
+	if (parsed != SPV_SUCCESS) {
+		return p_bytes;
+	}
+
+	std::vector<uint32_t> output(state.words, state.words + 5);
+	for (uint32_t pos = 5; pos < total_words;) {
+		const uint32_t *instruction = state.words + pos;
+		uint32_t count = instruction[0] >> 16;
+		if ((instruction[0] & 0xFFFF) == OP_COPY_LOGICAL) {
+			const uint32_t *source_type = state.value_types.getptr(instruction[3]);
+			size_t start = state.emitted.size();
+			if (!source_type || !state.copy(instruction[3], *source_type, instruction[1], LogicalCopyState::MAX_DEPTH, instruction[2])) {
+				// Leave the entire original module for the explicit unsupported-
+				// construct diagnostic. An opcode-swap fallback is invalid SPIR-V.
+				return p_bytes;
+			}
+			output.insert(output.end(), state.emitted.begin() + start, state.emitted.end());
+		} else {
+			output.insert(output.end(), instruction, instruction + count);
+		}
+		pos += count;
+	}
+	output[3] = state.next_id;
+	Vector<uint8_t> out;
+	out.resize(int64_t(output.size()) * 4);
+	memcpy(out.ptrw(), output.data(), output.size() * 4);
 	return out;
 }
 
@@ -2353,6 +2533,7 @@ void binding_image_info(const Vector<uint8_t> &p_bytes, HashMap<uint32_t, ImageB
 	const uint32_t nwords = (uint32_t)(len / 4);
 
 	HashMap<uint32_t, ImageBindingInfo> image_types; // OpTypeImage id -> info
+	HashMap<uint32_t, uint32_t> scalar_types;
 	HashMap<uint32_t, uint32_t> sampled_image_to_image;
 	HashMap<uint32_t, uint32_t> array_to_element;
 	HashMap<uint32_t, uint32_t> pointer_to_pointee;
@@ -2369,6 +2550,16 @@ void binding_image_info(const Vector<uint8_t> &p_bytes, HashMap<uint32_t, ImageB
 			break;
 		}
 		switch (op) {
+			case OP_TYPE_INT: {
+				if (wc >= 4) {
+					scalar_types.insert(read_word(data, len, pos + 1), read_word(data, len, pos + 3) ? 1u : 2u);
+				}
+			} break;
+			case OP_TYPE_FLOAT: {
+				if (wc >= 3) {
+					scalar_types.insert(read_word(data, len, pos + 1), 0u);
+				}
+			} break;
 			case OP_TYPE_IMAGE: {
 				if (wc >= 9) {
 					ImageBindingInfo info;
@@ -2376,6 +2567,10 @@ void binding_image_info(const Vector<uint8_t> &p_bytes, HashMap<uint32_t, ImageB
 					info.depth = read_word(data, len, pos + 4);
 					info.arrayed = read_word(data, len, pos + 5);
 					info.multisampled = read_word(data, len, pos + 6);
+					info.format = read_word(data, len, pos + 8);
+					if (const uint32_t *scalar = scalar_types.getptr(read_word(data, len, pos + 2))) {
+						info.sampled_type = *scalar;
+					}
 					image_types.insert(read_word(data, len, pos + 1), info);
 				}
 			} break;
@@ -2568,7 +2763,9 @@ Vector<uint8_t> run_all(const Vector<uint8_t> &p_bytes, Vector<DepthImageFixResu
 
 	// Opaque inlining goes first: every pass below rewrites variables, and none
 	// of them follow a texture or sampler across a function boundary.
-	if (want()) { spv = inline_opaque_functions(spv); }
+	if (want()) {
+		spv = inline_opaque_functions(spv);
+	}
 	// Freezing specialization constants costs a full re-translation per pipeline
 	// specialization (~200 ms for the scene shader) because it strips the SpecId
 	// decorations Tint turns into WGSL overrides. Only do it when the module
@@ -2576,11 +2773,21 @@ Vector<uint8_t> run_all(const Vector<uint8_t> &p_bytes, Vector<DepthImageFixResu
 	if (want() && getenv("AW3_SKIP_FREEZE") == nullptr && _spec_constants_used_in_types(spv)) {
 		spv = freeze_spec_constant_ops(spv);
 	}
-	if (want()) { spv = rewrite_copy_logical(spv); }
-	if (want()) { spv = rewrite_terminate_invocation(spv); }
-	if (want()) { spv = convert_push_constants_to_uniforms(spv); }
-	if (want()) { spv = preserve_depth_sources(spv); }
-	if (want()) { spv = split_combined_samplers(spv); }
+	if (want()) {
+		spv = rewrite_copy_logical(spv);
+	}
+	if (want()) {
+		spv = rewrite_terminate_invocation(spv);
+	}
+	if (want()) {
+		spv = convert_push_constants_to_uniforms(spv);
+	}
+	if (want()) {
+		spv = preserve_depth_sources(spv);
+	}
+	if (want()) {
+		spv = split_combined_samplers(spv);
+	}
 
 	if (want()) {
 		DepthImageFixResult depth_result = fix_depth2_images(spv);
@@ -2590,13 +2797,27 @@ Vector<uint8_t> run_all(const Vector<uint8_t> &p_bytes, Vector<DepthImageFixResu
 		}
 	}
 
-	if (want()) { spv = negate_position_y(spv); }
-	if (want()) { spv = strip_restrict_decoration(spv); }
-	if (want()) { spv = strip_memory_barrier(spv); }
-	if (want()) { spv = fix_nonfinite_literals(spv); }
-	if (want()) { spv = flatten_binding_arrays(spv); }
-	if (want()) { spv = infer_readonly_storage(spv); }
-	if (want()) { spv = strip_nonreadable_storage_buffers(spv); }
+	if (want()) {
+		spv = negate_position_y(spv);
+	}
+	if (want()) {
+		spv = strip_restrict_decoration(spv);
+	}
+	if (want()) {
+		spv = strip_memory_barrier(spv);
+	}
+	if (want()) {
+		spv = fix_nonfinite_literals(spv);
+	}
+	if (want()) {
+		spv = flatten_binding_arrays(spv);
+	}
+	if (want()) {
+		spv = infer_readonly_storage(spv);
+	}
+	if (want()) {
+		spv = strip_nonreadable_storage_buffers(spv);
+	}
 
 	// Last: freezing specialization constants above turns ubershader branches into
 	// statically dead code, but the samplers and textures they mention stay
@@ -2604,8 +2825,12 @@ Vector<uint8_t> run_all(const Vector<uint8_t> &p_bytes, Vector<DepthImageFixResu
 	// samplers on Metal, which Godot's Forward Mobile vertex stage otherwise
 	// exceeds). Deleting the dead code drops those references.
 	// Before the dead code sweep, so the samplers this frees up get removed by it.
-	if (want()) { spv = alias_anisotropic_samplers(spv, r_unused_binding_keys); }
-	if (want()) { spv = eliminate_dead_code(spv); }
+	if (want()) {
+		spv = alias_anisotropic_samplers(spv, r_unused_binding_keys);
+	}
+	if (want()) {
+		spv = eliminate_dead_code(spv);
+	}
 
 	return spv;
 }
@@ -2661,6 +2886,8 @@ std::string find_untranslatable_construct(const Vector<uint8_t> &p_bytes) {
 					return unsupported.reason;
 				}
 			}
+		} else if (op == OP_COPY_LOGICAL) {
+			return "an OpCopyLogical aggregate that could not be lowered safely";
 		} else if (op >= OP_IS_NAN && op <= OP_SIGN_BIT_SET) {
 			// OpIsNan .. OpSignBitSet. WGSL dropped all of these, and the reader
 			// has no lowering for them; `x != x` and a magnitude test against

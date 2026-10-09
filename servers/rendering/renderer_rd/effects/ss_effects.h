@@ -475,13 +475,16 @@ private:
 	};
 
 	struct ScreenSpaceReflection {
+		// WebGPU distinguishes hardware depth from resolved float depth in the
+		// shader resource type. Native APIs use the original variants.
+		bool use_depth_variants = false;
 		ScreenSpaceReflectionDownsampleShaderRD downsample_shader;
 		RID downsample_shader_version;
-		PipelineDeferredRD downsample_pipelines[SCREEN_SPACE_REFLECTION_DOWNSAMPLE_MAX];
+		PipelineDeferredRD downsample_pipelines[SCREEN_SPACE_REFLECTION_DOWNSAMPLE_MAX * 2];
 
 		ScreenSpaceReflectionHizShaderRD hiz_shader;
 		RID hiz_shader_version;
-		PipelineDeferredRD hiz_pipelines[SCREEN_SPACE_REFLECTION_HIZ_MAX];
+		PipelineDeferredRD hiz_pipelines[SCREEN_SPACE_REFLECTION_HIZ_MAX * 2];
 
 		ScreenSpaceReflectionShaderRD ssr_shader;
 		RID ssr_shader_version;
@@ -494,7 +497,7 @@ private:
 
 		ScreenSpaceReflectionResolveShaderRD resolve_shader;
 		RID resolve_shader_version;
-		PipelineDeferredRD resolve_pipeline;
+		PipelineDeferredRD resolve_pipelines[2];
 	} ssr;
 
 	/* Subsurface scattering */
