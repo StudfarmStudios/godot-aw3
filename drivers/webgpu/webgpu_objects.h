@@ -450,6 +450,31 @@ struct WGCommandBuffer {
 		WGPUTexture current_pass_attachments[MAX_ATTACHMENT_TEXTURES] = {};
 		uint32_t current_pass_attachment_count = 0;
 		void reset_current_pass_attachments() { current_pass_attachment_count = 0; }
+
+		// Dynamic state a new WebGPU pass does not inherit. RD sets viewport and
+		// scissor once per draw list, and Vulkan keeps them across subpasses, but a
+		// pass restarted on push-constant ring overflow, or begun for the next
+		// subpass, starts from the full attachment: the rest of the draw list then
+		// drew unscissored over the whole target (a shadow atlas tile over every
+		// other tile). Recorded by the setters, replayed by replay_dynamic_state().
+		bool viewport_set = false;
+		float viewport[6] = {};
+		bool scissor_set = false;
+		uint32_t scissor[4] = {};
+		bool blend_constant_set = false;
+		WGPUColor blend_constant = {};
+		void reset_dynamic_state() { viewport_set = scissor_set = blend_constant_set = false; }
+		void replay_dynamic_state(WGPURenderPassEncoder p_encoder) const {
+			if (viewport_set) {
+				wgpuRenderPassEncoderSetViewport(p_encoder, viewport[0], viewport[1], viewport[2], viewport[3], viewport[4], viewport[5]);
+			}
+			if (scissor_set) {
+				wgpuRenderPassEncoderSetScissorRect(p_encoder, scissor[0], scissor[1], scissor[2], scissor[3]);
+			}
+			if (blend_constant_set) {
+				wgpuRenderPassEncoderSetBlendConstant(p_encoder, &blend_constant);
+			}
+		}
 		void add_current_pass_attachment(WGPUTexture t) {
 			if (!t) {
 				return;
@@ -481,6 +506,14 @@ struct WGCommandBuffer {
 		uint32_t dynamic_offset_count = 0;
 	};
 	BoundGroupState last_bound_state[MAX_BIND_GROUPS] = {};
+	// A restart replays last_bound_state, so it must only hold groups bound in the
+	// current pass: one from an earlier pass may sample this pass's attachment (an
+	// invalid usage scope that drops the whole command buffer) or be freed by now.
+	void forget_bound_state() {
+		for (uint32_t i = 0; i < MAX_BIND_GROUPS; i++) {
+			last_bound_state[i] = {};
+		}
+	}
 	WGUniformSet *compute_uniform_sets[MAX_BIND_GROUPS] = {};
 
 	bool is_bind_group_bound(uint32_t p_index, WGPUBindGroup p_group, uint32_t p_dynamic_offset_count, const uint32_t *p_dynamic_offsets) const {

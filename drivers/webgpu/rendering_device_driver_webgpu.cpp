@@ -7756,13 +7756,17 @@ void RenderingDeviceDriverWebGPU::command_copy_texture(CommandBufferID p_cmd_buf
 		WGPUTexelCopyTextureInfo src_copy = {};
 		src_copy.texture = src->gpu_handle();
 		src_copy.mipLevel = region.src_subresources.mipmap;
-		src_copy.origin = { (uint32_t)region.src_offset.x, (uint32_t)region.src_offset.y, region.src_subresources.base_layer };
+		// A 3D texture has no layers: its third origin coordinate is the slice,
+		// as in the buffer<->texture copies.
+		src_copy.origin = { (uint32_t)region.src_offset.x, (uint32_t)region.src_offset.y,
+			src->dimension == WGPUTextureDimension_3D ? (uint32_t)region.src_offset.z : region.src_subresources.base_layer };
 		src_copy.aspect = WGPUTextureAspect_All;
 
 		WGPUTexelCopyTextureInfo dst_copy = {};
 		dst_copy.texture = dst->gpu_handle();
 		dst_copy.mipLevel = region.dst_subresources.mipmap;
-		dst_copy.origin = { (uint32_t)region.dst_offset.x, (uint32_t)region.dst_offset.y, region.dst_subresources.base_layer };
+		dst_copy.origin = { (uint32_t)region.dst_offset.x, (uint32_t)region.dst_offset.y,
+			dst->dimension == WGPUTextureDimension_3D ? (uint32_t)region.dst_offset.z : region.dst_subresources.base_layer };
 		dst_copy.aspect = WGPUTextureAspect_All;
 
 		WGPUExtent3D extent = {
@@ -8724,6 +8728,8 @@ void RenderingDeviceDriverWebGPU::_ensure_push_constant_space(WGCommandBuffer *p
 				p_cmd_buf->render_encoder = wgpuCommandEncoderBeginRenderPass(p_cmd_buf->encoder, &pass_desc);
 				p_cmd_buf->active_encoder = WGCommandBuffer::RENDER;
 
+				p_cmd_buf->render_state.replay_dynamic_state(p_cmd_buf->render_encoder);
+
 				// Rebind render pipeline.
 				WGPipelineWrapper *pw = p_cmd_buf->render_state.current_pipeline;
 				if (pw) {
@@ -9089,6 +9095,8 @@ void RenderingDeviceDriverWebGPU::command_begin_render_pass(CommandBufferID p_cm
 
 	// Invalidate bind group state tracking (new encoder = clean state).
 	cmd->invalidate_bind_groups();
+	cmd->forget_bound_state();
+	cmd->render_state.reset_dynamic_state();
 
 	// Store render state.
 	cmd->render_state.render_pass = rp;
@@ -9574,6 +9582,8 @@ void RenderingDeviceDriverWebGPU::command_next_render_subpass(CommandBufferID p_
 
 	// Reset pipeline state — new render pass requires re-binding everything.
 	cmd->invalidate_bind_groups();
+	cmd->forget_bound_state();
+	cmd->render_state.replay_dynamic_state(cmd->render_encoder);
 	cmd->render_state.current_pipeline = nullptr;
 	cmd->render_state.current_index_buffer = nullptr;
 	cmd->render_state.current_index_offset = 0;
@@ -9588,7 +9598,15 @@ void RenderingDeviceDriverWebGPU::command_render_set_viewport(CommandBufferID p_
 
 	if (p_viewports.size() > 0) {
 		const Rect2i &vp = p_viewports[0]; // WebGPU supports only one viewport.
-		wgpuRenderPassEncoderSetViewport(cmd->render_encoder, (float)vp.position.x, (float)vp.position.y, (float)vp.size.x, (float)vp.size.y, 0.0f, 1.0f);
+		float *v = cmd->render_state.viewport;
+		v[0] = (float)vp.position.x;
+		v[1] = (float)vp.position.y;
+		v[2] = (float)vp.size.x;
+		v[3] = (float)vp.size.y;
+		v[4] = 0.0f;
+		v[5] = 1.0f;
+		cmd->render_state.viewport_set = true;
+		wgpuRenderPassEncoderSetViewport(cmd->render_encoder, v[0], v[1], v[2], v[3], v[4], v[5]);
 	}
 }
 
@@ -9633,6 +9651,11 @@ void RenderingDeviceDriverWebGPU::command_render_set_scissor(CommandBufferID p_c
 				h = MIN(h, clamp_h - y);
 			}
 		}
+		cmd->render_state.scissor[0] = x;
+		cmd->render_state.scissor[1] = y;
+		cmd->render_state.scissor[2] = w;
+		cmd->render_state.scissor[3] = h;
+		cmd->render_state.scissor_set = true;
 		wgpuRenderPassEncoderSetScissorRect(cmd->render_encoder, x, y, w, h);
 	}
 }
@@ -9997,6 +10020,8 @@ void RenderingDeviceDriverWebGPU::command_render_set_blend_constants(CommandBuff
 	ERR_FAIL_COND(!cmd->render_encoder);
 
 	WGPUColor color = { p_constants.r, p_constants.g, p_constants.b, p_constants.a };
+	cmd->render_state.blend_constant = color;
+	cmd->render_state.blend_constant_set = true;
 	wgpuRenderPassEncoderSetBlendConstant(cmd->render_encoder, &color);
 }
 
