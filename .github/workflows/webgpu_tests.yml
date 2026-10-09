@@ -2,6 +2,12 @@ name: 🧪 WebGPU Tests
 on:
   workflow_call:
   workflow_dispatch:
+    inputs:
+      reuse_export_run_id:
+        description: 'Diagnostic only: reuse a prior webgpu-export artifact from this repository'
+        type: string
+        required: false
+        default: ''
   push:
     branches: [aw-web-export]
     paths:
@@ -34,6 +40,7 @@ jobs:
   # Shader Corpus: SPIR-V → WGSL validation with the candidate translator
   # ═══════════════════════════════════════════════════════════════════════════════
   shader-corpus:
+    if: github.event_name != 'workflow_dispatch' || inputs.reuse_export_run_id == ''
     runs-on: ubuntu-24.04
     name: Candidate Tint Translation Corpus
     needs: [build-webgpu]
@@ -108,6 +115,7 @@ jobs:
   # Engine Build: Compile WebGPU export template + strict shader precompile
   # ═══════════════════════════════════════════════════════════════════════════════
   build-webgpu:
+    if: github.event_name != 'workflow_dispatch' || inputs.reuse_export_run_id == ''
     runs-on: ubuntu-24.04
     name: Build Candidate WebGPU Template + Strict Shader Bake
     timeout-minutes: 90
@@ -230,8 +238,15 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════════════════
   smoke-test:
     runs-on: ubuntu-24.04
-    name: Candidate Chrome Software Smoke Test (SwiftShader + Xvfb)
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.reuse_export_run_id != '' && 'Diagnostic Reused Export Smoke Test (SwiftShader + Xvfb)' || 'Candidate Chrome Software Smoke Test (SwiftShader + Xvfb)' }}
     needs: [build-webgpu, software-preflight]
+    if: >-
+      ${{ !cancelled() && needs.software-preflight.result == 'success' &&
+          (needs.build-webgpu.result == 'success' ||
+           (github.event_name == 'workflow_dispatch' && inputs.reuse_export_run_id != '' && needs.build-webgpu.result == 'skipped')) }}
+    permissions:
+      actions: read
+      contents: read
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -242,11 +257,88 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Download WebGPU export
+      - name: Record export artifact provenance
+        id: export-source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPORT_SOURCE_RUN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.reuse_export_run_id || github.run_id }}
+          REUSED_EXPORT: ${{ github.event_name == 'workflow_dispatch' && inputs.reuse_export_run_id != '' }}
+        run: |
+          if [[ ! "$EXPORT_SOURCE_RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::reuse_export_run_id must contain only digits"
+            exit 1
+          fi
+          mkdir -p webgpu_tests/test_project/smoke-diagnostics
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$EXPORT_SOURCE_RUN_ID" > /tmp/export-source-run.json
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$EXPORT_SOURCE_RUN_ID/artifacts?per_page=100" > /tmp/export-source-artifacts.json
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          run = json.loads(Path("/tmp/export-source-run.json").read_text())
+          pages = json.loads(Path("/tmp/export-source-artifacts.json").read_text())
+          if run["repository"]["full_name"].lower() != os.environ["GITHUB_REPOSITORY"].lower():
+              raise SystemExit("Export source must belong to this repository")
+          if str(run["id"]) != os.environ["EXPORT_SOURCE_RUN_ID"]:
+              raise SystemExit("Export source run ID mismatch")
+          artifacts = [artifact for page in pages for artifact in page["artifacts"]
+                       if artifact["name"] == "webgpu-export" and not artifact["expired"]]
+          if not artifacts:
+              raise SystemExit("Source run has no nonexpired webgpu-export artifact")
+          artifact = max(artifacts, key=lambda item: item["id"])
+          reused = os.environ["REUSED_EXPORT"] == "true"
+          provenance = {
+              "mode": "reused-export-diagnostic" if reused else "current-run-candidate",
+              "exact_head_acceptance": not reused,
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "harness_run_id": os.environ["GITHUB_RUN_ID"],
+              "harness_head_sha": os.environ["GITHUB_SHA"],
+              "source_run": {key: run.get(key) for key in (
+                  "id", "html_url", "head_sha", "head_branch", "run_attempt", "event", "path",
+              )},
+              "artifact": {key: artifact.get(key) for key in (
+                  "id", "name", "digest", "size_in_bytes", "created_at", "workflow_run",
+              )},
+          }
+          Path("webgpu_tests/test_project/smoke-diagnostics/export-provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write("artifact_id=" + str(artifact["id"]) + "\n")
+          print(json.dumps(provenance, indent=2))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write("### " + provenance["mode"] + "\n\nSource run: " + run["html_url"] + "\n\n")
+              if reused:
+                  summary.write("Reused export diagnostic only; this is not exact-head candidate acceptance.\n")
+          PY
+
+      - name: Download identified WebGPU export
         uses: actions/download-artifact@v4
         with:
-          name: webgpu-export
+          artifact-ids: ${{ steps.export-source.outputs.artifact_id }}
+          merge-multiple: true
           path: webgpu_tests/test_project/export/
+          run-id: ${{ github.event_name == 'workflow_dispatch' && inputs.reuse_export_run_id || github.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Hash downloaded export files
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          root = Path("webgpu_tests/test_project")
+          path = root / "smoke-diagnostics/export-provenance.json"
+          provenance = json.loads(path.read_text())
+          provenance["files"] = {}
+          for name in ("index.html", "index.js", "index.wasm", "index.pck"):
+              data = (root / "export" / name).read_bytes()
+              if not data:
+                  raise SystemExit("Empty export file: " + name)
+              provenance["files"][name] = {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+          path.write_text(json.dumps(provenance, indent=2) + "\n")
+          print(json.dumps(provenance["files"], indent=2))
+          PY
 
       - name: Install Playwright
         run: |
@@ -337,7 +429,7 @@ jobs:
                   record["ps_error"] = "ps exceeded five seconds"
               print(json.dumps(record), flush=True)
 
-          deadline = time.monotonic() + 360
+          deadline = time.monotonic() + 660
           try:
               while not stopped.is_set() and time.monotonic() < deadline:
                   sample("running")
@@ -364,7 +456,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════════════════
   scene-smoketest:
     # Existing external/prebuilt demos are manual diagnostics, not candidate proof.
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.reuse_export_run_id == ''
     runs-on: ubuntu-24.04
     name: Scene Smoketest (Chrome + Firefox)
     timeout-minutes: 20
@@ -396,7 +488,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════════════════
   resource-lifecycle:
     # Existing external/prebuilt demos are manual diagnostics, not candidate proof.
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.reuse_export_run_id == ''
     runs-on: ubuntu-24.04
     name: Resource Lifecycle (Chrome WebGPU)
     timeout-minutes: 15
@@ -425,7 +517,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════════════════
   screenshot-comparison:
     # Existing external/prebuilt demos are manual diagnostics, not candidate proof.
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.reuse_export_run_id == ''
     runs-on: ubuntu-24.04
     name: Screenshot Comparison (Chrome + Firefox)
     timeout-minutes: 20
@@ -464,11 +556,13 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════════════════
   test-summary:
     runs-on: ubuntu-24.04
-    name: Test Summary
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.reuse_export_run_id != '' && 'Diagnostic Reused Export Summary' || 'Test Summary' }}
     needs: [build-webgpu, shader-corpus, driver-unit-tests, software-preflight, smoke-test, scene-smoketest, resource-lifecycle, screenshot-comparison]
     if: always()
     steps:
       - name: Check results
+        env:
+          REUSED_EXPORT: ${{ github.event_name == 'workflow_dispatch' && inputs.reuse_export_run_id != '' }}
         run: |
           echo "╔══════════════════════════════════════════════════════════╗"
           echo "║           WebGPU Test Suite Results                      ║"
@@ -485,8 +579,14 @@ jobs:
           echo ""
 
           FAILED=0
+          EXPECTED_BUILD_RESULT=success
+          if [ "$REUSED_EXPORT" = "true" ]; then
+            EXPECTED_BUILD_RESULT=skipped
+            echo "::notice::Reused export diagnostic only; not exact-head candidate acceptance"
+            echo "Reused export diagnostic only; not exact-head candidate acceptance." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
-          if [ "${{ needs.shader-corpus.result }}" != "success" ]; then
+          if [ "${{ needs.shader-corpus.result }}" != "$EXPECTED_BUILD_RESULT" ]; then
             echo "::error::Shader corpus tests failed"
             FAILED=1
           fi
@@ -494,7 +594,7 @@ jobs:
             echo "::error::Driver unit tests failed"
             FAILED=1
           fi
-          if [ "${{ needs.build-webgpu.result }}" != "success" ]; then
+          if [ "${{ needs.build-webgpu.result }}" != "$EXPECTED_BUILD_RESULT" ]; then
             echo "::error::Candidate WebGPU build, strict shader bake, or export failed"
             FAILED=1
           fi

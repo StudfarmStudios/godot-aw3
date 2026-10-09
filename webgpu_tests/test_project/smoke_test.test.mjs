@@ -143,7 +143,7 @@ for (const platform of ['linux', 'darwin', 'win32']) {
         assert.equal(report.platform, platform);
         assert.deepEqual(report.viewport, viewport);
         assert.deepEqual(state.pageOptions, { viewport });
-        assert.equal(report.timeoutMs, platform === 'linux' ? 300000 : 120000);
+        assert.equal(report.timeoutMs, platform === 'linux' ? 600000 : 120000);
     });
 
     test(`${platform} accepts explicit viewport and timeout overrides`, async (t) => {

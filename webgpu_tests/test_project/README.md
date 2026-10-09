@@ -125,7 +125,7 @@ even though the underlying implementation supports the needed bindings. See the
 [pinned Chromium switch](https://github.com/chromium/chromium/blob/156.0.8078.4/gpu/command_buffer/service/webgpu_decoder_impl.cc#L1143),
 [Dawn limit tiers](https://github.com/google/dawn/blob/0a2c7df818e285d6db0f085135139cda04cee8bb/src/dawn/native/Limits.cpp#L73)
 and [required-limit validation](https://github.com/google/dawn/blob/0a2c7df818e285d6db0f085135139cda04cee8bb/src/dawn/native/Adapter.cpp#L293).
-The Linux smoke uses a 320 × 180 browser viewport and a five-minute bound. The
+The Linux smoke uses a 320 × 180 browser viewport and a ten-minute bound. The
 original 1280 × 720 cold software run reached Forward+ and its first FSR2 frame
 but exceeded two minutes without shader errors or device loss. The smaller
 viewport reduces raster work while preserving the ten-frame scene, all enabled
@@ -141,7 +141,12 @@ preceding 320 × 180 run ended when Chromium's GPU process exited with raw POSIX
 status 512, followed by device loss; the harness had not timed out. Chromium's
 pinned sources map this status to exit code 2 (`RESULT_CODE_HUNG`), which its
 watchdog uses. The switch overrides the normal software watchdog allowance,
-while the separate 300-second smoke deadline still detects incomplete work.
+while the separate 600-second smoke deadline still detects incomplete work.
+The previous 300-second run stayed alive and reached frame five's TAA transition
+only 2.7 seconds before the deadline. Its resource capture showed active CPU work,
+over 10 GiB of available memory and no memory pressure or OOM events. It remains a
+failed timeout control, not proof that all ten frames completed. The longer bound
+allows both temporal phases to run without reducing the scene's coverage.
 Neither GPU validation nor any failure gate is disabled. CI saves process CPU/RSS,
 cgroup memory counters and available kernel diagnostics to help distinguish slow
 software work, resource pressure and a real stall. These are diagnostic controls,
@@ -149,6 +154,13 @@ not an assertion that every watchdog termination is harmless. See the pinned
 [watchdog termination](https://github.com/chromium/chromium/blob/156.0.8078.4/gpu/ipc/service/gpu_watchdog_thread.cc#L711),
 [timeout parsing](https://github.com/chromium/chromium/blob/156.0.8078.4/gpu/ipc/service/gpu_watchdog_thread.cc#L55)
 and [POSIX wait status](https://github.com/chromium/chromium/blob/156.0.8078.4/base/process/kill_posix.cc#L43).
+
+A manual workflow run can set `reuse_export_run_id` to a prior run in the same
+repository. This diagnostic path downloads the identified `webgpu-export`
+artifact without rebuilding it, records its source revision and file hashes, and
+uses distinct diagnostic check names. It is not acceptance of the harness
+revision's engine build. Normal push and PR runs still require their own fresh
+candidate build, export, translation corpus, preflight and smoke test.
 
 This configuration is test infrastructure, not a browser flag required of users,
 and does not establish Firefox/Windows/D3D12 or other hardware-driver coverage.

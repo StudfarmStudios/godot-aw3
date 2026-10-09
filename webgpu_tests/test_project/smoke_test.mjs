@@ -122,7 +122,7 @@ export async function runSmokeTest({
     reportPath = process.env.SMOKE_REPORT || 'smoke-result.json',
     platform = process.platform,
     viewport = platform === 'linux' ? { width: 320, height: 180 } : { width: 1280, height: 720 },
-    timeoutMs = platform === 'linux' ? 300000 : 120000,
+    timeoutMs = platform === 'linux' ? 600000 : 120000,
     pollIntervalMs = 1000,
     chromium = null,
     serve = startServer,
