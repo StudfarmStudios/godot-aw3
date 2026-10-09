@@ -11,7 +11,10 @@ async function runMock(t, scenario = 'pass', overrides = {}) {
     const dir = mkdtempSync(join(tmpdir(), 'godot-webgpu-smoke-'));
     t.after(() => rmSync(dir, { recursive: true, force: true }));
     writeFileSync(join(dir, 'index.html'), '<!doctype html>');
-    const state = { browserClosed: false, serverClosed: false, adapterRequests: 0, deviceRequests: 0, output: [] };
+    const state = {
+        browserClosed: false, serverClosed: false, adapterRequests: 0, deviceRequests: 0,
+        output: [], textureCalls: [], textureResults: [], clock: 100,
+    };
     const events = new Map();
     const emit = (type, text) => events.get('console')?.({ type: () => type, text: () => text });
     const limits = { ...requiredForwardPlusLimits };
@@ -32,6 +35,9 @@ async function runMock(t, scenario = 'pass', overrides = {}) {
         requestDevice: async () => { state.deviceRequests++; return device; },
     };
     const canvasDescriptor = { device, format: 'rgba8unorm', alphaMode: 'opaque' };
+    const texture = { kind: 'mock-texture' };
+    const textureArguments = [{ untouched: true }, 'extra-argument'];
+    const textureFailure = new Error('Original getCurrentTexture failure');
     class GPUCanvasContext {
         constructor() {
             this.canvas = { width: 813, height: 457 };
@@ -42,11 +48,18 @@ async function runMock(t, scenario = 'pass', overrides = {}) {
             state.configureDescriptor = descriptor;
             return 'original-configure-result';
         }
+
+        getCurrentTexture(...args) {
+            state.textureCalls.push({ receiver: this, args });
+            if (scenario === 'texture-request-throws') throw textureFailure;
+            return texture;
+        }
     }
     const context = createContext({
         navigator: { gpu: { requestAdapter: async () => { state.adapterRequests++; return adapter; } } },
         console: { log: (text) => emit('log', text), error: (text) => emit('error', text) },
-        GPUCanvasContext, canvasDescriptor,
+        GPUCanvasContext, canvasDescriptor, textureArguments,
+        performance: { now: () => state.clock },
     });
     let init;
     let initArgument;
@@ -62,9 +75,15 @@ async function runMock(t, scenario = 'pass', overrides = {}) {
                 if (scenario !== 'missing-device') {
                     await runInContext('(async () => { const a = await navigator.gpu.requestAdapter(); '
                         + 'return a.requestDevice({requiredLimits}); })()', context);
-                    state.configureResult = runInContext('new GPUCanvasContext().configure(canvasDescriptor)', context);
+                    context.canvasContext = runInContext('new GPUCanvasContext()', context);
+                    state.configureResult = runInContext('canvasContext.configure(canvasDescriptor)', context);
+                    for (let request = 0; request < 2; request++) {
+                        state.clock += 25;
+                        state.textureResults.push(runInContext('canvasContext.getCurrentTexture(...textureArguments)', context));
+                    }
                 }
             } catch (error) {
+                state.caughtError = error;
                 events.get('pageerror')(error);
                 return;
             }
@@ -119,6 +138,13 @@ async function runMock(t, scenario = 'pass', overrides = {}) {
         assert.ok(state.configureReceiver instanceof GPUCanvasContext, 'original receiver is preserved');
         assert.equal(state.configureResult, 'original-configure-result', 'configure result is preserved');
     }
+    for (const call of state.textureCalls) {
+        assert.equal(call.receiver, state.configureReceiver, 'texture request receiver is preserved');
+        assert.equal(call.args.length, textureArguments.length, 'texture request arguments are preserved');
+        call.args.forEach((argument, index) => assert.equal(argument, textureArguments[index]));
+    }
+    for (const result of state.textureResults) assert.equal(result, texture, 'original GPU texture is returned unchanged');
+    if (scenario === 'texture-request-throws') assert.equal(state.caughtError, textureFailure, 'original exception is preserved');
     return { report, state };
 }
 
@@ -135,6 +161,18 @@ test('actual adapter/device capabilities plus engine completion pass', async (t)
     assert.ok(state.output.some((line) => line === '[log] [WebGPU canvas] {"width":813,"height":457}'));
 });
 
+test('successful texture requests report count, actual dimensions and timestamps without asserting GPU completion', async (t) => {
+    const { report, state } = await runMock(t);
+    assert.equal(report.passed, true);
+    assert.equal(state.textureCalls.length, 2, 'observer issues no extra texture requests');
+    assert.deepEqual(report.textureRequests.map(({ timestamp, ...request }) => request), [
+        { request: 1, width: 813, height: 457, elapsedMs: 25 },
+        { request: 2, width: 813, height: 457, elapsedMs: 50 },
+    ]);
+    for (const request of report.textureRequests) assert.ok(Number.isFinite(Date.parse(request.timestamp)));
+    assert.equal(state.output.filter((line) => line.startsWith('[log] [WebGPU texture request] ')).length, 2);
+});
+
 for (const platform of ['linux', 'darwin', 'win32']) {
     test(`${platform} selects the intended default viewport and timeout`, async (t) => {
         const { report, state } = await runMock(t, 'pass', { platform, timeoutMs: undefined });
@@ -143,7 +181,7 @@ for (const platform of ['linux', 'darwin', 'win32']) {
         assert.equal(report.platform, platform);
         assert.deepEqual(report.viewport, viewport);
         assert.deepEqual(state.pageOptions, { viewport });
-        assert.equal(report.timeoutMs, platform === 'linux' ? 600000 : 120000);
+        assert.equal(report.timeoutMs, platform === 'linux' ? 1800000 : 120000);
     });
 
     test(`${platform} accepts explicit viewport and timeout overrides`, async (t) => {
@@ -170,7 +208,7 @@ for (const scenario of ['low-adapter', 'low-device', 'missing-limit']) {
 for (const scenario of [
     'mobile', 'device-loss', 'engine-fail', 'missing-completion', 'missing-start', 'missing-device',
     'console-error', 'script-error', 'shader-error', 'validation-error', 'warning', 'page-error',
-    'navigation-error', 'launch-error',
+    'navigation-error', 'launch-error', 'texture-request-throws',
 ]) {
     test(`${scenario} cannot pass`, async (t) => {
         const { report } = await runMock(t, scenario);
@@ -178,6 +216,7 @@ for (const scenario of [
         if (scenario === 'missing-completion') assert.equal(report.timedOut, true);
         if (scenario === 'mobile') assert.equal(report.mobileFallback, true);
         if (scenario === 'shader-error') assert.equal(report.shaderErrors.length, 1);
+        if (scenario === 'texture-request-throws') assert.deepEqual(report.textureRequests, [], 'failed requests emit no progress');
         if (scenario === 'device-loss') {
             assert.equal(report.deviceLost, true);
             assert.match(report.deviceLosses[0], /external Instance/);

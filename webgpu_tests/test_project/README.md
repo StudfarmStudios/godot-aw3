@@ -125,7 +125,7 @@ even though the underlying implementation supports the needed bindings. See the
 [pinned Chromium switch](https://github.com/chromium/chromium/blob/156.0.8078.4/gpu/command_buffer/service/webgpu_decoder_impl.cc#L1143),
 [Dawn limit tiers](https://github.com/google/dawn/blob/0a2c7df818e285d6db0f085135139cda04cee8bb/src/dawn/native/Limits.cpp#L73)
 and [required-limit validation](https://github.com/google/dawn/blob/0a2c7df818e285d6db0f085135139cda04cee8bb/src/dawn/native/Adapter.cpp#L293).
-The Linux smoke uses a 320 × 180 browser viewport and a ten-minute bound. The
+The Linux smoke uses a 320 × 180 browser viewport and a thirty-minute bound. The
 original 1280 × 720 cold software run reached Forward+ and its first FSR2 frame
 but exceeded two minutes without shader errors or device loss. The smaller
 viewport reduces raster work while preserving the ten-frame scene, all enabled
@@ -141,12 +141,17 @@ preceding 320 × 180 run ended when Chromium's GPU process exited with raw POSIX
 status 512, followed by device loss; the harness had not timed out. Chromium's
 pinned sources map this status to exit code 2 (`RESULT_CODE_HUNG`), which its
 watchdog uses. The switch overrides the normal software watchdog allowance,
-while the separate 600-second smoke deadline still detects incomplete work.
+while the separate 1800-second smoke deadline still detects incomplete work.
 The previous 300-second run stayed alive and reached frame five's TAA transition
 only 2.7 seconds before the deadline. Its resource capture showed active CPU work,
 over 10 GiB of available memory and no memory pressure or OOM events. It remains a
-failed timeout control, not proof that all ten frames completed. The longer bound
-allows both temporal phases to run without reducing the scene's coverage.
+failed timeout control, not proof that all ten frames completed. A separate
+600-second diagnostic reached TAA after about 381 seconds and remained CPU-busy
+until the cutoff, again without validation errors, device loss or memory
+pressure. Both timeouts remain failed evidence. The longer bound gives the full
+software workload room to finish without reducing scene coverage. Successful
+canvas texture requests are logged as additional progress observations; these
+are not proof of GPU completion and never replace the scene's completion gate.
 Neither GPU validation nor any failure gate is disabled. CI saves process CPU/RSS,
 cgroup memory counters and available kernel diagnostics to help distinguish slow
 software work, resource pressure and a real stall. These are diagnostic controls,

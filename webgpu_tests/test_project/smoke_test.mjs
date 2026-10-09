@@ -53,11 +53,23 @@ function startServer(dir) {
 // Intercept only the engine's own requests; do not create a second GPU device.
 function monitorWebGPU(requiredLimits) {
     if (typeof GPUCanvasContext !== 'undefined') {
+        const started = performance.now();
+        let textureRequests = 0;
         const configure = GPUCanvasContext.prototype.configure;
         GPUCanvasContext.prototype.configure = function (...args) {
             const result = configure.apply(this, args);
             console.log('[WebGPU canvas] ' + JSON.stringify({ width: this.canvas.width, height: this.canvas.height }));
             return result;
+        };
+        const getCurrentTexture = GPUCanvasContext.prototype.getCurrentTexture;
+        GPUCanvasContext.prototype.getCurrentTexture = function (...args) {
+            const texture = getCurrentTexture.apply(this, args);
+            // A successful texture request indicates CPU-side progress, not a completed GPU frame.
+            console.log('[WebGPU texture request] ' + JSON.stringify({
+                request: ++textureRequests, width: this.canvas.width, height: this.canvas.height,
+                timestamp: new Date().toISOString(), elapsedMs: performance.now() - started,
+            }));
+            return texture;
         };
     }
     const limitsOf = (object) => {
@@ -122,7 +134,7 @@ export async function runSmokeTest({
     reportPath = process.env.SMOKE_REPORT || 'smoke-result.json',
     platform = process.platform,
     viewport = platform === 'linux' ? { width: 320, height: 180 } : { width: 1280, height: 720 },
-    timeoutMs = platform === 'linux' ? 600000 : 120000,
+    timeoutMs = platform === 'linux' ? 1800000 : 120000,
     pollIntervalMs = 1000,
     chromium = null,
     serve = startServer,
@@ -132,7 +144,7 @@ export async function runSmokeTest({
     const report = {
         passed: false, exportDir: resolve(exportDir), browserVersion: null,
         launchOptions: options, requiredForwardPlusLimits, platform, viewport, timeoutMs,
-        adapters: [], devices: [], deviceRequests: [], canvases: [], console: [], pageErrors: [],
+        adapters: [], devices: [], deviceRequests: [], canvases: [], textureRequests: [], console: [], pageErrors: [],
         errors: [], shaderErrors: [], deviceLost: false, deviceLosses: [],
         capabilityFailure: false, mobileFallback: false,
         engineStarted: false, engineFinished: false, enginePassed: false, timedOut: false,
@@ -183,6 +195,13 @@ export async function runSmokeTest({
                     report.canvases.push(JSON.parse(text.slice('[WebGPU canvas] '.length)));
                 } catch (error) {
                     failure('Invalid canvas diagnostic: ' + error.message);
+                }
+            }
+            if (text.startsWith('[WebGPU texture request] ')) {
+                try {
+                    report.textureRequests.push(JSON.parse(text.slice('[WebGPU texture request] '.length)));
+                } catch (error) {
+                    failure('Invalid texture-request diagnostic: ' + error.message);
                 }
             }
             if (text.startsWith('[WebGPU capability failure]')) report.capabilityFailure = true;

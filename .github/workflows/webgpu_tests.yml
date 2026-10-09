@@ -247,7 +247,7 @@ jobs:
     permissions:
       actions: read
       contents: read
-    timeout-minutes: 15
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -429,7 +429,7 @@ jobs:
                   record["ps_error"] = "ps exceeded five seconds"
               print(json.dumps(record), flush=True)
 
-          deadline = time.monotonic() + 660
+          deadline = time.monotonic() + 1860
           try:
               while not stopped.is_set() and time.monotonic() < deadline:
                   sample("running")
