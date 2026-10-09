@@ -21,6 +21,7 @@ def main():
     parser.add_argument("--bake", action="store_true")
     parser.add_argument("--tint-cli", type=Path)
     parser.add_argument("--timeout", type=int, default=600)
+    parser.add_argument("--canvas-resize-policy", type=int, choices=(0, 1, 2), default=1)
     args = parser.parse_args()
     source = args.project.resolve()
     output = args.output.resolve()
@@ -63,9 +64,9 @@ variant/extensions_support=false
 vram_texture_compression/for_desktop=true
 vram_texture_compression/for_mobile=false
 html/export_icon=false
-html/canvas_resize_policy=1
 progressive_web_app/enabled=false
 """
+    preset += "html/canvas_resize_policy=" + str(args.canvas_resize_policy) + "\n"
     preset += "custom_template/release=" + json.dumps(str(args.template)) + "\n"
     preset += "variant/thread_support=" + str(args.threads).lower() + "\n"
     preset += "shader_baker/enabled=" + str(args.bake).lower() + "\n"
@@ -80,6 +81,7 @@ progressive_web_app/enabled=false
         "template": str(args.template),
         "threads": args.threads,
         "bake": args.bake,
+        "canvas_resize_policy": args.canvas_resize_policy,
         "source": str(source),
         "runs": [],
     }

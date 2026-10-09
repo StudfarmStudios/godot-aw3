@@ -52,6 +52,14 @@ function startServer(dir) {
 // Playwright serializes this function into the page, so it has no module scope.
 // Intercept only the engine's own requests; do not create a second GPU device.
 function monitorWebGPU(requiredLimits) {
+    if (typeof GPUCanvasContext !== 'undefined') {
+        const configure = GPUCanvasContext.prototype.configure;
+        GPUCanvasContext.prototype.configure = function (...args) {
+            const result = configure.apply(this, args);
+            console.log('[WebGPU canvas] ' + JSON.stringify({ width: this.canvas.width, height: this.canvas.height }));
+            return result;
+        };
+    }
     const limitsOf = (object) => {
         const limits = {};
         for (const key in object.limits) {
@@ -112,17 +120,19 @@ function monitorWebGPU(requiredLimits) {
 export async function runSmokeTest({
     exportDir = join(PROJECT, 'export'),
     reportPath = process.env.SMOKE_REPORT || 'smoke-result.json',
-    timeoutMs = 120000,
+    platform = process.platform,
+    viewport = platform === 'linux' ? { width: 320, height: 180 } : { width: 1280, height: 720 },
+    timeoutMs = platform === 'linux' ? 300000 : 120000,
     pollIntervalMs = 1000,
     chromium = null,
     serve = startServer,
     logger = console,
-    options = launchOptions(),
+    options = launchOptions(platform),
 } = {}) {
     const report = {
         passed: false, exportDir: resolve(exportDir), browserVersion: null,
-        launchOptions: options, requiredForwardPlusLimits,
-        adapters: [], devices: [], deviceRequests: [], console: [], pageErrors: [],
+        launchOptions: options, requiredForwardPlusLimits, platform, viewport, timeoutMs,
+        adapters: [], devices: [], deviceRequests: [], canvases: [], console: [], pageErrors: [],
         errors: [], shaderErrors: [], deviceLost: false, deviceLosses: [],
         capabilityFailure: false, mobileFallback: false,
         engineStarted: false, engineFinished: false, enginePassed: false, timedOut: false,
@@ -144,7 +154,8 @@ export async function runSmokeTest({
         browser = await launcher.launch(options);
         report.browserVersion = browser.version();
         logger.log('Browser version: ' + report.browserVersion);
-        const page = await browser.newPage();
+        logger.log('Smoke workload: ' + JSON.stringify({ platform, viewport, timeoutMs }));
+        const page = await browser.newPage({ viewport });
         page.on('console', (msg) => {
             const text = msg.text();
             report.console.push({ type: msg.type(), text });
@@ -165,6 +176,13 @@ export async function runSmokeTest({
                 } catch (error) {
                     report.capabilityFailure = true;
                     failure(`Invalid ${label} capabilities: ${error.message}`);
+                }
+            }
+            if (text.startsWith('[WebGPU canvas] ')) {
+                try {
+                    report.canvases.push(JSON.parse(text.slice('[WebGPU canvas] '.length)));
+                } catch (error) {
+                    failure('Invalid canvas diagnostic: ' + error.message);
                 }
             }
             if (text.startsWith('[WebGPU capability failure]')) report.capabilityFailure = true;

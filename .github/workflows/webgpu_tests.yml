@@ -170,6 +170,7 @@ jobs:
             bin/godot.linuxbsd.editor.x86_64 \
             --template bin/godot.web.template_release.wasm32.nothreads.zip \
             --project webgpu_tests/test_project \
+            --canvas-resize-policy 2 \
             --output /tmp/webgpu-candidate
 
       - name: Upload candidate Tint CLI

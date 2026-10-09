@@ -7,7 +7,7 @@ import { createContext, runInContext } from 'node:vm';
 import { runSmokeTest } from './smoke_test.mjs';
 import { requiredForwardPlusLimits } from './browser_config.mjs';
 
-async function runMock(t, scenario = 'pass') {
+async function runMock(t, scenario = 'pass', overrides = {}) {
     const dir = mkdtempSync(join(tmpdir(), 'godot-webgpu-smoke-'));
     t.after(() => rmSync(dir, { recursive: true, force: true }));
     writeFileSync(join(dir, 'index.html'), '<!doctype html>');
@@ -31,9 +31,22 @@ async function runMock(t, scenario = 'pass') {
         limits: adapterLimits, info: { vendor: 'mock', architecture: 'mock' }, features: new Set(),
         requestDevice: async () => { state.deviceRequests++; return device; },
     };
+    const canvasDescriptor = { device, format: 'rgba8unorm', alphaMode: 'opaque' };
+    class GPUCanvasContext {
+        constructor() {
+            this.canvas = { width: 813, height: 457 };
+        }
+
+        configure(descriptor) {
+            state.configureReceiver = this;
+            state.configureDescriptor = descriptor;
+            return 'original-configure-result';
+        }
+    }
     const context = createContext({
         navigator: { gpu: { requestAdapter: async () => { state.adapterRequests++; return adapter; } } },
         console: { log: (text) => emit('log', text), error: (text) => emit('error', text) },
+        GPUCanvasContext, canvasDescriptor,
     });
     let init;
     let initArgument;
@@ -49,6 +62,7 @@ async function runMock(t, scenario = 'pass') {
                 if (scenario !== 'missing-device') {
                     await runInContext('(async () => { const a = await navigator.gpu.requestAdapter(); '
                         + 'return a.requestDevice({requiredLimits}); })()', context);
+                    state.configureResult = runInContext('new GPUCanvasContext().configure(canvasDescriptor)', context);
                 }
             } catch (error) {
                 events.get('pageerror')(error);
@@ -82,7 +96,8 @@ async function runMock(t, scenario = 'pass') {
         chromium: { launch: async () => {
             if (scenario === 'launch-error') throw new Error('Launch failed');
             return {
-                version: () => 'Mock Chromium 156', newPage: async () => page,
+                version: () => 'Mock Chromium 156',
+                newPage: async (options) => { state.pageOptions = options; return page; },
                 close: async () => { state.browserClosed = true; },
             };
         } },
@@ -92,10 +107,18 @@ async function runMock(t, scenario = 'pass') {
         }),
         options: { headless: false, args: ['--mock-backend'] },
         logger: { log: (message) => state.output.push(message) },
+        ...overrides,
     });
     assert.deepEqual(JSON.parse(readFileSync(reportPath, 'utf8')), report, 'complete artifact matches returned result');
     assert.equal(state.serverClosed, true, 'server always closes');
     assert.equal(state.browserClosed, scenario !== 'launch-error', 'every launched browser closes');
+    if (state.configureDescriptor) {
+        assert.equal(state.configureDescriptor, canvasDescriptor, 'canvas descriptor is passed through unchanged');
+        assert.equal(state.configureDescriptor.device, device, 'canvas device is unchanged');
+        assert.equal(state.configureDescriptor.format, 'rgba8unorm', 'canvas format is unchanged');
+        assert.ok(state.configureReceiver instanceof GPUCanvasContext, 'original receiver is preserved');
+        assert.equal(state.configureResult, 'original-configure-result', 'configure result is preserved');
+    }
     return { report, state };
 }
 
@@ -108,7 +131,30 @@ test('actual adapter/device capabilities plus engine completion pass', async (t)
     assert.equal(report.devices.length, 1);
     assert.equal(state.adapterRequests, 1, 'monitor creates no extra adapter');
     assert.equal(state.deviceRequests, 1, 'monitor creates no extra device');
+    assert.deepEqual(report.canvases, [{ width: 813, height: 457 }], 'diagnostic records actual canvas dimensions');
+    assert.ok(state.output.some((line) => line === '[log] [WebGPU canvas] {"width":813,"height":457}'));
 });
+
+for (const platform of ['linux', 'darwin', 'win32']) {
+    test(`${platform} selects the intended default viewport and timeout`, async (t) => {
+        const { report, state } = await runMock(t, 'pass', { platform, timeoutMs: undefined });
+        const viewport = platform === 'linux' ? { width: 320, height: 180 } : { width: 1280, height: 720 };
+        assert.equal(report.passed, true);
+        assert.equal(report.platform, platform);
+        assert.deepEqual(report.viewport, viewport);
+        assert.deepEqual(state.pageOptions, { viewport });
+        assert.equal(report.timeoutMs, platform === 'linux' ? 300000 : 120000);
+    });
+
+    test(`${platform} accepts explicit viewport and timeout overrides`, async (t) => {
+        const viewport = { width: 640, height: 360 };
+        const { report, state } = await runMock(t, 'pass', { platform, viewport, timeoutMs: 1234 });
+        assert.equal(report.passed, true);
+        assert.deepEqual(report.viewport, viewport);
+        assert.deepEqual(state.pageOptions, { viewport });
+        assert.equal(report.timeoutMs, 1234);
+    });
+}
 
 for (const scenario of ['low-adapter', 'low-device', 'missing-limit']) {
     test(`${scenario} fails immediately instead of waiting for scene timeout`, async (t) => {

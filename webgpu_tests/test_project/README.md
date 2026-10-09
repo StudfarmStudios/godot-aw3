@@ -125,6 +125,17 @@ even though the underlying implementation supports the needed bindings. See the
 [pinned Chromium switch](https://github.com/chromium/chromium/blob/156.0.8078.4/gpu/command_buffer/service/webgpu_decoder_impl.cc#L1143),
 [Dawn limit tiers](https://github.com/google/dawn/blob/0a2c7df818e285d6db0f085135139cda04cee8bb/src/dawn/native/Limits.cpp#L73)
 and [required-limit validation](https://github.com/google/dawn/blob/0a2c7df818e285d6db0f085135139cda04cee8bb/src/dawn/native/Adapter.cpp#L293).
+The Linux smoke uses a 320 × 180 browser viewport and a five-minute bound. The
+original 1280 × 720 cold software run reached Forward+ and its first FSR2 frame
+but exceeded two minutes without shader errors or device loss. The smaller
+viewport reduces raster work while preserving the ten-frame scene, all enabled
+effects and the FSR2-to-TAA transition; canvas dimensions are logged to verify the
+actual rendering size. The broad-scene export explicitly uses adaptive canvas
+policy 2; the shared export helper defaults to project-sized policy 1 for the
+fixed-pixel targeted fixtures. This is a correctness smoke test, not a performance or
+visual-quality comparison. Other platforms keep their existing viewport/time
+defaults. A timeout remains a failure.
+
 This configuration is test infrastructure, not a browser flag required of users,
 and does not establish Firefox/Windows/D3D12 or other hardware-driver coverage.
 
