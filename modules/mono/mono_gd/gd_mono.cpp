@@ -640,21 +640,20 @@ godot_plugins_initialize_fn initialize_monovm_and_godot_plugins(bool &r_runtime_
 	mono_install_assembly_preload_hook(&load_assembly_from_pck, nullptr);
 
 	// Size the collector before it starts. Collection is stop-the-world on wasm,
-	// so what matters is how long each pause is, not how many there are. A
-	// young-generation collection costs what survives it, and what survives is
-	// whatever was allocated since the last one and is still alive: a 32 MB nursery
-	// held about three minutes of AW3 gameplay and stopped the game for 60-100 ms
-	// at each collection. Smaller is not simply better: objects pinned in the
-	// nursery by the conservative scan split it into fragments, and at 4 MB the
-	// usable part shrank over a session until young collections ran several times
-	// a second. 8 MB held steady for 14 minutes at a collection every 30-60 s,
-	// mostly inside a frame's slack. A small nursery promotes more (~2 MB a minute),
-	// so the major allowance is raised from 4 to 6 nurseries: a major collection
-	// every ~24 minutes of play at a peak heap near the 32 MB nursery's. Measured
-	// in AW3's Practice benchmark, 2026-10-09. SGen reads this from the
+	// so each pause is a long frame. A 32 MB nursery used to cost 60-100 ms per
+	// young collection, most of it GodotSharp's disposables tracker (a large-object
+	// bucket array card-scanned every time, a finalizable WeakReference per
+	// wrapper). With the tracker reworked, a young collection costs a few
+	// milliseconds and barely grows with the nursery, so fewer is better: in AW3's
+	// Practice benchmark 16 MB collected four times in ten minutes, against 9-15
+	// times at 8 MB and 42 at 4 MB, at the same 21-36 ms frame each. The part of
+	// the nursery a collection leaves usable also shrinks through a session (about
+	// 0.4 MB a minute at any size, cause unknown); at 4 MB that ends in collections
+	// several a second, at 16 MB it leaves the most room. The major allowance stays
+	// at SGen's ratio of 4 nurseries. Measured 2026-10-10. SGen reads this from the
 	// environment, not from runtimeconfig.json.
 	if (OS::get_singleton()->get_environment("MONO_GC_PARAMS").is_empty()) {
-		OS::get_singleton()->set_environment("MONO_GC_PARAMS", "nursery-size=8m,default-allowance-ratio=6");
+		OS::get_singleton()->set_environment("MONO_GC_PARAMS", "nursery-size=16m,default-allowance-ratio=4");
 	}
 
 	mono_wasm_load_runtime(1);
