@@ -43,6 +43,9 @@ test('prototype-backed GPUSupportedLimits getters are accepted', () => {
 test('Linux explicitly selects SwiftShader and disables only tier rounding', () => {
     const options = launchOptions('linux');
     assert.equal(options.headless, false);
+    assert.ok(options.args.includes('--use-gl=angle'));
+    assert.ok(options.args.includes('--use-angle=swiftshader'));
+    assert.ok(!options.args.includes('--use-angle=vulkan'));
     assert.ok(options.args.includes('--use-vulkan=swiftshader'));
     assert.ok(options.args.includes('--use-webgpu-adapter=swiftshader'));
     assert.deepEqual(options.args.filter((argument) => argument.startsWith('--disable-dawn-features=')), [

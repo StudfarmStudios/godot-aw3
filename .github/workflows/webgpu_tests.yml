@@ -27,7 +27,7 @@ env:
     tests=no
     debug_symbols=no
   EM_VERSION: 4.0.20
-  PLAYWRIGHT_VERSION: 1.59.1
+  PLAYWRIGHT_VERSION: 1.64.0
 
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════════

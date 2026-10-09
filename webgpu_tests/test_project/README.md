@@ -98,14 +98,17 @@ godot --headless --path . --export-release "WebGPU" export/index.html
 
 ### Run in Chrome
 ```bash
-npm install --no-save playwright@1.59.1
+npm install --no-save playwright@1.64.0
 npx playwright install chromium --with-deps
 # Linux CI uses a headed browser on a virtual display.
 xvfb-run -a node preflight.mjs
 xvfb-run -a node smoke_test.mjs ./export/
 ```
 
-Linux CI explicitly selects SwiftShader for software validation. Both scripts
+Linux CI pins Playwright 1.64.0 / Chromium 156.0.8078.4 and explicitly selects
+SwiftShader for software validation. ANGLE uses the documented SwANGLE pair
+`--use-gl=angle --use-angle=swiftshader`; Dawn separately selects SwiftShader.
+This avoids asking the software Vulkan device for X11 surface extensions. Both scripts
 share the same browser flags and require at least 48 sampled textures, eight
 storage textures and eight storage buffers per shader stage. The preflight
 requests these limits and exercises all 64 bindings in one compute dispatch,

@@ -22,8 +22,12 @@ export function launchOptions(platform = process.platform) {
             '--enable-unsafe-webgpu',
             '--enable-features=Vulkan,UseSkiaRenderer',
             '--disable-gpu-sandbox',
-            '--use-angle=vulkan',
             ...(platform === 'linux' ? [
+                // SwANGLE presents through its software path without requiring
+                // VK_KHR_surface / VK_KHR_xcb_surface from SwiftShader.
+                // https://chromium.googlesource.com/chromium/src/+/main/docs/gpu/swiftshader.md
+                '--use-gl=angle',
+                '--use-angle=swiftshader',
                 '--use-vulkan=swiftshader',
                 '--use-webgpu-adapter=swiftshader',
                 '--disable-vulkan-surface',
@@ -35,7 +39,7 @@ export function launchOptions(platform = process.platform) {
                 // Dawn still validates required limits in Adapter.cpp:293.
                 // https://github.com/google/dawn/blob/0a2c7df818e285d6db0f085135139cda04cee8bb/src/dawn/native/Adapter.cpp#L293
                 '--disable-dawn-features=tiered_adapter_limits',
-            ] : []),
+            ] : ['--use-angle=vulkan']),
         ],
     };
 }
