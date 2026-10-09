@@ -134,6 +134,35 @@ namespace Godot.Bridge
             }
         }
 
+        // A script type's constructor for each argument count it has been created with.
+        // Looking it up allocated an array of constructors, a LINQ iterator, a closure and
+        // a parameter array on every instance — every bullet, fragment and explosion with a
+        // C# script. Keyed weakly by the type, so a reloaded assembly's types still unload.
+        private sealed class ScriptConstructors
+        {
+            public readonly Dictionary<int, (ConstructorInfo? Ctor, ParameterInfo[] Parameters)> ByArgCount = new();
+        }
+
+        private static readonly ConditionalWeakTable<Type, ScriptConstructors> _scriptConstructors = new();
+
+        private static (ConstructorInfo? Ctor, ParameterInfo[] Parameters) GetScriptConstructor(Type scriptType, int argCount)
+        {
+            var constructors = _scriptConstructors.GetValue(scriptType, static _ => new ScriptConstructors());
+            lock (constructors)
+            {
+                if (!constructors.ByArgCount.TryGetValue(argCount, out var found))
+                {
+                    var ctor = scriptType
+                        .GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+                        .Where(c => c.GetParameters().Length == argCount)
+                        .FirstOrDefault();
+                    found = (ctor, ctor?.GetParameters() ?? System.Array.Empty<ParameterInfo>());
+                    constructors.ByArgCount[argCount] = found;
+                }
+                return found;
+            }
+        }
+
         [UnmanagedCallersOnly]
         internal static unsafe godot_bool CreateManagedForGodotObjectScriptInstance(IntPtr scriptPtr,
             IntPtr godotObject,
@@ -148,10 +177,7 @@ namespace Godot.Bridge
 
                 Debug.Assert(!scriptType.IsAbstract, $"Cannot create script instance. The class '{scriptType.FullName}' is abstract.");
 
-                var ctor = scriptType
-                    .GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
-                    .Where(c => c.GetParameters().Length == argCount)
-                    .FirstOrDefault();
+                var (ctor, parameters) = GetScriptConstructor(scriptType, argCount);
 
                 if (ctor == null)
                 {
@@ -169,10 +195,9 @@ namespace Godot.Bridge
 
                 var obj = (GodotObject)RuntimeHelpers.GetUninitializedObject(scriptType);
 
-                var parameters = ctor.GetParameters();
                 int paramCount = parameters.Length;
 
-                var invokeParams = new object?[paramCount];
+                var invokeParams = paramCount == 0 ? System.Array.Empty<object?>() : new object?[paramCount];
 
                 for (int i = 0; i < paramCount; i++)
                 {
