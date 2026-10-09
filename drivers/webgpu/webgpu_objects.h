@@ -483,6 +483,22 @@ struct WGCommandBuffer {
 	BoundGroupState last_bound_state[MAX_BIND_GROUPS] = {};
 	WGUniformSet *compute_uniform_sets[MAX_BIND_GROUPS] = {};
 
+	bool is_bind_group_bound(uint32_t p_index, WGPUBindGroup p_group, uint32_t p_dynamic_offset_count, const uint32_t *p_dynamic_offsets) const {
+		if (p_index >= MAX_BIND_GROUPS || p_dynamic_offset_count > MAX_BIND_GROUP_DYN_OFFSETS || !p_group || bound_bind_groups[p_index] != p_group) {
+			return false;
+		}
+		const BoundGroupState &state = last_bound_state[p_index];
+		if (state.dynamic_offset_count != p_dynamic_offset_count) {
+			return false;
+		}
+		for (uint32_t i = 0; i < p_dynamic_offset_count; i++) {
+			if (state.dynamic_offsets[i] != p_dynamic_offsets[i]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	void invalidate_bind_groups() {
 		for (uint32_t i = 0; i < MAX_BIND_GROUPS; i++) {
 			bound_bind_groups[i] = nullptr;

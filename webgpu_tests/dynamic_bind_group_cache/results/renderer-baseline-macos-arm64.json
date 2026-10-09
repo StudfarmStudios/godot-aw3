@@ -1,0 +1,28 @@
+{
+  "passed": true,
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "engine_sha256": "8ef30015ed8eca8b87c9285a680a7d814982ae3f795593aa2ee43968046556d4",
+  "runs": [
+    {
+      "mode": "native",
+      "passed": true,
+      "checks": 192,
+      "failed_checks": 0,
+      "returncode": 0,
+      "timed_out": false,
+      "errors": [],
+      "command": [
+        "/private/tmp/aw3-webgpu-key-casts-editor",
+        "--path",
+        "/private/tmp/aw3-webgpu-fork-ports/webgpu_tests/dynamic_bind_group_cache",
+        "--rendering-method",
+        "forward_plus",
+        "--rendering-driver",
+        "webgpu",
+        "--render-thread",
+        "separate",
+        "--disable-vsync"
+      ]
+    }
+  ]
+}
