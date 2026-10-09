@@ -9573,6 +9573,7 @@ void RenderingDeviceDriverWebGPU::command_next_render_subpass(CommandBufferID p_
 	cmd->active_encoder = WGCommandBuffer::RENDER;
 
 	// Reset pipeline state — new render pass requires re-binding everything.
+	cmd->invalidate_bind_groups();
 	cmd->render_state.current_pipeline = nullptr;
 	cmd->render_state.current_index_buffer = nullptr;
 	cmd->render_state.current_index_offset = 0;
@@ -9813,8 +9814,11 @@ void RenderingDeviceDriverWebGPU::command_bind_render_uniform_sets(CommandBuffer
 					cmd->bound_bind_groups[set_idx] = num_dyn > 0 ? nullptr : bg_to_bind;
 				}
 			} else if (num_dyn > 0) {
-				// Non-PC set with material dynamic buffers: must always rebind because
-				// the frame_idx rotates — bypass the redundant-bind cache.
+				// Non-PC material offsets stay constant between updates. Include the
+				// complete tuple so rotating a buffer's frame slice still rebinds.
+				if (cmd->is_bind_group_bound(set_idx, bg_to_bind, num_dyn, set_dyn_offsets)) {
+					continue;
+				}
 				wgpuRenderPassEncoderSetBindGroup(cmd->render_encoder, set_idx, bg_to_bind, num_dyn, set_dyn_offsets);
 				perf.set_bind_group_calls++;
 				// Save full state for mid-pass restart.
@@ -9825,7 +9829,7 @@ void RenderingDeviceDriverWebGPU::command_bind_render_uniform_sets(CommandBuffer
 					for (uint32_t j = 0; j < num_dyn && j < WGCommandBuffer::MAX_BIND_GROUP_DYN_OFFSETS; j++) {
 						bs.dynamic_offsets[j] = set_dyn_offsets[j];
 					}
-					cmd->bound_bind_groups[set_idx] = nullptr;
+					cmd->bound_bind_groups[set_idx] = bg_to_bind;
 				}
 			} else {
 				// Static non-PC set — skip if already bound.

@@ -1,0 +1,112 @@
+{
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "baseline_ref": "20f7c82ba6a502e39a6218729060272c574faf21",
+  "variants": [
+    {
+      "name": "baseline",
+      "driver_sha256": "46ba90ceb4084eef8aba17569a87d14ecb3de00c364f0cce5718bd4c6a1a5128",
+      "objects_sha256": "c21147a6e9696fc0d670066a8c5bf687eb996ead717c5d16d0f3c5fb88fe06db",
+      "checks": [
+        {
+          "case": "transitions",
+          "passed": true,
+          "expected_failure": false,
+          "returncode": 0,
+          "stdout": "DYNAMIC_BIND_GROUP_STATE_PASS transitions checks=44 calls=40"
+        },
+        {
+          "case": "push_constants",
+          "passed": true,
+          "expected_failure": false,
+          "returncode": 0,
+          "stdout": "DYNAMIC_BIND_GROUP_STATE_PASS push_constants checks=14 calls=6"
+        },
+        {
+          "case": "restart",
+          "passed": true,
+          "expected_failure": false,
+          "returncode": 0,
+          "stdout": "DYNAMIC_BIND_GROUP_STATE_PASS restart checks=5 calls=4"
+        },
+        {
+          "case": "subpass",
+          "passed": true,
+          "expected_failure": true,
+          "returncode": -6,
+          "stdout": ""
+        }
+      ]
+    },
+    {
+      "name": "current",
+      "driver_sha256": "754b0cdee5c74afa80c5969f7471a9c4fd6c23e1376a03931d40788cbbb7dab9",
+      "objects_sha256": "50c6e56c46c0b71530c01bc7ab26481e3842b3e72fda557d47d5132ef01b04e3",
+      "checks": [
+        {
+          "case": "transitions",
+          "passed": true,
+          "expected_failure": false,
+          "returncode": 0,
+          "stdout": "DYNAMIC_BIND_GROUP_STATE_PASS transitions checks=44 calls=20"
+        },
+        {
+          "case": "push_constants",
+          "passed": true,
+          "expected_failure": false,
+          "returncode": 0,
+          "stdout": "DYNAMIC_BIND_GROUP_STATE_PASS push_constants checks=14 calls=6"
+        },
+        {
+          "case": "restart",
+          "passed": true,
+          "expected_failure": false,
+          "returncode": 0,
+          "stdout": "DYNAMIC_BIND_GROUP_STATE_PASS restart checks=5 calls=4"
+        },
+        {
+          "case": "subpass",
+          "passed": true,
+          "expected_failure": false,
+          "returncode": 0,
+          "stdout": "DYNAMIC_BIND_GROUP_STATE_PASS subpass checks=2 calls=2"
+        }
+      ]
+    },
+    {
+      "name": "offset_blind_control",
+      "driver_sha256": "754b0cdee5c74afa80c5969f7471a9c4fd6c23e1376a03931d40788cbbb7dab9",
+      "objects_sha256": "50c6e56c46c0b71530c01bc7ab26481e3842b3e72fda557d47d5132ef01b04e3",
+      "checks": [
+        {
+          "case": "transitions",
+          "passed": true,
+          "expected_failure": true,
+          "returncode": -6,
+          "stdout": ""
+        },
+        {
+          "case": "push_constants",
+          "passed": true,
+          "expected_failure": false,
+          "returncode": 0,
+          "stdout": "DYNAMIC_BIND_GROUP_STATE_PASS push_constants checks=14 calls=6"
+        },
+        {
+          "case": "restart",
+          "passed": true,
+          "expected_failure": false,
+          "returncode": 0,
+          "stdout": "DYNAMIC_BIND_GROUP_STATE_PASS restart checks=5 calls=4"
+        },
+        {
+          "case": "subpass",
+          "passed": true,
+          "expected_failure": false,
+          "returncode": 0,
+          "stdout": "DYNAMIC_BIND_GROUP_STATE_PASS subpass checks=2 calls=2"
+        }
+      ]
+    }
+  ],
+  "passed": true
+}

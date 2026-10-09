@@ -1,0 +1,163 @@
+{
+  "passed": true,
+  "hashes": {
+    "html": {
+      "path": "/private/tmp/aw3-dynamic-bind-group-browser-export-settled/export/index.html",
+      "bytes": 5787,
+      "sha256": "38ca0c42c05c9ab43b8e1654761a7c2ceff19c7f38fd24839455f31c8e5b56bc"
+    },
+    "pck": {
+      "path": "/private/tmp/aw3-dynamic-bind-group-browser-export-settled/export/index.pck",
+      "bytes": 7464,
+      "sha256": "83bf371b3509e7a159948fa334e2225ae85ca05508e09b811d3220a044e50796"
+    },
+    "js": {
+      "path": "/private/tmp/aw3-dynamic-bind-group-browser-export-settled/export/index.js",
+      "bytes": 436448,
+      "sha256": "d0d25335563b2dd56bb7bcecb497bbce70fa73f7d04d4626e1cb50c47142e125"
+    },
+    "wasm": {
+      "path": "/private/tmp/aw3-dynamic-bind-group-browser-export-settled/export/index.wasm",
+      "bytes": 134705749,
+      "sha256": "c74dbd490f7345696f6052b4eb4e171263cec08321f1641103213b74519271d6"
+    }
+  },
+  "records": [
+    {
+      "browser": "chrome",
+      "fallback": false,
+      "passed": true,
+      "errors": [],
+      "phases": [
+        {
+          "height": 64,
+          "phase": 0,
+          "width": 96,
+          "canvas": {
+            "width": 96,
+            "height": 64
+          }
+        },
+        {
+          "height": 64,
+          "phase": 1,
+          "width": 96,
+          "canvas": {
+            "width": 96,
+            "height": 64
+          }
+        },
+        {
+          "height": 64,
+          "phase": 2,
+          "width": 96,
+          "canvas": {
+            "width": 96,
+            "height": 64
+          }
+        },
+        {
+          "height": 64,
+          "phase": 3,
+          "width": 96,
+          "canvas": {
+            "width": 96,
+            "height": 64
+          }
+        },
+        {
+          "height": 64,
+          "phase": 4,
+          "width": 96,
+          "canvas": {
+            "width": 96,
+            "height": 64
+          }
+        },
+        {
+          "height": 64,
+          "phase": 5,
+          "width": 96,
+          "canvas": {
+            "width": 96,
+            "height": 64
+          }
+        },
+        {
+          "height": 64,
+          "phase": 6,
+          "width": 96,
+          "canvas": {
+            "width": 96,
+            "height": 64
+          }
+        },
+        {
+          "height": 64,
+          "phase": 7,
+          "width": 96,
+          "canvas": {
+            "width": 96,
+            "height": 64
+          }
+        },
+        {
+          "height": 64,
+          "phase": 8,
+          "width": 96,
+          "canvas": {
+            "width": 96,
+            "height": 64
+          }
+        },
+        {
+          "height": 64,
+          "phase": 9,
+          "width": 96,
+          "canvas": {
+            "width": 96,
+            "height": 64
+          }
+        },
+        {
+          "height": 64,
+          "phase": 10,
+          "width": 96,
+          "canvas": {
+            "width": 96,
+            "height": 64
+          }
+        },
+        {
+          "height": 64,
+          "phase": 11,
+          "width": 96,
+          "canvas": {
+            "width": 96,
+            "height": 64
+          }
+        }
+      ],
+      "workers": [
+        "http://127.0.0.1:53171/index.js",
+        "http://127.0.0.1:53171/index.js",
+        "http://127.0.0.1:53171/index.js",
+        "http://127.0.0.1:53171/index.js",
+        "http://127.0.0.1:53171/index.js",
+        "http://127.0.0.1:53171/index.js",
+        "http://127.0.0.1:53171/index.js",
+        "http://127.0.0.1:53171/index.js"
+      ],
+      "version": "Chrome/155.0.8059.39",
+      "capabilities": {
+        "crossOriginIsolated": true,
+        "webgpu": true,
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
+      },
+      "exitCode": 0,
+      "completed_checks": 192,
+      "failed_checks": []
+    }
+  ],
+  "scope": "Existing release template baseline. Candidate optimized runtime not yet tested."
+}
