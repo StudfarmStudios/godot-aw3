@@ -639,15 +639,20 @@ MonoMethod *_initialize_method;
 godot_plugins_initialize_fn initialize_monovm_and_godot_plugins(bool &r_runtime_initialized) {
 	mono_install_assembly_preload_hook(&load_assembly_from_pck, nullptr);
 
-	// Size the nursery before the collector starts. Collection is stop-the-world
-	// on wasm, so it is felt as stutter rather than as cost, and gameplay
-	// allocates a steady trickle however careful the hot paths are. The default
-	// nursery turns that trickle into a collection every few seconds; a larger one
-	// trades memory for proportionally fewer pauses, since a young-generation
-	// collection costs what survives it, not what the nursery holds.
-	// SGen reads this from the environment, not from runtimeconfig.json.
+	// Size the collector before it starts. Collection is stop-the-world on wasm,
+	// so what matters is how long each pause is, not how many there are. A
+	// young-generation collection costs what survives it, and what survives is
+	// whatever was allocated since the last one and is still alive: a 32 MB nursery
+	// held about three minutes of AW3 gameplay and stopped the game for 60-100 ms
+	// at each collection. At 4 MB they come every ~25 s and mostly fit inside a
+	// frame's slack. A small nursery promotes more, which brings the major
+	// collection (about 70 ms) sooner: the default allowance (4x the nursery, so
+	// every ~6 minutes) is raised to the 10x maximum, which puts it at ~15 minutes
+	// of play for the same peak heap the 32 MB nursery had. Measured in AW3's
+	// Practice benchmark, 2026-10-09. SGen reads this from the environment, not
+	// from runtimeconfig.json.
 	if (OS::get_singleton()->get_environment("MONO_GC_PARAMS").is_empty()) {
-		OS::get_singleton()->set_environment("MONO_GC_PARAMS", "nursery-size=32m");
+		OS::get_singleton()->set_environment("MONO_GC_PARAMS", "nursery-size=4m,default-allowance-ratio=10");
 	}
 
 	mono_wasm_load_runtime(1);

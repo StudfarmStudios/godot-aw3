@@ -609,7 +609,12 @@ void GPUParticles3D::_notification(int p_what) {
 
 		case NOTIFICATION_VISIBILITY_CHANGED: {
 			// Make sure particles are updated before rendering occurs if they were active before.
-			if (is_visible_in_tree() && !RS::get_singleton()->particles_is_inactive(particles)) {
+			// The request alone is enough: the update loop already skips a system that is
+			// inactive and not emitting. Asking particles_is_inactive() first was a
+			// synchronous round trip to the render thread on every reveal, which with a
+			// separate render thread waits for its queue to drain (several milliseconds
+			// per node shown on the web build).
+			if (is_visible_in_tree()) {
 				RS::get_singleton()->particles_request_process(particles);
 			}
 		} break;

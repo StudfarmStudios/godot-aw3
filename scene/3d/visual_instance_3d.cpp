@@ -404,7 +404,7 @@ void GeometryInstance3D::set_instance_shader_parameter(const StringName &p_name,
 	if (p_value.get_type() == Variant::NIL) {
 		Variant def_value = RS::get_singleton()->instance_geometry_get_shader_parameter_default_value(get_instance(), p_name);
 		RS::get_singleton()->instance_geometry_set_shader_parameter(get_instance(), p_name, def_value);
-		instance_shader_parameters.erase(p_value);
+		instance_shader_parameters.erase(p_name);
 	} else {
 		instance_shader_parameters[p_name] = p_value;
 		if (p_value.get_type() == Variant::OBJECT) {
@@ -417,6 +417,14 @@ void GeometryInstance3D::set_instance_shader_parameter(const StringName &p_name,
 }
 
 Variant GeometryInstance3D::get_instance_shader_parameter(const StringName &p_name) const {
+	// A value this node set is the value the instance holds; answer it locally. The
+	// rendering server's getter is a synchronous round trip to the render thread, and
+	// an AnimationPlayer capture reads every captured parameter this way when a clip
+	// starts. Only parameters never set here still ask for the shader's default.
+	const Variant *value = instance_shader_parameters.getptr(p_name);
+	if (value) {
+		return *value;
+	}
 	return RS::get_singleton()->instance_geometry_get_shader_parameter(get_instance(), p_name);
 }
 
