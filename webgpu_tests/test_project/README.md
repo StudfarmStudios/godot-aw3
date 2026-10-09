@@ -108,7 +108,9 @@ xvfb-run -a node smoke_test.mjs ./export/
 Linux CI pins Playwright 1.64.0 / Chromium 156.0.8078.4 and explicitly selects
 SwiftShader for software validation. ANGLE uses the documented SwANGLE pair
 `--use-gl=angle --use-angle=swiftshader`; Dawn separately selects SwiftShader.
-This avoids asking the software Vulkan device for X11 surface extensions. Both scripts
+This selects the bundled SwiftShader ICD for ANGLE as well as for Dawn; generic
+ANGLE Vulkan can otherwise select an unavailable system driver. ANGLE still
+requires the surface extensions supplied by bundled SwiftShader. Both scripts
 share the same browser flags and require at least 48 sampled textures, eight
 storage textures and eight storage buffers per shader stage. The preflight
 requests these limits and exercises all 64 bindings in one compute dispatch,

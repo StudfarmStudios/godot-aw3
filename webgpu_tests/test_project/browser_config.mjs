@@ -23,8 +23,8 @@ export function launchOptions(platform = process.platform) {
             '--enable-features=Vulkan,UseSkiaRenderer',
             '--disable-gpu-sandbox',
             ...(platform === 'linux' ? [
-                // SwANGLE presents through its software path without requiring
-                // VK_KHR_surface / VK_KHR_xcb_surface from SwiftShader.
+                // Select the bundled SwiftShader ICD for ANGLE as well as Dawn;
+                // generic Vulkan can select an unavailable system driver.
                 // https://chromium.googlesource.com/chromium/src/+/main/docs/gpu/swiftshader.md
                 '--use-gl=angle',
                 '--use-angle=swiftshader',
