@@ -28,7 +28,7 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-/* global _emscripten_is_main_runtime_thread, _godot_audio_sample_start_main, _godot_audio_sample_stop_main, _godot_audio_sample_update_pitch_scale_main, _godot_audio_sample_set_volumes_linear_main */
+/* global _emscripten_is_main_runtime_thread, _godot_audio_sample_start_main, _godot_audio_sample_stop_main, _godot_audio_sample_update_pitch_scale_main, _godot_audio_sample_set_volumes_linear_main, _godot_audio_sample_set_pause_main */
 
 /**
  * @typedef { "disabled" | "forward" | "backward" | "pingpong" } LoopMode
@@ -1934,8 +1934,9 @@ const _GodotAudio = {
 		}
 	},
 
-	// The four sample-control calls below run on the AudioContext, which lives
-	// on the browser main thread. From the application Worker each used to be a
+	// The five sample-control calls below that return nothing (start, stop,
+	// set_pause, pitch and volumes) run on the AudioContext, which lives on the
+	// browser main thread. From the application Worker each used to be a
 	// synchronous proxy, and the calling (game) thread slept for the round trip
 	// once per positional sound per frame — 15% of the frame in a bot match.
 	// They return nothing, so they are fire-and-forget now: the Worker-side
@@ -2009,15 +2010,28 @@ const _GodotAudio = {
 		GodotAudio.stop_sample(playbackObjectId);
 	},
 
-	godot_audio_sample_set_pause__proxy: 'sync',
+	godot_audio_sample_set_pause__deps: ['godot_audio_sample_set_pause_main', '$GodotRuntime', 'emscripten_is_main_runtime_thread'],
 	godot_audio_sample_set_pause__sig: 'vii',
+	godot_audio_sample_set_pause: function (playbackObjectIdStrPtr, pause) {
+		if (_emscripten_is_main_runtime_thread()) {
+			_godot_audio_sample_set_pause_main(playbackObjectIdStrPtr, pause, 0);
+			return;
+		}
+		_godot_audio_sample_set_pause_main(GodotRuntime.allocString(GodotRuntime.parseString(playbackObjectIdStrPtr)), pause, 1);
+	},
+	godot_audio_sample_set_pause_main__proxy: 'async',
+	godot_audio_sample_set_pause_main__sig: 'viii',
 	/**
 	 * Sets the pause state of a sample.
 	 * @param {number} playbackObjectIdStrPtr Playback object id pointer
 	 * @param {number} pause Pause state
+	 * @param {number} owned Whether this call frees the id string
 	 */
-	godot_audio_sample_set_pause: function (playbackObjectIdStrPtr, pause) {
+	godot_audio_sample_set_pause_main: function (playbackObjectIdStrPtr, pause, owned) {
 		const playbackObjectId = GodotRuntime.parseString(playbackObjectIdStrPtr);
+		if (owned) {
+			GodotRuntime.free(playbackObjectIdStrPtr);
+		}
 		GodotAudio.sample_set_pause(playbackObjectId, Boolean(pause));
 	},
 

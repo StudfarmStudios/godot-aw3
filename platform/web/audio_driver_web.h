@@ -34,6 +34,7 @@
 
 #include "core/os/mutex.h"
 #include "core/os/thread.h"
+#include "core/templates/hash_set.h"
 #include "servers/audio/audio_server.h"
 
 class AudioDriverWeb : public AudioDriver {
@@ -88,6 +89,13 @@ public:
 	static void resume();
 
 	// Samples.
+	// Streams this driver has registered with the page. Asking the page whether a stream
+	// is registered is a synchronous round trip to its thread, and every sound's play
+	// asked it; the answer only ever changes through register_sample() and
+	// unregister_sample() below, so it is kept here instead.
+	HashSet<ObjectID> registered_sample_streams;
+	mutable BinaryMutex registered_sample_streams_mutex;
+
 	virtual bool is_stream_registered_as_sample(const Ref<AudioStream> &p_stream) const override;
 	virtual void register_sample(const Ref<AudioSample> &p_sample) override;
 	virtual void unregister_sample(const Ref<AudioSample> &p_sample) override;

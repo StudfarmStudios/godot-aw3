@@ -222,7 +222,8 @@ Error AudioDriverWeb::input_stop() {
 
 bool AudioDriverWeb::is_stream_registered_as_sample(const Ref<AudioStream> &p_stream) const {
 	ERR_FAIL_COND_V_MSG(p_stream.is_null(), false, "Parameter p_stream is null.");
-	return godot_audio_sample_stream_is_registered(itos(p_stream->get_instance_id()).utf8().get_data()) != 0;
+	MutexLock lock(registered_sample_streams_mutex);
+	return registered_sample_streams.has(p_stream->get_instance_id());
 }
 
 void AudioDriverWeb::register_sample(const Ref<AudioSample> &p_sample) {
@@ -275,12 +276,19 @@ void AudioDriverWeb::register_sample(const Ref<AudioSample> &p_sample) {
 			loop_mode.utf8().get_data(),
 			p_sample->loop_begin,
 			p_sample->loop_end);
+
+	MutexLock lock(registered_sample_streams_mutex);
+	registered_sample_streams.insert(p_sample->stream->get_instance_id());
 }
 
 void AudioDriverWeb::unregister_sample(const Ref<AudioSample> &p_sample) {
 	ERR_FAIL_COND_MSG(p_sample.is_null(), "Parameter p_sample is null.");
 	ERR_FAIL_COND_MSG(p_sample->stream.is_null(), "Parameter p_sample->stream is null.");
 
+	{
+		MutexLock lock(registered_sample_streams_mutex);
+		registered_sample_streams.erase(p_sample->stream->get_instance_id());
+	}
 	godot_audio_sample_unregister_stream(itos(p_sample->stream->get_instance_id()).utf8().get_data());
 }
 
