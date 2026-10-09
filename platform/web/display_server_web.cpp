@@ -72,7 +72,25 @@ DisplayServerWeb *DisplayServerWeb::get_singleton() {
 }
 
 // Window (canvas)
+#ifdef PROXY_TO_PTHREAD_ENABLED
+// Set by the page when the canvas size may have changed; see check_size_force_redraw().
+// Static, not a member: the page's listeners may outlive the display server.
+alignas(4) static int32_t size_check_flag = 1;
+static uint32_t frames_since_size_check = 0;
+#endif
+
 bool DisplayServerWeb::check_size_force_redraw() {
+#ifdef PROXY_TO_PTHREAD_ENABLED
+	// godot_js_display_size_update() runs on the page's thread, and from here it is
+	// a synchronous round trip that waits whenever that thread is busy. Ask only when
+	// the page has flagged a change, and every half second regardless in case a
+	// change arrived some way the page does not listen for.
+	constexpr uint32_t SIZE_CHECK_BACKSTOP_FRAMES = 30;
+	if (__atomic_exchange_n(&size_check_flag, 0, __ATOMIC_ACQ_REL) == 0 && ++frames_since_size_check < SIZE_CHECK_BACKSTOP_FRAMES) {
+		return false;
+	}
+	frames_since_size_check = 0;
+#endif
 	bool size_changed = godot_js_display_size_update() != 0;
 	if (!size_changed) {
 		return false;
@@ -1256,6 +1274,9 @@ DisplayServerWeb::DisplayServerWeb(const String &p_rendering_driver, DisplayServ
 			DisplayServerEnums::WINDOW_EVENT_FOCUS_IN,
 			DisplayServerEnums::WINDOW_EVENT_FOCUS_OUT);
 	godot_js_display_vk_cb(&DisplayServerWeb::vk_input_text_callback);
+#ifdef PROXY_TO_PTHREAD_ENABLED
+	godot_js_display_size_watch(&size_check_flag);
+#endif
 
 	Input::get_singleton()->set_event_dispatch_function(_dispatch_input_event);
 }

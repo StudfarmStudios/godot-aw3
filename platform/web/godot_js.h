@@ -113,6 +113,7 @@ extern int godot_js_display_canvas_is_focused();
 // Display window
 extern void godot_js_display_desired_size_set(int p_width, int p_height);
 extern int godot_js_display_size_update();
+extern void godot_js_display_size_watch(int32_t *p_flag);
 extern void godot_js_display_window_size_get(int32_t *p_x, int32_t *p_y);
 extern void godot_js_display_screen_size_get(int32_t *p_x, int32_t *p_y);
 extern int godot_js_display_fullscreen_request();

@@ -535,6 +535,43 @@ const GodotDisplay = {
 		return updated;
 	},
 
+	// The page sets *p_flag whenever something that decides the canvas size may have
+	// changed — the window's size, fullscreen, the device pixel ratio — so the engine
+	// can skip godot_js_display_size_update() otherwise. With the engine on a pthread
+	// that call is a synchronous round trip to this thread, and it was made every
+	// frame for a size that almost never changes.
+	godot_js_display_size_watch__proxy: 'sync',
+	godot_js_display_size_watch__sig: 'vi',
+	godot_js_display_size_watch: function (p_flag) {
+		const mark = function () {
+			Atomics.store(HEAP32, p_flag >> 2, 1);
+		};
+		GodotEventListeners.add(window, 'resize', mark, false);
+		GodotEventListeners.add(document, 'fullscreenchange', mark, false);
+		GodotEventListeners.add(document, 'mozfullscreenchange', mark, false);
+		GodotEventListeners.add(document, 'webkitfullscreenchange', mark, false);
+		if (window.visualViewport) {
+			GodotEventListeners.add(window.visualViewport, 'resize', mark, false);
+		}
+		// A change of pixel ratio (a monitor with another scale) is not always a resize.
+		// The query names the current ratio, so it is renewed on each change.
+		const watchRatio = function () {
+			if (!window.matchMedia) {
+				return;
+			}
+			const query = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+			const changed = function () {
+				mark();
+				watchRatio();
+			};
+			if (query.addEventListener) {
+				GodotEventListeners.add(query, 'change', changed, { once: true });
+			}
+		};
+		watchRatio();
+		mark();
+	},
+
 	godot_js_display_screen_size_get__proxy: 'sync',
 	godot_js_display_screen_size_get__sig: 'vii',
 	godot_js_display_screen_size_get: function (width, height) {
