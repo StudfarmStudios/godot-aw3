@@ -27,6 +27,7 @@ env:
     tests=no
     debug_symbols=no
   EM_VERSION: 4.0.20
+  PLAYWRIGHT_VERSION: 1.59.1
 
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════════
@@ -97,6 +98,9 @@ jobs:
         working-directory: webgpu_tests/driver_unit_tests
         run: node run_tests.mjs
 
+      - name: Verify software browser capability and smoke gates
+        run: node --test webgpu_tests/test_project/browser_config.test.mjs webgpu_tests/test_project/smoke_test.test.mjs
+
       - name: Verify audio bridge routing without pthread-only globals
         run: node --test platform/web/js/libs/library_godot_audio.test.mjs
 
@@ -149,15 +153,16 @@ jobs:
           scons platform=web target=template_release $SCONS_FLAGS threads=no dlink_enabled=no webgpu=yes opengl3=no use_closure_compiler=yes \
             cache_path="${{ github.workspace }}/.scons_cache/" redirect_build_objects=no -j$(nproc)
 
+      - name: Build headless Linux export editor
+        run: |
+          scons platform=linuxbsd target=editor dev_mode=yes tests=no debug_symbols=no x11=no wayland=no vulkan=no opengl3=no webgpu=no \
+            cache_path="${{ github.workspace }}/.scons_cache/" redirect_build_objects=no -j$(nproc)
+
       - name: Save Godot build cache
         uses: ./.github/actions/godot-cache-save
         with:
           cache-name: web-webgpu-test
         continue-on-error: true
-
-      - name: Build headless Linux export editor
-        run: |
-          scons platform=linuxbsd target=editor dev_mode=yes tests=no debug_symbols=no x11=no wayland=no vulkan=no opengl3=no webgpu=no -j$(nproc)
 
       - name: Export with the exact candidate template
         run: |
@@ -183,13 +188,49 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Check the software adapter independently of the long candidate build.
+  software-preflight:
+    runs-on: ubuntu-24.04
+    name: SwiftShader Forward+ Capability Preflight
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pinned software browser
+        working-directory: webgpu_tests/test_project
+        run: |
+          npm install --no-save playwright@${{ env.PLAYWRIGHT_VERSION }}
+          npx playwright install chromium --with-deps
+
+      - name: Exercise Forward+ binding limits
+        working-directory: webgpu_tests/test_project
+        env:
+          DEBUG: pw:browser
+        run: |
+          set -o pipefail
+          xvfb-run -a node preflight.mjs 2>&1 | tee preflight.log
+
+      - name: Upload capability diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: software-preflight-diagnostics
+          path: webgpu_tests/test_project/preflight.log
+          retention-days: 7
+
   # ═══════════════════════════════════════════════════════════════════════════════
   # Smoke Test: Candidate runtime on SwiftShader software Vulkan, not hardware validation
   # ═══════════════════════════════════════════════════════════════════════════════
   smoke-test:
     runs-on: ubuntu-24.04
     name: Candidate Chrome Software Smoke Test (SwiftShader + Xvfb)
-    needs: [build-webgpu]
+    needs: [build-webgpu, software-preflight]
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -212,12 +253,27 @@ jobs:
           sudo apt-get install -y libvulkan1 mesa-vulkan-drivers
           cd webgpu_tests/test_project
           npm init -y
-          npm install playwright
+          npm install playwright@${{ env.PLAYWRIGHT_VERSION }}
           npx playwright install chromium --with-deps
 
       - name: Run candidate software WebGPU smoke test
         working-directory: webgpu_tests/test_project
-        run: xvfb-run -a node smoke_test.mjs ./export/
+        env:
+          DEBUG: pw:browser
+          VERBOSE: '1'
+        run: |
+          set -o pipefail
+          xvfb-run -a node smoke_test.mjs ./export/ 2>&1 | tee smoke.log
+
+      - name: Upload complete software smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: software-smoke-diagnostics
+          path: |
+            webgpu_tests/test_project/smoke.log
+            webgpu_tests/test_project/smoke-result.json
+          retention-days: 7
 
   # ═══════════════════════════════════════════════════════════════════════════════
   # Scene Smoketest: 18 demos/benchmarks across Chrome + Firefox
@@ -325,7 +381,7 @@ jobs:
   test-summary:
     runs-on: ubuntu-24.04
     name: Test Summary
-    needs: [build-webgpu, shader-corpus, driver-unit-tests, smoke-test, scene-smoketest, resource-lifecycle, screenshot-comparison]
+    needs: [build-webgpu, shader-corpus, driver-unit-tests, software-preflight, smoke-test, scene-smoketest, resource-lifecycle, screenshot-comparison]
     if: always()
     steps:
       - name: Check results
@@ -337,6 +393,7 @@ jobs:
           echo "  Shader Corpus:        ${{ needs.shader-corpus.result }}"
           echo "  Driver Unit Tests:    ${{ needs.driver-unit-tests.result }}"
           echo "  Candidate Build:      ${{ needs.build-webgpu.result }}"
+          echo "  Software Preflight:   ${{ needs.software-preflight.result }}"
           echo "  Smoke Test:           ${{ needs.smoke-test.result }}"
           echo "  Scene Smoketest:      ${{ needs.scene-smoketest.result }}"
           echo "  Resource Lifecycle:   ${{ needs.resource-lifecycle.result }}"
@@ -355,6 +412,10 @@ jobs:
           fi
           if [ "${{ needs.build-webgpu.result }}" != "success" ]; then
             echo "::error::Candidate WebGPU build, strict shader bake, or export failed"
+            FAILED=1
+          fi
+          if [ "${{ needs.software-preflight.result }}" != "success" ]; then
+            echo "::error::Software browser cannot exercise required Forward+ limits"
             FAILED=1
           fi
           if [ "${{ needs.smoke-test.result }}" != "success" ]; then

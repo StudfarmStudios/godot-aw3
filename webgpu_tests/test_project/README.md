@@ -96,14 +96,42 @@ node ../shader_corpus/validate_spirv_dump.mjs /tmp/spirv_dump/
 godot --headless --path . --export-release "WebGPU" export/index.html
 ```
 
-### Run in headless Chrome
+### Run in Chrome
 ```bash
-# Serve the export and verify no shader errors in console
-node smoke_test.mjs ./export/
+npm install --no-save playwright@1.59.1
+npx playwright install chromium --with-deps
+# Linux CI uses a headed browser on a virtual display.
+xvfb-run -a node preflight.mjs
+xvfb-run -a node smoke_test.mjs ./export/
 ```
+
+Linux CI explicitly selects SwiftShader for software validation. Both scripts
+share the same browser flags and require at least 48 sampled textures, eight
+storage textures and eight storage buffers per shader stage. The preflight
+requests these limits and exercises all 64 bindings in one compute dispatch,
+then checks numerical GPU readback. The smoke test checks the engine's own
+adapter and requested device and rejects Mobile fallback.
+
+Chromium's `--disable-dawn-features=tiered_adapter_limits` removes privacy tier
+rounding for this software runner; native limit normalization, device limit
+validation and GPU validation remain enabled. SwiftShader's dynamic-buffer
+limits otherwise reduce the grouped texture limits below Forward+ requirements,
+even though the underlying implementation supports the needed bindings. See the
+[pinned Chromium switch](https://github.com/chromium/chromium/blob/156.0.8078.4/gpu/command_buffer/service/webgpu_decoder_impl.cc#L1143),
+[Dawn limit tiers](https://github.com/google/dawn/blob/0a2c7df818e285d6db0f085135139cda04cee8bb/src/dawn/native/Limits.cpp#L73)
+and [required-limit validation](https://github.com/google/dawn/blob/0a2c7df818e285d6db0f085135139cda04cee8bb/src/dawn/native/Adapter.cpp#L293).
+This configuration is test infrastructure, not a browser flag required of users,
+and does not establish Firefox/Windows/D3D12 or other hardware-driver coverage.
+
+CI retains the complete console/error report (`smoke-result.json`), browser
+version and launch flags. `DEBUG=pw:browser` captures Chromium process output;
+`VERBOSE=1` includes all page console messages in `smoke.log`. The independent
+preflight runs alongside the candidate build so an unusable software adapter is
+reported before waiting for compilation.
 
 ## Pass criteria
 
+- Adapter and device meet the Forward+ binding requirements; no Mobile fallback
 - The frame sequence completes without engine, browser or shader errors in console
 - No device-lost events
 - GDScript reports `PASS` in output

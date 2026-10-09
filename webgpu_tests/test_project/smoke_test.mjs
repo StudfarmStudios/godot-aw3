@@ -1,299 +1,246 @@
 /**
- * WebGPU Smoke Test — Headless Browser Validation
+ * Validate the exported Forward+ scene on the engine's actual WebGPU device.
+ * Linux uses software Vulkan; this does not validate hardware drivers.
  *
- * Serves the exported Godot WebGPU project in headless Chrome and validates:
- * 1. WebGPU device initializes without errors
- * 2. No shader compilation failures (SPIR-V → WGSL conversion errors)
- * 3. No device-lost events
- * 4. Engine reports successful shader coverage completion
- *
- * Linux uses SwiftShader software Vulkan for CI; it does not validate hardware
- * drivers. Other platforms retain their existing browser backend settings.
- *
- * Usage:
- *   node smoke_test.mjs [export-dir]
- *   node smoke_test.mjs ./export/
- *
- * Exit codes:
- *   0 = all shaders compiled, no errors
- *   1 = shader or WebGPU errors detected
+ * Usage: node smoke_test.mjs [export-dir]
+ * SMOKE_REPORT selects the JSON report path (default: smoke-result.json).
+ * Completion means scene coverage finished; browser shutdown is not an engine-exit assertion.
  */
 
-import { createServer } from 'http';
-import { readFileSync, existsSync, statSync } from 'fs';
-import { join, extname } from 'path';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
+import { createServer } from 'node:http';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, extname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { assertForwardPlusLimits, launchOptions, requiredForwardPlusLimits } from './browser_config.mjs';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const EXPORT_DIR = process.argv[2] || join(__dirname, 'export');
-const TIMEOUT_MS = 120000; // 2 minutes max
-
+const PROJECT = dirname(fileURLToPath(import.meta.url));
 const MIME_TYPES = {
-    '.html': 'text/html',
-    '.js': 'text/javascript',
-    '.wasm': 'application/wasm',
-    '.pck': 'application/octet-stream',
-    '.png': 'image/png',
-    '.svg': 'image/svg+xml',
-    '.ico': 'image/x-icon',
-    '.json': 'application/json',
-    '.worker.js': 'text/javascript',
+    '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm',
+    '.pck': 'application/octet-stream', '.png': 'image/png', '.svg': 'image/svg+xml',
+    '.ico': 'image/x-icon', '.json': 'application/json',
 };
 
-// ─── HTTP Server ──────────────────────────────────────────────────────────────
-
 function startServer(dir) {
-    return new Promise((resolve) => {
+    return new Promise((accept, reject) => {
         const server = createServer((req, res) => {
             const url = req.url.split('?')[0];
             const filePath = join(dir, url === '/' ? 'index.html' : url);
-
             if (url === '/favicon.ico' && !existsSync(filePath)) {
                 res.writeHead(204);
                 res.end();
                 return;
             }
-
             if (!existsSync(filePath) || statSync(filePath).isDirectory()) {
                 res.writeHead(404);
                 res.end('Not found');
                 return;
             }
-
-            const ext = extname(filePath);
-            const headers = {
-                'Content-Type': MIME_TYPES[ext] || 'application/octet-stream',
+            res.writeHead(200, {
+                'Content-Type': MIME_TYPES[extname(filePath)] || 'application/octet-stream',
                 'Cross-Origin-Opener-Policy': 'same-origin',
                 'Cross-Origin-Embedder-Policy': 'require-corp',
-            };
-
-            // SharedArrayBuffer requires COOP/COEP headers
-            res.writeHead(200, headers);
+            });
             res.end(readFileSync(filePath));
         });
-
+        server.once('error', reject);
         server.listen(0, '127.0.0.1', () => {
-            resolve({ server, url: `http://127.0.0.1:${server.address().port}` });
+            accept({ server, url: `http://127.0.0.1:${server.address().port}` });
         });
     });
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
-
-async function main() {
-    console.log('╔══════════════════════════════════════════════════════════╗');
-    console.log('║   WebGPU Smoke Test — Headless Browser Validation        ║');
-    console.log('╚══════════════════════════════════════════════════════════╝\n');
-
-    // Verify export exists
-    const indexPath = join(EXPORT_DIR, 'index.html');
-    if (!existsSync(indexPath)) {
-        console.error(`ERROR: Export not found at ${EXPORT_DIR}`);
-        console.error('Run: godot --headless --path . --export-release "WebGPU" export/index.html');
-        process.exit(1);
+// Playwright serializes this function into the page, so it has no module scope.
+// Intercept only the engine's own requests; do not create a second GPU device.
+function monitorWebGPU(requiredLimits) {
+    const limitsOf = (object) => {
+        const limits = {};
+        for (const key in object.limits) {
+            if (typeof object.limits[key] === 'number') limits[key] = object.limits[key];
+        }
+        for (const key of Object.keys(requiredLimits)) limits[key] = object.limits[key];
+        return limits;
+    };
+    const check = (object, label) => {
+        const failures = Object.entries(requiredLimits)
+            .filter(([key, minimum]) => !Number.isFinite(object.limits[key]) || object.limits[key] < minimum)
+            .map(([key, minimum]) => `${key}=${object.limits[key]} (requires ${minimum})`);
+        if (failures.length) {
+            const message = `${label} cannot run Forward+: ${failures.join(', ')}`;
+            console.error('[WebGPU capability failure] ' + message);
+            throw new Error(message);
+        }
+    };
+    if (!navigator.gpu) {
+        console.error('[WebGPU capability failure] navigator.gpu is unavailable');
+        return;
     }
-
-    console.log(`Export directory: ${EXPORT_DIR}`);
-
-    // Start server
-    const { server, url } = await startServer(EXPORT_DIR);
-    console.log(`Server: ${url}\n`);
-
-    // Launch browser
-    let chromium;
-    try {
-        const pw = await import('playwright');
-        chromium = pw.chromium;
-    } catch {
-        console.error('ERROR: Playwright not installed.');
-        console.error('  npm install playwright && npx playwright install chromium');
-        server.close();
-        process.exit(1);
-    }
-
-    const linuxSoftwareBackend = process.platform === 'linux';
-    console.log(linuxSoftwareBackend
-        ? 'Launching Chrome with WebGPU on SwiftShader (software validation, not hardware coverage)...'
-        : 'Launching Chrome with WebGPU...');
-    const browser = await chromium.launch({
-        headless: false, // WebGPU requires headed mode on most systems
-        args: [
-            '--enable-unsafe-webgpu',
-            '--enable-features=Vulkan,UseSkiaRenderer',
-            '--disable-gpu-sandbox',
-            '--use-angle=vulkan',
-            // Select both Chromium's Vulkan implementation and Dawn's adapter.
-            // ANGLE's Vulkan flag alone can select unavailable runner hardware.
-            // https://chromium.googlesource.com/chromium/src/+/main/docs/gpu/swiftshader.md
-            ...(linuxSoftwareBackend ? [
-                '--use-vulkan=swiftshader',
-                '--use-webgpu-adapter=swiftshader',
-                '--disable-vulkan-surface',
-            ] : []),
-        ],
-    });
-
-    const page = await browser.newPage();
-
-    // Report the adapter used by the engine's own request, without requesting
-    // a second adapter/device or changing the request's options or result.
-    await page.addInitScript(() => {
-        if (!navigator.gpu) return;
-        const requestAdapter = navigator.gpu.requestAdapter.bind(navigator.gpu);
-        navigator.gpu.requestAdapter = (...args) => requestAdapter(...args).then((adapter) => {
-            if (adapter) {
-                const info = adapter.info;
-                const limits = {};
-                for (const key in adapter.limits) {
-                    if (typeof adapter.limits[key] === 'number') limits[key] = adapter.limits[key];
-                }
-                console.log('[WebGPU adapter] ' + JSON.stringify({
-                    vendor: info?.vendor,
-                    architecture: info?.architecture,
-                    device: info?.device,
-                    description: info?.description,
-                    isFallbackAdapter: adapter.isFallbackAdapter,
-                    features: Array.from(adapter.features),
-                    limits,
-                }));
-            } else {
-                console.log('[WebGPU adapter] null');
-            }
+    const requestAdapter = navigator.gpu.requestAdapter.bind(navigator.gpu);
+    navigator.gpu.requestAdapter = async (...args) => {
+        const adapter = await requestAdapter(...args);
+        if (!adapter) {
+            console.error('[WebGPU capability failure] No adapter returned');
             return adapter;
-        });
-    });
-
-    // Collect errors
-    const consoleErrors = [];
-    const shaderErrors = [];
-    let deviceLost = false;
-    let engineStarted = false;
-    let engineFinished = false;
-    let enginePassed = false;
-
-    page.on('console', (msg) => {
-        const text = msg.text();
-
-        if (text.startsWith('[WebGPU adapter]')) console.log(`  ${text}`);
-
-        // Track shader errors
-        if (text.includes('[SHADER]') || text.includes('Tint conversion') || text.includes('spirv error')) {
-            shaderErrors.push(text);
-            console.error(`  [SHADER ERROR] ${text}`);
         }
-
-        // Track device lost
-        if (text.includes('device lost') || text.includes('Device lost')) {
-            deviceLost = true;
-            console.error(`  [DEVICE LOST] ${text}`);
-        }
-
-        // Track engine lifecycle
-        if (text.includes('[ShaderCoverage] Starting')) {
-            engineStarted = true;
-            console.log('  Engine started.');
-        }
-        if (text.includes('[ShaderCoverage] PASS')) {
-            engineFinished = true;
-            enginePassed = true;
-            console.log('  Engine reports PASS.');
-        }
-        if (text.includes('[ShaderCoverage] FAIL')) {
-            engineFinished = true;
-            consoleErrors.push(text);
-            console.error('  Engine reports FAIL.');
-        }
-
-        // Log significant messages
-        if (msg.type() === 'error' || /(^|\s)(ERROR:|SCRIPT ERROR:|SHADER ERROR:)|GPUValidationError|uncaptured error/i.test(text)) {
-            consoleErrors.push(text);
-        }
-
-        // Verbose output
-        if (process.env.VERBOSE) {
-            console.log(`  [${msg.type()}] ${text}`);
-        }
-    });
-
-    page.on('pageerror', (err) => {
-        consoleErrors.push(err.message);
-        console.error(`  [PAGE ERROR] ${err.message}`);
-    });
-
-    // Navigate and wait
-    console.log(`\nNavigating to ${url}...`);
-    await page.goto(url);
-
-    // Wait for engine to finish or timeout
-    const startTime = Date.now();
-    while (!engineFinished && (Date.now() - startTime) < TIMEOUT_MS) {
-        await new Promise(r => setTimeout(r, 1000));
-        const elapsed = Math.floor((Date.now() - startTime) / 1000);
-        if (elapsed % 10 === 0 && elapsed > 0) {
-            console.log(`  Still waiting... ${elapsed}s elapsed`);
-        }
-    }
-
-    await browser.close();
-    server.close();
-
-    // ─── Report ─────────────────────────────────────────────────────────────
-
-    console.log('\n─── Results ─────────────────────────────────────────��─────\n');
-
-    let exitCode = 0;
-
-    if (!engineStarted) {
-        console.error('  FAIL: Engine never started (WebGPU initialization may have failed)');
-        exitCode = 1;
-    }
-
-    if (!engineFinished) {
-        console.error('  FAIL: Engine did not complete within timeout');
-        exitCode = 1;
-    }
-
-    if (engineFinished && !enginePassed) {
-        console.error('  FAIL: Engine did not report a successful result');
-        exitCode = 1;
-    }
-
-    if (consoleErrors.length > 0) {
-        console.error(`  FAIL: ${consoleErrors.length} browser or engine error(s):`);
-        for (const error of consoleErrors.slice(0, 10)) console.error(`    - ${error}`);
-        exitCode = 1;
-    }
-
-    if (deviceLost) {
-        console.error('  FAIL: GPU device was lost');
-        exitCode = 1;
-    }
-
-    if (shaderErrors.length > 0) {
-        console.error(`  FAIL: ${shaderErrors.length} shader error(s):`);
-        for (const err of shaderErrors.slice(0, 10)) {
-            console.error(`    - ${err}`);
-        }
-        exitCode = 1;
-    }
-
-    if (exitCode === 0) {
-        console.log('  PASS: All shaders compiled successfully, no errors detected.');
-    }
-
-    console.log(`\n  Console errors: ${consoleErrors.length}`);
-    console.log(`  Shader errors:  ${shaderErrors.length}`);
-    console.log(`  Device lost:    ${deviceLost}`);
-    console.log(`  Engine started: ${engineStarted}`);
-    console.log(`  Engine finished: ${engineFinished}`);
-
-    process.exit(exitCode);
+        const info = adapter.info;
+        console.log('[WebGPU adapter] ' + JSON.stringify({
+            vendor: info?.vendor, architecture: info?.architecture,
+            device: info?.device, description: info?.description,
+            isFallbackAdapter: adapter.isFallbackAdapter,
+            features: Array.from(adapter.features), limits: limitsOf(adapter),
+        }));
+        check(adapter, 'adapter');
+        const requestDevice = adapter.requestDevice.bind(adapter);
+        adapter.requestDevice = async (...deviceArgs) => {
+            console.log('[WebGPU request] ' + JSON.stringify(deviceArgs[0] || {}));
+            const device = await requestDevice(...deviceArgs);
+            console.log('[WebGPU device] ' + JSON.stringify({
+                features: Array.from(device.features), limits: limitsOf(device),
+            }));
+            device.lost.then((info) => {
+                console.error('[WebGPU device lost] ' + JSON.stringify({ reason: info.reason, message: info.message }));
+            });
+            device.addEventListener('uncapturederror', (event) => {
+                console.error('[WebGPU uncaptured error] ' + (event.error?.message || String(event.error)));
+            });
+            check(device, 'device');
+            return device;
+        };
+        return adapter;
+    };
 }
 
-main().catch((e) => {
-    console.error('Fatal:', e);
-    process.exit(1);
-});
+export async function runSmokeTest({
+    exportDir = join(PROJECT, 'export'),
+    reportPath = process.env.SMOKE_REPORT || 'smoke-result.json',
+    timeoutMs = 120000,
+    pollIntervalMs = 1000,
+    chromium = null,
+    serve = startServer,
+    logger = console,
+    options = launchOptions(),
+} = {}) {
+    const report = {
+        passed: false, exportDir: resolve(exportDir), browserVersion: null,
+        launchOptions: options, requiredForwardPlusLimits,
+        adapters: [], devices: [], deviceRequests: [], console: [], pageErrors: [],
+        errors: [], shaderErrors: [], deviceLost: false, deviceLosses: [],
+        capabilityFailure: false, mobileFallback: false,
+        engineStarted: false, engineFinished: false, enginePassed: false, timedOut: false,
+    };
+    let server;
+    let browser;
+    const started = Date.now();
+    const failure = (message) => {
+        report.errors.push(message);
+        logger.log('FAIL: ' + message);
+    };
+    try {
+        if (!existsSync(join(exportDir, 'index.html'))) throw new Error(`Export not found at ${exportDir}`);
+        const hosted = await serve(exportDir);
+        server = hosted.server;
+        logger.log(`Export directory: ${exportDir}\nServer: ${hosted.url}`);
+        const launcher = chromium || (await import('playwright')).chromium;
+        logger.log('Browser launch options: ' + JSON.stringify(options));
+        browser = await launcher.launch(options);
+        report.browserVersion = browser.version();
+        logger.log('Browser version: ' + report.browserVersion);
+        const page = await browser.newPage();
+        page.on('console', (msg) => {
+            const text = msg.text();
+            report.console.push({ type: msg.type(), text });
+            const isError = msg.type() === 'error'
+                || /(^|\s)(ERROR:|WARNING:|SCRIPT ERROR:|SHADER ERROR:)|GPUValidationError|uncaptured error/i.test(text);
+            if (isError || text.startsWith('[WebGPU ') || process.env.VERBOSE) logger.log(`[${msg.type()}] ${text}`);
+            if (isError) report.errors.push(text);
+            for (const [prefix, collection, label] of [
+                ['[WebGPU adapter] ', report.adapters, 'adapter'],
+                ['[WebGPU device] ', report.devices, 'device'],
+                ['[WebGPU request] ', report.deviceRequests, 'request'],
+            ]) {
+                if (!text.startsWith(prefix)) continue;
+                try {
+                    const details = JSON.parse(text.slice(prefix.length));
+                    collection.push(details);
+                    if (label !== 'request') assertForwardPlusLimits(details.limits, label);
+                } catch (error) {
+                    report.capabilityFailure = true;
+                    failure(`Invalid ${label} capabilities: ${error.message}`);
+                }
+            }
+            if (text.startsWith('[WebGPU capability failure]')) report.capabilityFailure = true;
+            if (/Defaulting to Mobile renderer| - Mobile - /i.test(text)) {
+                report.mobileFallback = true;
+                failure('Forward+ coverage was replaced by the Mobile renderer: ' + text);
+            }
+            if (text.includes('[SHADER]') || text.includes('Tint conversion') || text.includes('spirv error')) {
+                report.shaderErrors.push(text);
+                if (!isError) logger.log('[SHADER ERROR] ' + text);
+            }
+            if (/device lost/i.test(text)) {
+                report.deviceLost = true;
+                report.deviceLosses.push(text);
+                if (!isError) failure(text);
+            }
+            if (text.includes('[ShaderCoverage] Starting')) report.engineStarted = true;
+            if (text.includes('[ShaderCoverage] PASS')) {
+                report.engineFinished = true;
+                report.enginePassed = true;
+            }
+            if (text.includes('[ShaderCoverage] FAIL')) {
+                report.engineFinished = true;
+                failure(text);
+            }
+        });
+        page.on('pageerror', (error) => {
+            const details = error.stack || error.message;
+            report.pageErrors.push(details);
+            failure('PAGE ERROR: ' + details);
+        });
+        await page.addInitScript(monitorWebGPU, requiredForwardPlusLimits);
+        await page.goto(hosted.url, { waitUntil: 'domcontentloaded', timeout: Math.min(timeoutMs, 30000) });
+        const deadline = Date.now() + timeoutMs;
+        while (!report.engineFinished && !report.capabilityFailure && !report.mobileFallback && !report.deviceLost
+            && Date.now() < deadline) {
+            await new Promise((accept) => setTimeout(accept, Math.min(pollIntervalMs, Math.max(1, deadline - Date.now()))));
+        }
+        report.timedOut = !report.engineFinished && !report.capabilityFailure && !report.mobileFallback && !report.deviceLost;
+    } catch (error) {
+        failure(error.stack || error.message || String(error));
+    } finally {
+        try {
+            if (browser) await browser.close();
+        } catch (error) {
+            failure('Browser cleanup failed: ' + error.message);
+        }
+        try {
+            if (server) {
+                server.closeAllConnections?.();
+                await new Promise((accept, reject) => server.close((error) => error ? reject(error) : accept()));
+            }
+        } catch (error) {
+            failure('Server cleanup failed: ' + error.message);
+        }
+    }
+    if (!report.adapters.length) failure('No engine WebGPU adapter capabilities were observed');
+    if (!report.devices.length) failure('No engine WebGPU device capabilities were observed');
+    if (!report.engineStarted) failure('Engine never started');
+    if (!report.engineFinished) failure(report.timedOut ? 'Engine did not complete within timeout' : 'Engine did not complete');
+    if (report.engineFinished && !report.enginePassed) failure('Engine did not report a successful result');
+    report.passed = report.errors.length === 0 && report.shaderErrors.length === 0 && !report.deviceLost
+        && !report.capabilityFailure && !report.mobileFallback && report.engineStarted && report.engineFinished && report.enginePassed;
+    report.seconds = (Date.now() - started) / 1000;
+    mkdirSync(dirname(resolve(reportPath)), { recursive: true });
+    writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n');
+    logger.log(`${report.passed ? 'PASS' : 'FAIL'}: Forward+ scene coverage; ${report.errors.length} errors, `
+        + `${report.shaderErrors.length} shader errors, device lost=${report.deviceLost}. Report: ${resolve(reportPath)}`);
+    return report;
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+    runSmokeTest({ exportDir: process.argv[2] || join(PROJECT, 'export') }).then((report) => {
+        process.exitCode = report.passed ? 0 : 1;
+    }).catch((error) => {
+        console.error('Fatal:', error);
+        process.exitCode = 1;
+    });
+}
