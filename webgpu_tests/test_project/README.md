@@ -136,6 +136,20 @@ fixed-pixel targeted fixtures. This is a correctness smoke test, not a performan
 visual-quality comparison. Other platforms keep their existing viewport/time
 defaults. A timeout remains a failure.
 
+The software launch also sets a finite 120-second GPU watchdog timeout. The
+preceding 320 × 180 run ended when Chromium's GPU process exited with raw POSIX
+status 512, followed by device loss; the harness had not timed out. Chromium's
+pinned sources map this status to exit code 2 (`RESULT_CODE_HUNG`), which its
+watchdog uses. The switch overrides the normal software watchdog allowance,
+while the separate 300-second smoke deadline still detects incomplete work.
+Neither GPU validation nor any failure gate is disabled. CI saves process CPU/RSS,
+cgroup memory counters and available kernel diagnostics to help distinguish slow
+software work, resource pressure and a real stall. These are diagnostic controls,
+not an assertion that every watchdog termination is harmless. See the pinned
+[watchdog termination](https://github.com/chromium/chromium/blob/156.0.8078.4/gpu/ipc/service/gpu_watchdog_thread.cc#L711),
+[timeout parsing](https://github.com/chromium/chromium/blob/156.0.8078.4/gpu/ipc/service/gpu_watchdog_thread.cc#L55)
+and [POSIX wait status](https://github.com/chromium/chromium/blob/156.0.8078.4/base/process/kill_posix.cc#L43).
+
 This configuration is test infrastructure, not a browser flag required of users,
 and does not establish Firefox/Windows/D3D12 or other hardware-driver coverage.
 

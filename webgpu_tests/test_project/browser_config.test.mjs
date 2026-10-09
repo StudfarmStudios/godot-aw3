@@ -48,6 +48,9 @@ test('Linux explicitly selects SwiftShader and disables only tier rounding', () 
     assert.ok(!options.args.includes('--use-angle=vulkan'));
     assert.ok(options.args.includes('--use-vulkan=swiftshader'));
     assert.ok(options.args.includes('--use-webgpu-adapter=swiftshader'));
+    assert.deepEqual(options.args.filter((argument) => argument.includes('watchdog')), [
+        '--gpu-watchdog-timeout-seconds=120',
+    ], 'software watchdog stays enabled with a finite deadline');
     assert.deepEqual(options.args.filter((argument) => argument.startsWith('--disable-dawn-features=')), [
         '--disable-dawn-features=tiered_adapter_limits',
     ]);

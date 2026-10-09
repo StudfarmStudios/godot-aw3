@@ -264,6 +264,88 @@ jobs:
           VERBOSE: '1'
         run: |
           set -o pipefail
+          mkdir -p smoke-diagnostics
+          snapshot_host() {
+            {
+              date --iso-8601=seconds
+              free -m
+              cat /proc/meminfo
+            } > "smoke-diagnostics/host-$1.log" 2>&1 || true
+            timeout 10s sudo -n dmesg --level=err,warn --time-format=iso \
+              > "smoke-diagnostics/kernel-$1.log" 2>&1 || true
+          }
+          sampler_pid=""
+          cleanup_diagnostics() {
+            smoke_status=$?
+            trap - EXIT
+            if [ -n "$sampler_pid" ]; then
+              kill "$sampler_pid" 2>/dev/null || true
+              wait "$sampler_pid" || true
+            fi
+            snapshot_host after
+            exit "$smoke_status"
+          }
+          trap cleanup_diagnostics EXIT
+          snapshot_host before
+          # Bound the sampler independently and reap it on every smoke exit.
+          python3 - <<'PY' > smoke-diagnostics/resources.jsonl 2>&1 &
+          import datetime
+          import json
+          import pathlib
+          import signal
+          import subprocess
+          import threading
+          import time
+
+          stopped = threading.Event()
+          signal.signal(signal.SIGTERM, lambda *_: stopped.set())
+          signal.signal(signal.SIGINT, lambda *_: stopped.set())
+          cgroup_root = pathlib.Path("/sys/fs/cgroup")
+          cgroups = [cgroup_root]
+
+          def read(path):
+              try:
+                  return pathlib.Path(path).read_text().strip()
+              except OSError as error:
+                  return str(error)
+
+          membership = read("/proc/self/cgroup")
+          for line in membership.splitlines():
+              if line.startswith("0::"):
+                  path = (cgroup_root / line[3:].lstrip("/")).resolve()
+                  if path.is_relative_to(cgroup_root) and path.is_dir() and path not in cgroups:
+                      cgroups.append(path)
+
+          def sample(phase):
+              record = {"time": datetime.datetime.now(datetime.timezone.utc).isoformat(), "phase": phase}
+              record["cpu_stat"] = read("/proc/stat")
+              record["meminfo"] = read("/proc/meminfo")
+              record["pressure"] = {name: read("/proc/pressure/" + name) for name in ("cpu", "memory", "io")}
+              record["cgroup_membership"] = membership
+              record["cgroups"] = {str(path): {name: read(path / name) for name in (
+                  "memory.current", "memory.peak", "memory.max", "memory.events", "memory.events.local",
+                  "memory.swap.current", "cpu.stat",
+              )} for path in cgroups}
+              try:
+                  # Never record command arguments or environment variables.
+                  result = subprocess.run(["ps", "-eo", "pid,ppid,pcpu,rss,vsz,etime,comm", "--sort=-rss"],
+                                          capture_output=True, text=True, timeout=5, check=False)
+                  record["processes"] = result.stdout
+                  record["ps_error"] = result.stderr
+                  record["ps_status"] = result.returncode
+              except subprocess.TimeoutExpired:
+                  record["ps_error"] = "ps exceeded five seconds"
+              print(json.dumps(record), flush=True)
+
+          deadline = time.monotonic() + 360
+          try:
+              while not stopped.is_set() and time.monotonic() < deadline:
+                  sample("running")
+                  stopped.wait(5)
+          finally:
+              sample("final")
+          PY
+          sampler_pid=$!
           xvfb-run -a node smoke_test.mjs ./export/ 2>&1 | tee smoke.log
 
       - name: Upload complete software smoke diagnostics
@@ -274,6 +356,7 @@ jobs:
           path: |
             webgpu_tests/test_project/smoke.log
             webgpu_tests/test_project/smoke-result.json
+            webgpu_tests/test_project/smoke-diagnostics/
           retention-days: 7
 
   # ═══════════════════════════════════════════════════════════════════════════════

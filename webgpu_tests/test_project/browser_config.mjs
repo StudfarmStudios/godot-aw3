@@ -31,6 +31,11 @@ export function launchOptions(platform = process.platform) {
                 '--use-vulkan=swiftshader',
                 '--use-webgpu-adapter=swiftshader',
                 '--disable-vulkan-surface',
+                // Keep the watchdog finite, but allow CPU rendering/compilation
+                // more time on CI. The smoke still has its own 300-second bound.
+                // The pinned Chromium switch is seconds, before any multiplier.
+                // https://github.com/chromium/chromium/blob/156.0.8078.4/gpu/ipc/service/gpu_watchdog_thread.cc#L55
+                '--gpu-watchdog-timeout-seconds=120',
                 // SwiftShader has enough sampled/storage bindings, but its
                 // dynamic-buffer counts reduce Dawn's entire resource tier.
                 // Expose the real normalized limits; keep all validation.
