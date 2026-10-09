@@ -35,26 +35,63 @@
 #include "scene/3d/physics/collision_object_3d.h"
 #include "scene/main/scene_tree.h"
 #include "scene/resources/3d/convex_polygon_shape_3d.h"
+#include "core/config/engine.h"
+#include "core/os/mutex.h"
+#include "core/templates/hash_map.h"
 
-void CollisionPolygon3D::_build_polygon() {
-	if (!collision_object) {
-		return;
+namespace {
+
+// A concave polygon decomposes into the same convex pieces every time. Built per
+// instance, an object spawned all match long (a ship's hull outline) made new shapes
+// at every spawn, and the physics server builds a convex hull for each new shape when
+// the body enters the space: about a millisecond of every ship spawn on the web build.
+// Identical polygons share their pieces instead, so each hull is built once. Shapes are
+// shared resources everywhere else in the engine; nothing mutates these after creation.
+struct SharedPiecesKey {
+	Vector<Point2> polygon;
+	real_t depth = 0;
+	real_t margin = 0;
+	Color debug_color;
+	bool debug_fill = true;
+
+	bool operator==(const SharedPiecesKey &p_other) const {
+		return depth == p_other.depth && margin == p_other.margin && debug_fill == p_other.debug_fill && debug_color == p_other.debug_color && polygon == p_other.polygon;
 	}
+};
 
-	collision_object->shape_owner_clear_shapes(owner_id);
-
-	if (polygon.is_empty()) {
-		return;
+struct SharedPiecesKeyHasher {
+	static uint32_t hash(const SharedPiecesKey &p_key) {
+		uint32_t h = hash_murmur3_buffer(p_key.polygon.ptr(), p_key.polygon.size() * sizeof(Point2));
+		h = hash_murmur3_one_real(p_key.depth, h);
+		h = hash_murmur3_one_real(p_key.margin, h);
+		h = hash_murmur3_one_float(p_key.debug_color.r, h);
+		h = hash_murmur3_one_float(p_key.debug_color.g, h);
+		h = hash_murmur3_one_float(p_key.debug_color.b, h);
+		h = hash_murmur3_one_float(p_key.debug_color.a, h);
+		h = hash_murmur3_one_32(p_key.debug_fill, h);
+		return hash_fmix32(h);
 	}
+};
 
+// Bounded so polygons edited at runtime cannot grow it without limit; a cleared entry
+// stays alive in the bodies still using it.
+constexpr int MAX_SHARED_PIECES = 256;
+HashMap<SharedPiecesKey, Vector<Ref<ConvexPolygonShape3D>>, SharedPiecesKeyHasher> *shared_pieces = nullptr;
+BinaryMutex shared_pieces_mutex;
+
+} // namespace
+
+void CollisionPolygon3D::finish_shared_pieces() {
+	MutexLock lock(shared_pieces_mutex);
+	if (shared_pieces) {
+		memdelete(shared_pieces);
+		shared_pieces = nullptr;
+	}
+}
+
+Vector<Ref<ConvexPolygonShape3D>> CollisionPolygon3D::_make_convex_pieces() const {
+	Vector<Ref<ConvexPolygonShape3D>> pieces;
 	Vector<Vector<Vector2>> decomp = Geometry2D::decompose_polygon_in_convex(polygon);
-	if (decomp.is_empty()) {
-		return;
-	}
-
-	//here comes the sun, lalalala
-	//decompose concave into multiple convex polygons and add them
-
 	for (int i = 0; i < decomp.size(); i++) {
 		Ref<ConvexPolygonShape3D> convex = memnew(ConvexPolygonShape3D);
 		Vector<Vector3> cp;
@@ -74,7 +111,48 @@ void CollisionPolygon3D::_build_polygon() {
 		convex->set_margin(margin);
 		convex->set_debug_color(debug_color);
 		convex->set_debug_fill(debug_fill);
-		collision_object->shape_owner_add_shape(owner_id, convex);
+		pieces.push_back(convex);
+	}
+	return pieces;
+}
+
+void CollisionPolygon3D::_build_polygon() {
+	if (!collision_object) {
+		return;
+	}
+
+	collision_object->shape_owner_clear_shapes(owner_id);
+
+	if (polygon.is_empty()) {
+		return;
+	}
+
+	Vector<Ref<ConvexPolygonShape3D>> pieces;
+	// The editor rebuilds on every edit of a polygon; keep it out of the shared table.
+	if (Engine::get_singleton()->is_editor_hint()) {
+		pieces = _make_convex_pieces();
+	} else {
+		SharedPiecesKey key{ polygon, depth, margin, debug_color, debug_fill };
+		MutexLock lock(shared_pieces_mutex);
+		if (!shared_pieces) {
+			shared_pieces = memnew((HashMap<SharedPiecesKey, Vector<Ref<ConvexPolygonShape3D>>, SharedPiecesKeyHasher>));
+		}
+		const Vector<Ref<ConvexPolygonShape3D>> *found = shared_pieces->getptr(key);
+		if (found) {
+			pieces = *found;
+		} else {
+			pieces = _make_convex_pieces();
+			if (shared_pieces->size() >= MAX_SHARED_PIECES) {
+				shared_pieces->clear();
+			}
+			shared_pieces->insert(key, pieces);
+		}
+	}
+
+	//here comes the sun, lalalala
+	//decompose concave into multiple convex polygons and add them
+	for (int i = 0; i < pieces.size(); i++) {
+		collision_object->shape_owner_add_shape(owner_id, pieces[i]);
 		collision_object->shape_owner_set_disabled(owner_id, disabled);
 	}
 }

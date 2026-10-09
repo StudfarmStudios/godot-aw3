@@ -1362,6 +1362,9 @@ void unregister_scene_types() {
 	// StandardMaterial3D is not initialized when 3D is disabled, so it shouldn't be cleaned up either
 #ifndef _3D_DISABLED
 	BaseMaterial3D::finish_shaders();
+#ifndef PHYSICS_3D_DISABLED
+	CollisionPolygon3D::finish_shared_pieces();
+#endif // PHYSICS_3D_DISABLED
 	PhysicalSkyMaterial::cleanup_shader();
 	PanoramaSkyMaterial::cleanup_shader();
 	ProceduralSkyMaterial::cleanup_shader();

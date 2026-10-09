@@ -31,6 +31,7 @@
 #pragma once
 
 #include "scene/3d/node_3d.h"
+#include "scene/resources/3d/convex_polygon_shape_3d.h"
 
 class CollisionObject3D;
 class CollisionPolygon3D : public Node3D {
@@ -53,6 +54,7 @@ protected:
 	bool disabled = false;
 
 	void _build_polygon();
+	Vector<Ref<ConvexPolygonShape3D>> _make_convex_pieces() const;
 
 	void _update_in_shape_owner(bool p_xform_only = false);
 
@@ -90,6 +92,8 @@ public:
 	void set_margin(real_t p_margin);
 
 	PackedStringArray get_configuration_warnings() const override;
+
+	static void finish_shared_pieces();
 
 	CollisionPolygon3D();
 };
