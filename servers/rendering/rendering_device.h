@@ -1949,6 +1949,13 @@ public:
 
 	void swap_buffers(bool p_present);
 
+	// Submits the commands recorded so far in this frame, without presenting, and
+	// begins recording the rest of the frame into the same command buffer; the
+	// frame is still finished (fenced and presented) by swap_buffers(). Needs
+	// RDD::API_TRAIT_COMMAND_BUFFER_BEGIN_AFTER_SUBMIT. The web render thread uses
+	// it to start a frame's GPU work before the vsync that presents it.
+	void submit_recorded_commands();
+
 	uint32_t get_frame_delay() const;
 
 	void submit();

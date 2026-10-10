@@ -84,6 +84,7 @@ uint64_t RenderingDeviceDriver::api_trait_get(ApiTrait p_trait) {
 		case API_TRAIT_FORCE_OMNI_DUAL_PARABOLOID:
 		case API_TRAIT_BATCH_INSTANCE_DRAWS:
 		case API_TRAIT_FIRST_INSTANCE_INDEX:
+		case API_TRAIT_COMMAND_BUFFER_BEGIN_AFTER_SUBMIT:
 			return 0;
 		default:
 			ERR_FAIL_V(0);

@@ -8488,6 +8488,40 @@ void RenderingDevice::swap_buffers(bool p_present) {
 	_begin_frame(true);
 }
 
+void RenderingDevice::submit_recorded_commands() {
+	ERR_RENDER_THREAD_GUARD();
+	ERR_FAIL_COND_MSG(!driver->api_trait_get(RDD::API_TRAIT_COMMAND_BUFFER_BEGIN_AFTER_SUBMIT), "The driver can't begin a command buffer right after submitting it.");
+	ERR_FAIL_COND_MSG(draw_list.active || compute_list.active || raytracing_list.active, "Can't submit the recorded commands while a draw, compute or raytracing list is open.");
+
+#ifdef DEBUG_ENABLED
+	bool reorder_commands = draw_graph_reorder_commands;
+	bool full_barriers = draw_graph_full_barriers;
+#else
+	constexpr bool reorder_commands = (RENDER_GRAPH_REORDER == 1);
+	constexpr bool full_barriers = (RENDER_GRAPH_FULL_BARRIERS == 1);
+#endif
+
+	// As _end_frame() does: transfer workers the commands depend on go first. The
+	// second call in _end_frame() finds them submitted already.
+	RDD::CommandBufferID command_buffer = frames[frame].command_buffer;
+	_submit_transfer_workers(command_buffer);
+	_submit_transfer_barriers(command_buffer);
+	draw_graph.end(reorder_commands, full_barriers, command_buffer, frames[frame].command_buffer_pool);
+	ERR_FAIL_COND_MSG(command_buffer != frames[frame].command_buffer || frames[frame].command_buffer_pool.buffers_used > 0, "The driver split the frame's command buffer; submit_recorded_commands() does not support that.");
+	driver->command_buffer_end(command_buffer);
+
+	// No fence: the frame's fence is signalled by its last submission, which the
+	// queue executes after this one.
+	driver->command_queue_execute_and_present(main_queue, frames[frame].semaphores_to_wait_on, command_buffer, VectorView<RDD::SemaphoreID>(), RDD::FenceID(), VectorView<RDD::SwapChainID>());
+	frames[frame].semaphores_to_wait_on.clear();
+
+	bool began = driver->command_buffer_begin(command_buffer);
+	ERR_FAIL_COND(!began);
+	// The rest of the frame is a new graph, as after a frame boundary: the resources'
+	// trackers keep their usage, so barriers against the submitted part are still made.
+	draw_graph.begin();
+}
+
 void RenderingDevice::submit() {
 	ERR_RENDER_THREAD_GUARD();
 	ERR_FAIL_COND_MSG(is_main_instance, "Only local devices can submit and sync.");

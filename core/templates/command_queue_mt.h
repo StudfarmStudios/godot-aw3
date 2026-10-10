@@ -124,8 +124,8 @@ class CommandQueueMT {
 	void *consumer_notify_userdata = nullptr;
 	// A command may ask the flush to stop right after it (request_flush_pause());
 	// the rest stays queued and the same thread's next flush resumes it. The
-	// web render thread pauses before each frame's draw so the draw runs from
-	// its animation-frame callback.
+	// web render thread pauses before each frame's present so the present runs
+	// from its animation-frame callback, and right after it.
 	bool flush_pause_requested = false;
 	bool flush_paused = false;
 	Thread::ID flush_paused_thread = Thread::UNASSIGNED_ID;

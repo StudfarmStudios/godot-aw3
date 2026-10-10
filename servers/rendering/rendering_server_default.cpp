@@ -533,8 +533,9 @@ void RenderingServerDefault::_web_render_device_ready(int p_error) {
 	// This thread runs from its event loop from here on. Two entry points, both
 	// tasks on that loop: a wake (Atomics.waitAsync on web_wake, notified by the
 	// game thread's pushes) drains queued commands up to the frame marker that
-	// draw() queues in front of every _draw, and the animation-frame callback
-	// resumes from that marker, so the frame is always drawn there. A standalone
+	// draw() queues between a frame's prepare and its present, and the
+	// animation-frame callback resumes from that marker, so the frame is always
+	// presented there. A standalone
 	// test of a twice-transferred OffscreenCanvas showed why: with a GPU-heavy
 	// frame, draws issued from ordinary tasks presented at ~5 fps even with an
 	// idle animation-frame loop alongside, while draws inside the callback
@@ -615,19 +616,26 @@ void RenderingServerDefault::_web_frame_marker() {
 
 void RenderingServerDefault::_web_draw_prepare(bool p_swap_buffers, double frame_step) {
 	// Everything of the frame but the blit to the screen, run as soon as the game thread
-	// queues it, so before the vsync that presents it. Chrome's compositor waits for the
-	// canvas frame only until about a third of the refresh interval after the vsync (the
-	// rest is kept for its own drawing); drawn whole inside the callback, AW3's frames
-	// arrived right at that deadline and about one in ten missed its refresh.
+	// queues it, so before the vsync that presents it: rendered, encoded and submitted
+	// to the GPU. Two deadlines follow the vsync. Chrome's compositor waits for the
+	// canvas frame only until about a third of the refresh interval; drawn whole inside
+	// the callback, AW3's frames arrived right at that and about one in ten missed its
+	// refresh. And on macOS the compositor's swap then blocks until the GPU has taken
+	// the commands that drew the canvas; with the frame's GPU work submitted from the
+	// callback (~10 ms of it at the clocks macOS runs the GPU at here), that came
+	// within a millisecond or two of the next vsync, and a heavier frame skipped one.
 	RSG::viewport->set_defer_screen_blits(true);
 	_draw_begin(p_swap_buffers, frame_step);
 	RSG::viewport->set_defer_screen_blits(false);
+	if (RenderingDevice::get_singleton()) {
+		RenderingDevice::get_singleton()->submit_recorded_commands();
+	}
 }
 
 void RenderingServerDefault::_web_draw_present(bool p_swap_buffers) {
-	// Inside the animation-frame callback: the blit to the screen and the frame's
-	// submission. Then stop the flush, so the callback returns and the browser takes
-	// the frame now; whatever the game thread queued since runs from the next task
+	// Inside the animation-frame callback: the blit to the screen, submitted with the
+	// present. Then stop the flush, so the callback returns and the browser takes the
+	// frame now; whatever the game thread queued since runs from the next task
 	// (_web_render_raf wakes it), not ahead of this frame's hand-over.
 	RSG::viewport->blit_deferred_to_screen();
 	_draw_end(p_swap_buffers);
@@ -636,10 +644,11 @@ void RenderingServerDefault::_web_draw_present(bool p_swap_buffers) {
 }
 
 bool RenderingServerDefault::_web_render_raf(double p_time, void *p_self) {
-	// Once per animation frame, and the only place a frame is drawn: resumes the
-	// flush the frame marker paused, which runs _draw and whatever the game
-	// thread queued after it, up to the next marker. With nothing paused it is a
-	// plain drain.
+	// Once per animation frame, and the only place a frame is presented: resumes
+	// the flush the frame marker paused, which runs the present and stops again
+	// behind it (the drain then carries on from a task). A frame whose prepare
+	// was still queued at the vsync is prepared and presented here in one go.
+	// With nothing paused it is a plain drain.
 	RenderingServerDefault *self = static_cast<RenderingServerDefault *>(p_self);
 	if (self->exit) {
 		return false;

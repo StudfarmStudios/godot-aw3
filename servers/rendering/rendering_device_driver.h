@@ -1070,6 +1070,12 @@ public:
 		// This eliminates the per-draw SetBindGroup call for push constant rebinding.
 		// On WebGPU, each SetBindGroup IPC crossing costs ~0.3us; this saves one per draw.
 		API_TRAIT_FIRST_INSTANCE_INDEX,
+		// If non-zero, command_buffer_begin() may be called on a command buffer right
+		// after command_queue_execute_and_present() submitted it, while the GPU may
+		// still be executing it: beginning starts a new recording rather than reusing
+		// the submitted one (WebGPU: a new command encoder). Required by
+		// RenderingDevice::submit_recorded_commands().
+		API_TRAIT_COMMAND_BUFFER_BEGIN_AFTER_SUBMIT,
 		// Bit mask indexed by TextureSamples, for API-wide sample restrictions.
 		// Defaults to all counts; per-format/device limits still apply. WebGPU
 		// supports 1 and 4, so a maximum alone cannot describe its missing 2x.

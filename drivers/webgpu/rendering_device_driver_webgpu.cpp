@@ -11736,6 +11736,10 @@ uint64_t RenderingDeviceDriverWebGPU::api_trait_get(ApiTrait p_trait) {
 		// saving ~80% of shadow encoder overhead for typical scenes.
 		case API_TRAIT_FORCE_OMNI_DUAL_PARABOLOID:
 			return 1;
+		// command_buffer_begin() creates a new encoder, and the submit released the
+		// finished buffer: nothing of the submitted recording is touched again.
+		case API_TRAIT_COMMAND_BUFFER_BEGIN_AFTER_SUBMIT:
+			return 1;
 		// Batch consecutive same-mesh shadow draws into instanced draws.
 		// Reduces per-draw IPC from 2 crossings/draw to 2 crossings/batch.
 		case API_TRAIT_BATCH_INSTANCE_DRAWS:
