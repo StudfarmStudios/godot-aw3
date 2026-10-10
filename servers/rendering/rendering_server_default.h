@@ -116,10 +116,16 @@ class RenderingServerDefault : public RenderingServer {
 	void _web_arm_wait();
 	void _web_drain();
 	void _web_frame_marker();
+	void _web_draw_prepare(bool p_swap_buffers, double frame_step);
+	void _web_draw_present(bool p_swap_buffers);
 	static bool _web_render_raf(double p_time, void *p_self);
+	bool web_in_raf = false; // Render thread: inside the animation-frame callback.
+	bool web_resume_in_task = false; // Render thread: the flush paused right after a present.
 #endif
 
 	void _draw(bool p_swap_buffers, double frame_step);
+	void _draw_begin(bool p_swap_buffers, double frame_step);
+	void _draw_end(bool p_swap_buffers);
 	void _run_post_draw_steps();
 	void _init();
 	void _finish();

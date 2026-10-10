@@ -982,10 +982,21 @@ void RendererViewport::draw_viewports(bool p_swap_buffers) {
 
 	GodotProfileZoneGrouped(_profile_zone, "rasterizer->blit_render_targets_to_screen");
 	if (p_swap_buffers && !blit_to_screen_list.is_empty()) {
-		for (const KeyValue<int, Vector<RenderingServerTypes::BlitToScreen>> &E : blit_to_screen_list) {
-			RSG::rasterizer->blit_render_targets_to_screen(E.key, E.value.ptr(), E.value.size());
+		if (defer_screen_blits) {
+			deferred_screen_blits = blit_to_screen_list;
+		} else {
+			for (const KeyValue<int, Vector<RenderingServerTypes::BlitToScreen>> &E : blit_to_screen_list) {
+				RSG::rasterizer->blit_render_targets_to_screen(E.key, E.value.ptr(), E.value.size());
+			}
 		}
 	}
+}
+
+void RendererViewport::blit_deferred_to_screen() {
+	for (const KeyValue<DisplayServerEnums::WindowID, Vector<RenderingServerTypes::BlitToScreen>> &E : deferred_screen_blits) {
+		RSG::rasterizer->blit_render_targets_to_screen(E.key, E.value.ptr(), E.value.size());
+	}
+	deferred_screen_blits.clear();
 }
 
 RID RendererViewport::viewport_allocate() {

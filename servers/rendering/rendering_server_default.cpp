@@ -94,6 +94,11 @@ void RenderingServerDefault::request_frame_drawn_callback(const Callable &p_call
 }
 
 void RenderingServerDefault::_draw(bool p_swap_buffers, double frame_step) {
+	_draw_begin(p_swap_buffers, frame_step);
+	_draw_end(p_swap_buffers);
+}
+
+void RenderingServerDefault::_draw_begin(bool p_swap_buffers, double frame_step) {
 	GodotProfileZoneGroupedFirst(_profile_zone, "rasterizer->begin_frame");
 	RSG::rasterizer->begin_frame(frame_step);
 
@@ -130,11 +135,14 @@ void RenderingServerDefault::_draw(bool p_swap_buffers, double frame_step) {
 
 	GodotProfileZoneGrouped(_profile_zone, "canvas_render->update");
 	RSG::canvas_render->update();
+}
 
-	GodotProfileZoneGrouped(_profile_zone, "rasterizer->end_frame");
+void RenderingServerDefault::_draw_end(bool p_swap_buffers) {
+	GodotProfileZoneGroupedFirst(_profile_zone, "rasterizer->end_frame");
 	RSG::rasterizer->end_frame(p_swap_buffers);
 
 #ifndef XR_DISABLED
+	XRServer *xr_server = XRServer::get_singleton();
 	if (xr_server != nullptr) {
 		GodotProfileZone("xr_server->end_frame");
 		// let our XR server know we're done so we can get our frame timing
@@ -588,11 +596,42 @@ void RenderingServerDefault::_web_drain() {
 	}
 	if (!command_queue.is_flush_paused()) {
 		command_queue.flush_all();
+	} else if (web_resume_in_task) {
+		// Paused right after a present (not at a frame marker): carry on from here.
+		web_resume_in_task = false;
+		command_queue.flush_all();
 	}
 }
 
 void RenderingServerDefault::_web_frame_marker() {
-	// Queued by draw() right before _draw; see _web_render_raf.
+	// Queued by draw() between a frame's prepare and its present: the flush stops here
+	// and the next animation-frame callback resumes it with the present. Reached inside
+	// the callback (a prepare that was still queued when the vsync came), the present
+	// follows at once instead of waiting for another vsync.
+	if (!web_in_raf) {
+		command_queue.request_flush_pause();
+	}
+}
+
+void RenderingServerDefault::_web_draw_prepare(bool p_swap_buffers, double frame_step) {
+	// Everything of the frame but the blit to the screen, run as soon as the game thread
+	// queues it, so before the vsync that presents it. Chrome's compositor waits for the
+	// canvas frame only until about a third of the refresh interval after the vsync (the
+	// rest is kept for its own drawing); drawn whole inside the callback, AW3's frames
+	// arrived right at that deadline and about one in ten missed its refresh.
+	RSG::viewport->set_defer_screen_blits(true);
+	_draw_begin(p_swap_buffers, frame_step);
+	RSG::viewport->set_defer_screen_blits(false);
+}
+
+void RenderingServerDefault::_web_draw_present(bool p_swap_buffers) {
+	// Inside the animation-frame callback: the blit to the screen and the frame's
+	// submission. Then stop the flush, so the callback returns and the browser takes
+	// the frame now; whatever the game thread queued since runs from the next task
+	// (_web_render_raf wakes it), not ahead of this frame's hand-over.
+	RSG::viewport->blit_deferred_to_screen();
+	_draw_end(p_swap_buffers);
+	web_resume_in_task = true;
 	command_queue.request_flush_pause();
 }
 
@@ -606,7 +645,16 @@ bool RenderingServerDefault::_web_render_raf(double p_time, void *p_self) {
 		return false;
 	}
 	if (self->web_render_ready) {
+		self->web_resume_in_task = false;
+		self->web_in_raf = true;
 		self->command_queue.flush_all();
+		self->web_in_raf = false;
+		if (self->web_resume_in_task) {
+			// The present paused the flush behind it; wake this thread's drain, which
+			// runs as a task after this callback has returned and the frame is taken.
+			self->web_wake.fetch_add(1, std::memory_order_release);
+			emscripten_atomic_notify(&self->web_wake, 1);
+		}
 	}
 	return true;
 }
@@ -648,9 +696,14 @@ void RenderingServerDefault::draw(bool p_present, double frame_step) {
 	if (create_thread) {
 #if defined(WEB_ENABLED) && defined(WEBGPU_ENABLED) && defined(THREADS_ENABLED)
 		if (web_render_thread_started) {
-			// The frame must be drawn from the render thread's animation-frame
-			// callback; this stops the drain right before it (see _web_render_raf).
+			// Prepared as soon as the render thread gets to it; the marker then stops
+			// the drain so the present runs from the next animation-frame callback,
+			// the only place the browser presents a frame at full rate (see
+			// _web_draw_prepare and _web_render_raf).
+			command_queue.push(this, &RenderingServerDefault::_web_draw_prepare, p_present, frame_step);
 			command_queue.push(this, &RenderingServerDefault::_web_frame_marker);
+			command_queue.push(this, &RenderingServerDefault::_web_draw_present, p_present);
+			return;
 		}
 #endif
 		command_queue.push(this, &RenderingServerDefault::_draw, p_present, frame_step);

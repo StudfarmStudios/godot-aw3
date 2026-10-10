@@ -203,6 +203,9 @@ public:
 	int num_viewports_with_motion_vectors = 0;
 
 private:
+	bool defer_screen_blits = false;
+	HashMap<DisplayServerEnums::WindowID, Vector<RenderingServerTypes::BlitToScreen>> deferred_screen_blits;
+
 	Vector<Viewport *> _sort_active_viewports();
 	void _viewport_set_size(Viewport *p_viewport, int p_width, int p_height, uint32_t p_view_count);
 	bool _viewport_requires_motion_vectors(Viewport *p_viewport);
@@ -310,6 +313,13 @@ public:
 	void handle_timestamp(String p_timestamp, uint64_t p_cpu_time, uint64_t p_gpu_time);
 
 	void draw_viewports(bool p_swap_buffers);
+
+	// The web render thread renders a frame's viewports before the display's vsync and
+	// blits them to the screen inside the animation-frame callback that follows
+	// (RenderingServerDefault::_web_draw_prepare/_web_draw_present). While this is set,
+	// draw_viewports() keeps its screen blits for blit_deferred_to_screen().
+	void set_defer_screen_blits(bool p_defer) { defer_screen_blits = p_defer; }
+	void blit_deferred_to_screen();
 
 	bool free(RID p_rid);
 
