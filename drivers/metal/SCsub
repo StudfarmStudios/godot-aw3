@@ -4,8 +4,10 @@ from misc.utility.scons_hints import *
 Import("env")
 
 # An editor without the Metal driver still builds the shader container, so it
-# can bake Metal shaders for an Apple export.
+# can bake Metal shaders for an Apple export (included from the shader baker's
+# SCsub, into the editor library).
 baker_only = not env["metal"]
+target_sources = env.editor_sources if baker_only else env.drivers_sources
 
 thirdparty_obj = []
 
@@ -63,7 +65,7 @@ else:
 env_thirdparty = env_metal.Clone()
 env_thirdparty.disable_warnings()
 env_thirdparty.add_source_files(thirdparty_obj, thirdparty_sources)
-env_metal.drivers_sources += thirdparty_obj
+target_sources += thirdparty_obj
 
 # Enable C++20 for the Objective-C++ Metal code, which uses C++20 concepts.
 if env.msvc:
@@ -86,7 +88,7 @@ else:
 
     env_metal.add_source_files(driver_obj, "*.cpp")
 
-env.drivers_sources += driver_obj
+target_sources += driver_obj
 
 # Needed to force rebuilding the driver files when the thirdparty library is updated.
 env.Depends(driver_obj, thirdparty_obj)

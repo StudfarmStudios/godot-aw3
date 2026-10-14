@@ -800,9 +800,11 @@ bool RenderingShaderContainerMetal::_set_code_from_spirv(const ReflectShader &p_
 				if (compile_err == OK) {
 					// If we successfully compiled to a `.metallib`, there are greater restrictions on target platforms,
 					// so we must update the properties.
+					// The source goes: with a library the runtime reads it only in DEV builds, and it
+					// was a quarter of the baked bytes (the hash above still identifies the stage).
+					stage_data.source_size = 0;
 					stage_data.library_size = library_data.size();
-					binary_data.resize(stage_data.source_size + stage_data.library_size);
-					memcpy(binary_data.ptrw() + stage_data.source_size, library_data.ptr(), stage_data.library_size);
+					binary_data = library_data;
 				}
 			} else {
 				WARN_PRINT_ONCE("Metal shader baking limited to SPIR-V: Unable to determine toolchain properties to compile .metallib");
