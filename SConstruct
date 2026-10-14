@@ -199,6 +199,13 @@ opts.Add(BoolVariable("opengl3", "Enable the OpenGL/GLES3 rendering driver", Tru
 opts.Add(BoolVariable("d3d12", "Enable the Direct3D 12 rendering driver on supported platforms", False))
 opts.Add(BoolVariable("metal", "Enable the Metal rendering driver on supported platforms (Apple arm64 only)", False))
 opts.Add(BoolVariable("webgpu", "Enable the WebGPU rendering driver on supported platforms", False))
+opts.Add(
+    BoolVariable(
+        "metal_shader_baker",
+        "Bake Metal shaders on export from editors without the Metal driver (needs an external Metal compiler)",
+        True,
+    )
+)
 opts.Add(BoolVariable("use_volk", "Use the volk library to load the Vulkan loader dynamically", True))
 opts.Add(BoolVariable("accesskit", "Enable the AccessKit driver for screen reader support", True))
 opts.Add(BoolVariable("angle", "Enable the ANGLE rendering driver for OpenGL ES 3.0 on supported platforms", True))
@@ -700,6 +707,14 @@ if env["scu_build"]:
 # Must happen after the flags' definition, as configure is when most flags
 # are actually handled to change compile options, etc.
 detect.configure(env)
+
+# The Metal shader container is portable C++ (SPIRV-Cross to MSL); only the
+# .metallib step needs Apple's compiler, which GODOT_METAL_COMPILER supplies.
+env.metal_shader_baker_only = (
+    env.editor_build and env["metal_shader_baker"] and not env["metal"] and "RD_ENABLED" in env["CPPDEFINES"]
+)
+if env.metal_shader_baker_only:
+    env.AppendUnique(CPPDEFINES=["METAL_SHADER_BAKER_ENABLED"])
 
 platform_string = env["platform"]
 if env.get("simulator"):

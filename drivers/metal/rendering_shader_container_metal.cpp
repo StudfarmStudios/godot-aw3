@@ -38,53 +38,118 @@
 
 #include <thirdparty/spirv-reflect/spirv_reflect.h>
 
+#ifdef METAL_ENABLED
 #include <Metal/Metal.hpp>
+#else
+// Without metal-cpp (an editor that only bakes Metal shaders), Apple's values
+// for the few enums the reflection data stores.
+namespace MTL {
+enum TextureType : unsigned long {
+	TextureType1D = 0,
+	TextureType1DArray = 1,
+	TextureType2D = 2,
+	TextureType2DArray = 3,
+	TextureType2DMultisample = 4,
+	TextureTypeCube = 5,
+	TextureTypeCubeArray = 6,
+	TextureType3D = 7,
+	TextureType2DMultisampleArray = 8,
+	TextureTypeTextureBuffer = 9,
+};
+enum DataType : unsigned long {
+	DataTypeNone = 0,
+	DataTypeTexture = 58,
+	DataTypeSampler = 59,
+	DataTypePointer = 60,
+};
+enum BindingAccess : unsigned long {
+	BindingAccessReadOnly = 0,
+	BindingAccessReadWrite = 1,
+	BindingAccessWriteOnly = 2,
+};
+enum ResourceUsage : unsigned long {
+	ResourceUsageRead = 1,
+	ResourceUsageWrite = 1 << 1,
+};
+} // namespace MTL
+#endif
 #include <spirv.hpp>
 #include <spirv_msl.hpp>
 #include <spirv_parser.hpp>
+
+static String _metal_sdk(MetalDeviceProfile::Platform p_platform) {
+	switch (p_platform) {
+		case MetalDeviceProfile::Platform::macOS:
+			return "macosx";
+		case MetalDeviceProfile::Platform::iOS:
+			return "iphoneos";
+		case MetalDeviceProfile::Platform::visionOS:
+			return "xros";
+	}
+	return String();
+}
+
+// GODOT_METAL_COMPILER / GODOT_METAL_DSYMUTIL name executables that take the
+// arguments of Apple's `metal` / `metal-dsymutil` (e.g. wrappers around the
+// Metal Developer Tools for Windows); Apple hosts otherwise use xcrun.
+static bool _metal_tool(MetalDeviceProfile::Platform p_platform, const String &p_tool, const String &p_env, String &r_program, List<String> &r_args) {
+	const String path = OS::get_singleton()->get_environment(p_env);
+	if (!path.is_empty()) {
+		r_program = path;
+		return true;
+	}
+#ifdef __APPLE__
+	r_program = "/usr/bin/xcrun";
+	r_args.push_back("-sdk");
+	r_args.push_back(_metal_sdk(p_platform));
+	r_args.push_back(p_tool);
+	return true;
+#else
+	return false;
+#endif
+}
 
 void RenderingShaderContainerMetal::_initialize_toolchain_properties() {
 	if (compiler_props.is_valid()) {
 		return;
 	}
 
-	String sdk;
-	switch (device_profile->platform) {
-		case MetalDeviceProfile::Platform::macOS:
-			sdk = "macosx";
-			break;
-		case MetalDeviceProfile::Platform::iOS:
-			sdk = "iphoneos";
-			break;
-		case MetalDeviceProfile::Platform::visionOS:
-			sdk = "xros";
-			break;
+	String program;
+	List<String> args;
+	if (!_metal_tool(device_profile->platform, "metal", "GODOT_METAL_COMPILER", program, args)) {
+		return;
 	}
-
-	Vector<String> parts{ "echo", R"("")", "|", "/usr/bin/xcrun", "-sdk", sdk, "metal", "-E", "-dM", "-x", "metal" };
+	args.push_back("-E");
+	args.push_back("-dM");
+	args.push_back("-x");
+	args.push_back("metal");
 
 	switch (device_profile->platform) {
 		case MetalDeviceProfile::Platform::macOS: {
-			parts.push_back("-mtargetos=macos" + device_profile->min_os_version.to_compiler_os_version());
+			args.push_back("-mtargetos=macos" + device_profile->min_os_version.to_compiler_os_version());
 			break;
 		}
 		case MetalDeviceProfile::Platform::iOS: {
-			parts.push_back("-mtargetos=ios" + device_profile->min_os_version.to_compiler_os_version());
+			args.push_back("-mtargetos=ios" + device_profile->min_os_version.to_compiler_os_version());
 			break;
 		}
 		case MetalDeviceProfile::Platform::visionOS: {
-			parts.push_back("-mtargetos=xros" + device_profile->min_os_version.to_compiler_os_version());
+			args.push_back("-mtargetos=xros" + device_profile->min_os_version.to_compiler_os_version());
 			break;
 		}
 	}
 
-	parts.append_array({ "-", "|", "grep", "-E", R"(\"__METAL_VERSION__|__ENVIRONMENT_OS\")" });
-
-	List<String> args = { "-c", String(" ").join(parts) };
+	// An empty source file rather than stdin: not every compiler host reads `-`.
+	Error r_error;
+	Ref<FileAccess> empty_file = FileAccess::create_temp(FileAccess::ModeFlags::READ_WRITE, "metal_toolchain", "metal", false, &r_error);
+	ERR_FAIL_COND_MSG(r_error != OK, "Unable to create a temporary file to determine Metal toolchain properties.");
+	empty_file->store_string("\n");
+	empty_file->flush();
+	args.push_back(empty_file->get_path_absolute());
 
 	String r_pipe;
 	int exit_code;
-	Error err = OS::get_singleton()->execute("sh", args, &r_pipe, &exit_code, true);
+	Error err = OS::get_singleton()->execute(program, args, &r_pipe, &exit_code, true);
 	ERR_FAIL_COND_MSG(err != OK, "Failed to determine Metal toolchain properties");
 
 	// Parse the lines, which are in the form:
@@ -92,7 +157,7 @@ void RenderingShaderContainerMetal::_initialize_toolchain_properties() {
 	// #define VARNAME VALUE
 	Vector<String> lines = r_pipe.split("\n", false);
 	for (String &line : lines) {
-		Vector<String> name_val = line.trim_prefix("#define ").split(" ");
+		Vector<String> name_val = line.strip_edges().trim_prefix("#define ").split(" ");
 		if (name_val.size() != 2) {
 			continue;
 		}
@@ -130,31 +195,17 @@ Error RenderingShaderContainerMetal::compile_metal_source(const char *p_source, 
 			"metallib", false, &r_error);
 
 	ERR_FAIL_COND_V_MSG(r_error != OK, r_error, "Unable to create temporary target file");
-
-	String sdk;
-	switch (device_profile->platform) {
-		case MetalDeviceProfile::Platform::macOS:
-			sdk = "macosx";
-			break;
-		case MetalDeviceProfile::Platform::iOS:
-			sdk = "iphoneos";
-			break;
-		case MetalDeviceProfile::Platform::visionOS:
-			sdk = "xros";
-			break;
-	}
+	const String result_path = result_file->get_path_absolute();
 
 	// Build the .metallib binary.
 	{
-		List<String> args{
-			"-sdk",
-			sdk,
-			"metal",
-			"-O3",
-			"-Wno-unused-variable",
-			"-Wno-uninitialized",
-			"-Wno-unused-function",
-		};
+		String program;
+		List<String> args;
+		ERR_FAIL_COND_V_MSG(!_metal_tool(device_profile->platform, "metal", "GODOT_METAL_COMPILER", program, args), ERR_UNAVAILABLE, "No Metal compiler: set GODOT_METAL_COMPILER.");
+		args.push_back("-O3");
+		args.push_back("-Wno-unused-variable");
+		args.push_back("-Wno-uninitialized");
+		args.push_back("-Wno-unused-function");
 
 		// Compile metal shaders for the minimum supported target instead of the host machine.
 		switch (device_profile->platform) {
@@ -178,10 +229,10 @@ Error RenderingShaderContainerMetal::compile_metal_source(const char *p_source, 
 		args.push_back("-fmetal-math-mode=fast");
 		args.push_back(source_file->get_path_absolute());
 		args.push_back("-o");
-		args.push_back(result_file->get_path_absolute());
+		args.push_back(result_path);
 		String r_pipe;
 		int exit_code;
-		Error err = OS::get_singleton()->execute("/usr/bin/xcrun", args, &r_pipe, &exit_code, true);
+		Error err = OS::get_singleton()->execute(program, args, &r_pipe, &exit_code, true);
 		if (!r_pipe.is_empty()) {
 			print_line(r_pipe);
 		}
@@ -192,18 +243,22 @@ Error RenderingShaderContainerMetal::compile_metal_source(const char *p_source, 
 		if (exit_code != 0) {
 			ERR_PRINT(vformat("Metal compiler exited with error code: %d", exit_code));
 		}
-		int len = result_file->get_length();
-		ERR_FAIL_COND_V_MSG(len == 0, ERR_CANT_CREATE, "Metal compiler created empty library");
+		// By path: a compiler that replaces the output file leaves the open handle on the old one.
+		ERR_FAIL_COND_V_MSG(FileAccess::get_file_as_bytes(result_path).is_empty(), ERR_CANT_CREATE, "Metal compiler created empty library");
 	}
 
 	// Strip the source from the binary. AIR versions before 2.4 (MSL 2.4) don't support
 	// companion MetalLib, so metal-dsymutil copies verbatim and emits a warning:
 	//   "architecture air64_v23 does not support a companion MetalLib; copying verbatim"
-	if (device_profile->features.msl_version >= MSL_VERSION_24) {
-		List<String> args{ "-sdk", sdk, "metal-dsymutil", "--remove-source", result_file->get_path_absolute() };
+	// Optional with an external compiler: Godot's flags embed no source to remove.
+	String dsym_program;
+	List<String> dsym_args;
+	if (device_profile->features.msl_version >= MSL_VERSION_24 && _metal_tool(device_profile->platform, "metal-dsymutil", "GODOT_METAL_DSYMUTIL", dsym_program, dsym_args)) {
+		dsym_args.push_back("--remove-source");
+		dsym_args.push_back(result_path);
 		String r_pipe;
 		int exit_code;
-		Error err = OS::get_singleton()->execute("/usr/bin/xcrun", args, &r_pipe, &exit_code, true);
+		Error err = OS::get_singleton()->execute(dsym_program, dsym_args, &r_pipe, &exit_code, true);
 		if (!r_pipe.is_empty()) {
 			print_line(r_pipe);
 		}
@@ -214,11 +269,10 @@ Error RenderingShaderContainerMetal::compile_metal_source(const char *p_source, 
 		if (exit_code != 0) {
 			ERR_PRINT(vformat("metal-dsymutil Compiler exited with error code: %d", exit_code));
 		}
-		int len = result_file->get_length();
-		ERR_FAIL_COND_V_MSG(len == 0, ERR_CANT_CREATE, "metal-dsymutil tool created empty library");
 	}
 
-	r_binary_data = result_file->get_buffer(result_file->get_length());
+	r_binary_data = FileAccess::get_file_as_bytes(result_path);
+	ERR_FAIL_COND_V_MSG(r_binary_data.is_empty(), ERR_CANT_CREATE, "Metal toolchain left an empty library");
 
 	return OK;
 }

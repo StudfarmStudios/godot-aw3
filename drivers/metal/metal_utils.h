@@ -32,7 +32,9 @@
 
 #include "core/error/error_macros.h"
 
+#ifdef __APPLE__
 #include <os/log.h>
+#endif
 
 #include <cstdint>
 #include <functional>
@@ -124,9 +126,11 @@ Defer(F &&) -> Defer<std::decay_t<F>>;
 #define CONCAT(x, y) CONCAT_INTERNAL(x, y)
 #define DEFER const auto &CONCAT(defer__, __LINE__) = Defer
 
+#ifdef __APPLE__
 extern os_log_t LOG_DRIVER;
 // Used for dynamic tracing.
 extern os_log_t LOG_INTERVALS;
+#endif
 
 _FORCE_INLINE_ static constexpr uint32_t make_msl_version(uint32_t p_major, uint32_t p_minor = 0, uint32_t p_patch = 0) {
 	return (p_major * 10000) + (p_minor * 100) + p_patch;

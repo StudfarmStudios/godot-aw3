@@ -189,7 +189,7 @@
 #include "editor/shader/shader_baker/shader_baker_export_plugin_platform_d3d12.h"
 #endif
 
-#ifdef METAL_ENABLED
+#if defined(METAL_ENABLED) || defined(METAL_SHADER_BAKER_ENABLED)
 #include "editor/shader/shader_baker/shader_baker_export_plugin_platform_metal.h"
 #endif
 
@@ -9516,7 +9516,7 @@ EditorNode::EditorNode() {
 	shader_baker_export_plugin->add_platform(shader_baker_export_plugin_platform_d3d12);
 #endif
 
-#ifdef METAL_ENABLED
+#if defined(METAL_ENABLED) || defined(METAL_SHADER_BAKER_ENABLED)
 	Ref<ShaderBakerExportPluginPlatformMetal> shader_baker_export_plugin_platform_metal;
 	shader_baker_export_plugin_platform_metal.instantiate();
 	shader_baker_export_plugin->add_platform(shader_baker_export_plugin_platform_metal);

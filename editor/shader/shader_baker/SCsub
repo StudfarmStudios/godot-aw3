@@ -9,7 +9,7 @@ if env["vulkan"]:
 if env["d3d12"]:
     env.add_source_files(env.editor_sources, "shader_baker_export_plugin_platform_d3d12.cpp")
 
-if env["metal"]:
+if env["metal"] or env.metal_shader_baker_only:
     env.add_source_files(env.editor_sources, "shader_baker_export_plugin_platform_metal.cpp")
 
 if env["webgpu"] and env["platform"] != "web":
