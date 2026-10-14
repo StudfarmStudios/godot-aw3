@@ -76,6 +76,9 @@ else:
 driver_obj = []
 
 if baker_only:
+    if not env.msvc:
+        # `#pragma mark` and `#pragma clang` are for Apple's toolchain.
+        env_metal.Append(CCFLAGS=["-Wno-unknown-pragmas"])
     env_metal.add_source_files(driver_obj, ["rendering_shader_container_metal.cpp", "metal_device_profile.cpp"])
 else:
     # Enable module support

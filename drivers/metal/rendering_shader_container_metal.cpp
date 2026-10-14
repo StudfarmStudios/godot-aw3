@@ -77,6 +77,7 @@ enum ResourceUsage : unsigned long {
 #include <spirv_msl.hpp>
 #include <spirv_parser.hpp>
 
+#ifdef __APPLE__
 static String _metal_sdk(MetalDeviceProfile::Platform p_platform) {
 	switch (p_platform) {
 		case MetalDeviceProfile::Platform::macOS:
@@ -88,6 +89,7 @@ static String _metal_sdk(MetalDeviceProfile::Platform p_platform) {
 	}
 	return String();
 }
+#endif
 
 // GODOT_METAL_COMPILER / GODOT_METAL_DSYMUTIL name executables that take the
 // arguments of Apple's `metal` / `metal-dsymutil` (e.g. wrappers around the
