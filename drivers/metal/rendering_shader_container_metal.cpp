@@ -116,6 +116,18 @@ void RenderingShaderContainerMetal::_initialize_toolchain_properties() {
 		return;
 	}
 
+	// Once per platform and minimum OS for the whole process: every shader
+	// container used to start the compiler again just to ask its version, as
+	// many runs as compiles, and each a chance to fail under load.
+	static Mutex mutex;
+	static HashMap<uint64_t, ToolchainProperties> known;
+	const uint64_t key = (uint64_t(device_profile->platform) << 32) | uint32_t(device_profile->min_os_version);
+	MutexLock lock(mutex);
+	if (const ToolchainProperties *props = known.getptr(key)) {
+		compiler_props = *props;
+		return;
+	}
+
 	String program;
 	List<String> args;
 	if (!_metal_tool(device_profile->platform, "metal", "GODOT_METAL_COMPILER", program, args)) {
@@ -175,6 +187,12 @@ void RenderingShaderContainerMetal::_initialize_toolchain_properties() {
 		if (compiler_props.is_valid()) {
 			break;
 		}
+	}
+
+	if (compiler_props.is_valid()) {
+		known.insert(key, compiler_props);
+	} else {
+		ERR_PRINT(vformat("Metal compiler reported no __METAL_VERSION__ (exit code %d): %s", exit_code, r_pipe.left(500)));
 	}
 }
 
