@@ -155,6 +155,18 @@ public:
 	}
 
 	virtual void resolve_platform_feature_priorities(const Ref<EditorExportPreset> &p_preset, HashSet<String> &p_features) override {
+		// Every Mac export carries "s3tc" (get_platform_features) and an arm64 one also
+		// "etc2"/"astc" (get_preset_features), so a texture imported in both families
+		// shipped twice. A Mac on Metal samples both, and the loader takes the first
+		// supported remap, which the importer always writes as the S3TC/BPTC one: the
+		// mobile copy was never read (AW3: 255 MB of a 961 MB pack). A texture imported
+		// only for the mobile family keeps it, since this runs only when both are present.
+		if (p_features.has("s3tc") && p_features.has("etc2")) {
+			p_features.erase("etc2");
+		}
+		if (p_features.has("bptc") && p_features.has("astc")) {
+			p_features.erase("astc");
+		}
 	}
 
 	virtual Ref<Texture2D> get_run_icon() const override;
