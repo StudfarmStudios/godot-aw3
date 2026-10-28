@@ -3,7 +3,7 @@
 # C# game, using this engine fork. Idempotent, non-interactive, meant to be run
 # by a person or an agent from a checkout of the fork.
 #
-#   misc/web-export/wasm.sh toolchain            emsdk + .NET 9 (wasm-tools) under $WASM_HOME
+#   misc/web-export/wasm.sh toolchain            emsdk + .NET SDK (wasm-tools) under $WASM_HOME
 #   misc/web-export/wasm.sh engine               editor, C# glue + GodotSharp nupkgs, bootstrap web template
 #   misc/web-export/wasm.sh prepare <game-dir>   nuget.config, csproj import, entry stub, .sln, project.godot, Web preset
 #   misc/web-export/wasm.sh export  <game-dir>   two-pass export (publish -> relink template -> swap) into <game>/builds/web
@@ -14,7 +14,8 @@
 # Environment (all optional):
 #   WASM_HOME         where toolchains go            (default ~/.godot-aw3)
 #   EMSDK_DIR         emsdk checkout                 (default $WASM_HOME/emsdk)
-#   DOTNET_DIR        .NET 9 SDK with wasm-tools     (default $WASM_HOME/dotnet9)
+#   GODOT_WASM_TFM    runtime pack framework         (default net9.0, or net10.0; the game must target it)
+#   DOTNET_DIR        .NET SDK with wasm-tools       (default $WASM_HOME/dotnet9, dotnet10 for net10.0)
 #   ENGINE_DIR        the godot-aw3 checkout         (default: the repo this script lives in)
 #   GODOT_EDITOR_BIN  editor executable override     (default <engine>/bin/godot.<host>.editor.<arch>.mono)
 #   NUGET_PACKAGES    NuGet global-packages folder   (default ~/.nuget/packages)
@@ -38,7 +39,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE_DIR="${ENGINE_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 WASM_HOME="${WASM_HOME:-$HOME/.godot-aw3}"
 EMSDK_DIR="${EMSDK_DIR:-$WASM_HOME/emsdk}"
-DOTNET_DIR="${DOTNET_DIR:-$WASM_HOME/dotnet9}"
+# The target framework of the runtime pack the template links. scons reads it
+# (mono_configure.py), in the bootstrap and in every relink.
+export GODOT_WASM_TFM="${GODOT_WASM_TFM:-net9.0}"
+[[ "$GODOT_WASM_TFM" =~ ^net[0-9]+\.0$ ]] || { echo "GODOT_WASM_TFM must look like net9.0, not $GODOT_WASM_TFM" >&2; exit 1; }
+DOTNET_CHANNEL="${GODOT_WASM_TFM#net}"
+DOTNET_DIR="${DOTNET_DIR:-$WASM_HOME/dotnet${DOTNET_CHANNEL%.0}}"
 EMSDK_VERSION="${EMSDK_VERSION:-4.0.20}"
 AOT_MODE="${AOT_MODE:-LLVMOnlyInterp}"
 RENDERING_METHOD="${RENDERING_METHOD:-forward_plus}"
@@ -148,12 +154,12 @@ cmd_toolchain() {
     fi
     info "$("$EMSDK_DIR/upstream/emscripten/emcc" --version | head -1)"
 
-    log ".NET 9 SDK ($DOTNET_ARCH) at $DOTNET_DIR"
+    log ".NET $DOTNET_CHANNEL SDK ($DOTNET_ARCH) at $DOTNET_DIR"
     # Must be the native-arch SDK: an x64 SDK under Rosetta wedges the
     # wasm-tools workload install at 0 % CPU forever.
     if [[ ! -x "$DOTNET_DIR/dotnet" ]]; then
         curl -sSL https://dot.net/v1/dotnet-install.sh | bash -s -- \
-            --channel 9.0 --architecture "$DOTNET_ARCH" --install-dir "$DOTNET_DIR"
+            --channel "$DOTNET_CHANNEL" --architecture "$DOTNET_ARCH" --install-dir "$DOTNET_DIR"
     fi
     if ! DOTNET_ROOT="$DOTNET_DIR" "$DOTNET_DIR/dotnet" workload list 2>/dev/null | grep -q '^wasm-tools'; then
         DOTNET_ROOT="$DOTNET_DIR" "$DOTNET_DIR/dotnet" workload install wasm-tools
@@ -248,6 +254,18 @@ resolve_game() {
     AOT_DIR="$GAME/.godot/mono/temp/obj/ExportRelease/browser-wasm/wasm/for-publish"
 }
 
+# The game's web TargetFramework (or TargetFrameworks, when it multi-targets) as
+# its publish evaluates it; empty when the csproj cannot be evaluated. The
+# publish uses that framework's runtime, which must be the one the template links.
+game_tfm() {
+    local json
+    json="$(DOTNET_ROOT="$DOTNET_DIR" "$DOTNET_DIR/dotnet" msbuild "$CSPROJ_PATH" -nologo \
+        -getProperty:TargetFramework -getProperty:TargetFrameworks -p:GodotTargetPlatform=web \
+        -p:RuntimeIdentifier=browser-wasm -p:Configuration=ExportRelease 2>/dev/null)" || return 0
+    python3 -c 'import json, sys; p = json.load(sys.stdin)["Properties"]; print(p.get("TargetFramework") or p.get("TargetFrameworks", ""))' \
+        <<<"$json" 2>/dev/null || true
+}
+
 cmd_prepare() {
     resolve_game "${1:-}"
     dotnet_env
@@ -302,6 +320,9 @@ EOF
     <Compile Remove="GodotAw3WasmEntry.cs" Condition="'$(RuntimeIdentifier)' != 'browser-wasm'" />
   </ItemGroup>
   <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'browser-wasm'">
+    <!-- .NET 9's WebAssembly SDK forced Exe. .NET 10's only defaults it, and a
+         Library gets no native build, so no AOT objects and no pinvoke table. -->
+    <OutputType>Exe</OutputType>
     <!-- The web Mono runtime has no ICU; a culture-sensitive string call aborts. -->
     <InvariantGlobalization>true</InvariantGlobalization>
     <!-- AOT is the only configuration that runs: the interpreter cannot expand
@@ -496,6 +517,9 @@ cmd_export() {
     [[ -f "$TEMPLATE_ZIP" ]] || die "no web template at $TEMPLATE_ZIP — run: $0 engine"
     [[ -f "$GAME/godot-aw3-web.props" || -f "$(dirname "$CSPROJ_PATH")/godot-aw3-web.props" ]] || die "project not prepared — run: $0 prepare $GAME"
     dotnet_env
+    local tfm; tfm="$(game_tfm)"
+    [[ -n "$tfm" ]] || die "could not evaluate $CSPROJ_PATH with $DOTNET_DIR/dotnet"
+    [[ "$tfm" == "$GODOT_WASM_TFM" ]] || die "$(basename "$CSPROJ_PATH") targets '$tfm' for the web, but GODOT_WASM_TFM is $GODOT_WASM_TFM; set its TargetFramework or GODOT_WASM_TFM so they match"
     emsdk_env
     local start logs out
     start="$(date +%s)"
@@ -586,7 +610,7 @@ PY
 cmd_doctor() {
     log "toolchain"
     info "emsdk:   $EMSDK_DIR $( [[ -x "$EMSDK_DIR/upstream/emscripten/emcc" ]] && "$EMSDK_DIR/upstream/emscripten/emcc" --version 2>/dev/null | head -1 || echo MISSING )"
-    info "dotnet:  $DOTNET_DIR $( [[ -x "$DOTNET_DIR/dotnet" ]] && DOTNET_ROOT="$DOTNET_DIR" "$DOTNET_DIR/dotnet" --version || echo MISSING )"
+    info "dotnet:  $DOTNET_DIR $( [[ -x "$DOTNET_DIR/dotnet" ]] && DOTNET_ROOT="$DOTNET_DIR" "$DOTNET_DIR/dotnet" --version || echo MISSING ), runtime pack $GODOT_WASM_TFM"
     info "wasm-tools: $( [[ -x "$DOTNET_DIR/dotnet" ]] && DOTNET_ROOT="$DOTNET_DIR" "$DOTNET_DIR/dotnet" workload list 2>/dev/null | grep -c '^wasm-tools' || echo 0 ) installed"
     info "scons: $(command -v scons || echo MISSING)   glslangValidator: $(command -v glslangValidator || echo MISSING)"
     log "engine $ENGINE_DIR"
@@ -612,6 +636,14 @@ cmd_doctor() {
         resolve_game "$1"
         log "game $GAME"
         info "csproj: $CSPROJ_PATH (assembly $ASSEMBLY)"
+        if [[ -x "$DOTNET_DIR/dotnet" ]]; then
+            local tfm; tfm="$(game_tfm)"
+            if [[ -z "$tfm" ]]; then
+                info "TargetFramework (web): could not evaluate $CSPROJ_PATH with $DOTNET_DIR/dotnet"
+            else
+                info "TargetFramework (web): $tfm $( [[ "$tfm" == "$GODOT_WASM_TFM" ]] && echo '(matches GODOT_WASM_TFM)' || echo "(MISMATCH: GODOT_WASM_TFM is $GODOT_WASM_TFM — export will refuse)" )"
+            fi
+        fi
         info "imports godot-aw3-web.props: $(grep -qF godot-aw3-web.props "$CSPROJ_PATH" && echo yes || echo NO)"
         info "nuget.config -> this engine: $( [[ -f "$GAME/nuget.config" ]] && grep -qF "$NUPKGS" "$GAME/nuget.config" && echo yes || echo NO )"
         info "rendering_method.web: $(sed -n 's/^renderer\/rendering_method.web=//p' "$GAME/project.godot" | head -1)"
@@ -632,5 +664,5 @@ case "$CMD" in
     serve)     cmd_serve "$@" ;;
     doctor)    cmd_doctor "$@" ;;
     all)       cmd_toolchain; cmd_engine; cmd_prepare "$@"; cmd_export "$@" ;;
-    *) sed -n '2,32p' "$0"; exit 1 ;;
+    *) sed -n '2,33p' "$0"; exit 1 ;;
 esac

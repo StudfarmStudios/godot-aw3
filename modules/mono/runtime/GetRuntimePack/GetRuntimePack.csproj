@@ -5,7 +5,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <!-- Selects the runtime pack. mono_configure.py passes it from the environment. -->
+    <GODOT_WASM_TFM Condition="'$(GODOT_WASM_TFM)' == ''">net9.0</GODOT_WASM_TFM>
+    <TargetFramework>$(GODOT_WASM_TFM)</TargetFramework>
   </PropertyGroup>
 
   <!-- This plus a non-empty $(RuntimeIdentifier) are enough to choose Mono. -->
@@ -21,6 +23,9 @@
 
   <!-- Configuration for the Mono WASM runtime. Must match the features supported by the Godot build. -->
   <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'browser-wasm'">
+    <!-- .NET 9's WebAssembly SDK forced Exe. .NET 10's only defaults it, and a Library gets no
+         native build, so no pinvoke-table.h or wasm_m2n_invoke.g.h for the engine to include. -->
+    <OutputType>Exe</OutputType>
     <!-- Passed in by mono_configure.py from the engine's `threads` option: a
          threaded runtime pack cannot be linked into a non-threaded engine. -->
     <WasmEnableThreads Condition="'$(WasmEnableThreads)' == ''">true</WasmEnableThreads>

@@ -51,7 +51,7 @@ misc/web-export/wasm.sh serve /path/to/game      # http://127.0.0.1:8080/ with C
 
 | subcommand | what it does | when to re-run |
 |---|---|---|
-| `toolchain` | installs emsdk 4.0.20 and an arm64/x64 .NET 9 SDK with the `wasm-tools` workload under `~/.godot-aw3` (Homebrew on macOS for scons/glslang/molten-vk; apt hints on Linux) | once per machine |
+| `toolchain` | installs emsdk 4.0.20 and an arm64/x64 .NET SDK (9 by default, see `GODOT_WASM_TFM`) with the `wasm-tools` workload under `~/.godot-aw3` (Homebrew on macOS for scons/glslang/molten-vk; apt hints on Linux) | once per machine |
 | `engine` | builds this fork's editor, regenerates the C# glue and pushes the fork's `GodotSharp` NuGet packages to `bin/GodotSharp/Tools/nupkgs`, and builds the bootstrap web template | when the fork moves (it notices `modules/mono` commits newer than the assemblies) |
 | `prepare <game>` | writes `nuget.config` (source mapping so `Godot.*` comes from the fork, not nuget.org), a generated `godot-aw3-web.props` plus one `<Import>` line in the csproj, an entry-point stub, a `.sln` if none exists, `renderer/rendering_method.web` in `project.godot`, and a `Web` export preset pointing at the template | once per game, or to change `AOT_MODE` |
 | `export <game>` | pass 1 exports (the publish AOT-compiles the C# and leaves `.o` files), pass 2 relinks the template against them, then copies `godot.wasm`/`godot.js` over the export | after every C# change |
@@ -70,6 +70,18 @@ aborts on them instead and is what AW3 ships after a full coverage pass),
 `RENDERING_METHOD` (`forward_plus`, falls back to `mobile` on adapters with
 fewer than 48 sampled textures per stage; either selects WebGPU), `ENGINE_DIR`,
 `EMSDK_DIR`, `DOTNET_DIR`, `CSPROJ`, `PRESET`, `JOBS`, `FORCE=1`.
+
+`GODOT_WASM_TFM` (`net9.0` by default) is the target framework of the .NET
+runtime pack the template links. To build on .NET 10, set it to `net10.0` for
+every subcommand: `toolchain` then installs a .NET 10 SDK under
+`~/.godot-aw3/dotnet10` (or point `DOTNET_DIR` at one that has `wasm-tools`),
+and `engine` and `export` build the runtime pack for `net10.0`. The game's
+`TargetFramework` must be the same, since its publish uses that framework's
+runtime; `doctor` shows both, and `export` refuses to run when they differ.
+
+```sh
+GODOT_WASM_TFM=net10.0 misc/web-export/wasm.sh all /path/to/game
+```
 
 Expect the first `engine` run to take from twenty minutes to an hour depending
 on the machine; a later `export` is a few minutes (publish, then a relink).
@@ -108,6 +120,7 @@ python3 modules/mono/build_scripts/build_assemblies.py \
 # Web template. mono_aot_dir points at a game's AOT objects (left behind by a
 # first export) and links them into the template; omit it for the bootstrap.
 # Bootstrap and relink must use the same flags or scons rebuilds everything.
+# GODOT_WASM_TFM=net10.0 in the environment builds against the .NET 10 runtime pack.
 scons platform=web target=template_release module_mono_enabled=yes webgpu=yes \
       stack_size=32768 default_pthread_stack_size=32768 initial_memory=256 \
       optimize=speed lto=thin \

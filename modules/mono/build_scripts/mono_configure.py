@@ -28,6 +28,8 @@ def configure(env, env_mono):
         this_script_dir = os.path.dirname(os.path.realpath(__file__))
         module_dir = os.path.abspath(os.path.join(this_script_dir, os.pardir))
         get_runtime_pack_project_path = os.path.join(module_dir, "runtime", "GetRuntimePack")
+        # The .NET target framework of the runtime pack; the game's publish must use the same one.
+        wasm_tfm = os.environ.get("GODOT_WASM_TFM") or "net9.0"
 
         mono_runtime_copy_path = os.path.join(get_runtime_pack_project_path, "bin", "mono_runtime")
         try:
@@ -48,6 +50,7 @@ def configure(env, env_mono):
                 "--self-contained",
                 "-c", "Release",
                 "-p:WasmEnableThreads=" + ("true" if env["threads"] else "false"),
+                "-p:GODOT_WASM_TFM=" + wasm_tfm,
             ]
         )
         if exit_code != 0:
@@ -99,7 +102,7 @@ def configure(env, env_mono):
         if env["dlink_enabled"]:
             env_thirdparty.Append(CPPDEFINES=["WASM_SUPPORTS_DLOPEN"])
         env_thirdparty.Prepend(CPPPATH=os.path.join(mono_runtime_path, "include", "wasm"))
-        get_runtime_pack_project_includes = os.path.join(get_runtime_pack_project_path, "obj", "Release", "net9.0", rid, "wasm", "for-publish")
+        get_runtime_pack_project_includes = os.path.join(get_runtime_pack_project_path, "obj", "Release", wasm_tfm, rid, "wasm", "for-publish")
         env_thirdparty.Prepend(CPPPATH=os.path.join(get_runtime_pack_project_includes))
         wasm_sources = [
             os.path.join(mono_runtime_path, "src", "runtime.c"),
