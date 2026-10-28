@@ -28,6 +28,15 @@
     <DisableImplicitGodotSharpReferences>true</DisableImplicitGodotSharpReferences>
   </PropertyGroup>
 
+  <!--
+  The analyzer config that carries properties to the source generators treats ';' as the start of a
+  comment, so they would see only the first entry of GodotDisabledSourceGenerators. Pass it as a
+  ','-separated list on one line instead. Defined here, after the project file, so the user's value is set.
+  -->
+  <PropertyGroup>
+    <_GodotDisabledSourceGenerators>$([System.Text.RegularExpressions.Regex]::Replace('$(GodotDisabledSourceGenerators)', '[\s;,]+', ',').Trim(','))</_GodotDisabledSourceGenerators>
+  </PropertyGroup>
+
   <!-- GodotSharp references -->
   <ItemGroup Condition=" '$(DisableImplicitGodotGeneratorReferences)' != 'true' ">
     <PackageReference Include="Godot.SourceGenerators" IsImplicitlyDefined="true" Version="$(PackageVersion_Godot_SourceGenerators)" ReferenceOutputAssembly="false" PrivateAssets="all" />

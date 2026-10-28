@@ -2,6 +2,8 @@
   <ItemGroup>
     <!-- $(GodotProjectDir) is defined by Godot.NET.Sdk -->
     <CompilerVisibleProperty Include="GodotDisabledSourceGenerators" />
+    <!-- GodotDisabledSourceGenerators separated by ',' instead of ';'; defined by Godot.NET.Sdk -->
+    <CompilerVisibleProperty Include="_GodotDisabledSourceGenerators" />
     <CompilerVisibleProperty Include="GodotProjectDir" />
     <CompilerVisibleProperty Include="GodotProjectDirBase64" />
     <CompilerVisibleProperty Include="GodotSourceGenerators" />

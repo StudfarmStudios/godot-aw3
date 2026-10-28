@@ -11,7 +11,7 @@ namespace Godot.SourceGenerators.Tests;
 
 public class ScriptPathAttributeGeneratorTests
 {
-    private static (string, SourceText) MakeAssemblyScriptTypesGeneratedSource(ICollection<string> types)
+    internal static (string, SourceText) MakeAssemblyScriptTypesGeneratedSource(ICollection<string> types)
     {
         return (
             Path.Combine("Godot.SourceGenerators", "Godot.SourceGenerators.ScriptPathAttributeGenerator", "AssemblyScriptTypes.generated.cs"),

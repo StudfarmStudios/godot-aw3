@@ -26,11 +26,18 @@ namespace Godot.SourceGenerators
                toggle != null &&
                toggle.Equals("true", StringComparison.OrdinalIgnoreCase);
 
+        // The analyzer config ends GodotDisabledSourceGenerators at its first ';', so Godot.NET.Sdk
+        // also passes the list as _GodotDisabledSourceGenerators, separated by ','. Either accepts both.
         public static bool IsGodotSourceGeneratorDisabled(this GeneratorExecutionContext context, string generatorName) =>
             AreGodotSourceGeneratorsDisabled(context) ||
-            (context.TryGetGlobalAnalyzerProperty("GodotDisabledSourceGenerators", out string? disabledGenerators) &&
-            disabledGenerators != null &&
-            disabledGenerators.Split(';').Contains(generatorName));
+            IsListedInGlobalAnalyzerProperty(context, "_GodotDisabledSourceGenerators", generatorName) ||
+            IsListedInGlobalAnalyzerProperty(context, "GodotDisabledSourceGenerators", generatorName);
+
+        private static bool IsListedInGlobalAnalyzerProperty(GeneratorExecutionContext context, string property, string item) =>
+            context.TryGetGlobalAnalyzerProperty(property, out string? list) &&
+            list != null &&
+            list.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                .Any(entry => entry.Trim() == item);
 
         public static bool InheritsFrom(this ITypeSymbol? symbol, string assemblyName, string typeFullName)
         {
