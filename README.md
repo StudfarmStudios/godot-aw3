@@ -53,7 +53,7 @@ misc/web-export/wasm.sh serve /path/to/game      # http://127.0.0.1:8080/ with C
 |---|---|---|
 | `toolchain` | installs emsdk 4.0.20 and an arm64/x64 .NET 9 SDK with the `wasm-tools` workload under `~/.godot-aw3` (Homebrew on macOS for scons/glslang/molten-vk; apt hints on Linux) | once per machine |
 | `engine` | builds this fork's editor, regenerates the C# glue and pushes the fork's `GodotSharp` NuGet packages to `bin/GodotSharp/Tools/nupkgs`, and builds the bootstrap web template | when the fork moves (it notices `modules/mono` commits newer than the assemblies) |
-| `prepare <game>` | writes `nuget.config` (source mapping so `Godot.*` comes from the fork, not nuget.org), a generated `godot-aw3-web.props` plus one `<Import>` line in the csproj, an entry-point stub, a `.sln` if none exists, `renderer/rendering_method.web` in `project.godot`, and a `Web` export preset pointing at the template | once per game, or to change `AOT_MODE` |
+| `prepare <game>` | writes `nuget.config` (source mapping so `Godot.*` comes from the fork, not nuget.org), a generated `godot-aw3-web.props` plus one `<Import>` line in the csproj, an entry-point stub, a solution referencing the csproj if there is none (looked for in `dotnet/project/solution_directory`, and created there if missing), `renderer/rendering_method.web` in `project.godot`, and a `Web` export preset pointing at the template | once per game, or to change `AOT_MODE` |
 | `export <game>` | pass 1 exports (the publish AOT-compiles the C# and leaves `.o` files), pass 2 relinks the template against them, then copies `godot.wasm`/`godot.js` over the export | after every C# change |
 
 The two passes exist because the AOT images are linked into the **engine**

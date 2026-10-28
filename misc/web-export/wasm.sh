@@ -5,7 +5,7 @@
 #
 #   misc/web-export/wasm.sh toolchain            emsdk + .NET 9 (wasm-tools) under $WASM_HOME
 #   misc/web-export/wasm.sh engine               editor, C# glue + GodotSharp nupkgs, bootstrap web template
-#   misc/web-export/wasm.sh prepare <game-dir>   nuget.config, csproj import, entry stub, .sln, project.godot, Web preset
+#   misc/web-export/wasm.sh prepare <game-dir>   nuget.config, csproj import, entry stub, solution, project.godot, Web preset
 #   misc/web-export/wasm.sh export  <game-dir>   two-pass export (publish -> relink template -> swap) into <game>/builds/web
 #   misc/web-export/wasm.sh serve   <game-dir> [port]   local COOP/COEP server for the export
 #   misc/web-export/wasm.sh doctor  [game-dir]   report toolchain / engine / project state and stale artifacts
@@ -367,11 +367,40 @@ PY
         info "wrote GodotAw3WasmEntry.cs"
     fi
 
-    # GodotTools resolves the solution by looking for one that references the
-    # csproj, or falls back to <assembly>.sln, which must exist.
-    if ! ls "$GAME"/*.sln "$GAME"/*.slnx >/dev/null 2>&1; then
-        (cd "$GAME" && dotnet new sln -n "$ASSEMBLY" >/dev/null && dotnet sln "$ASSEMBLY.sln" add "$CSPROJ_PATH" >/dev/null)
-        info "created $ASSEMBLY.sln"
+    # GodotTools uses the solution in dotnet/project/solution_directory (default:
+    # the game directory) that references the csproj, or else <assembly>.sln.
+    # When there is neither, create one there, as its "Create C# solution" does.
+    local sln_setting sln_dir="$GAME" csproj_name f refs=0 sln=""
+    sln_setting="$(sed -n 's/^project\/solution_directory="\(.*\)"$/\1/p' "$GAME/project.godot" | head -1)"
+    sln_setting="${sln_setting#res://}"
+    if [[ -n "$sln_setting" ]]; then
+        sln_dir="$(cd "$GAME/$sln_setting" 2>/dev/null && pwd)" \
+            || die "dotnet/project/solution_directory is \"$sln_setting\", but $GAME/$sln_setting is not a directory"
+    fi
+    # A .sln names the csproj as "dir\X.csproj", a .slnx as Path="dir/X.csproj".
+    csproj_name="$(basename "$CSPROJ_PATH")"
+    for f in "$sln_dir"/*.sln "$sln_dir"/*.slnx; do
+        if [[ -f "$f" ]] && grep -qF -e "\"$csproj_name\"" -e "/$csproj_name\"" -e "\\$csproj_name\"" "$f"; then
+            refs=$((refs + 1))
+            [[ -n "$sln" ]] || sln="$f"
+        fi
+    done
+    if [[ $refs -gt 1 ]]; then
+        info "WARNING: $refs solutions in $sln_dir reference $csproj_name; GodotTools reports that as an error and falls back to $ASSEMBLY.sln"
+    elif [[ $refs -eq 1 ]]; then
+        info "solution: $sln"
+    elif [[ -f "$sln_dir/$ASSEMBLY.sln" ]]; then
+        info "solution: $sln_dir/$ASSEMBLY.sln"
+    else
+        # .NET 10's `dotnet new sln` writes .slnx, .NET 9's .sln. An existing
+        # <assembly>.slnx that lacks the csproj gets it added instead.
+        sln="$sln_dir/$ASSEMBLY.slnx"
+        if [[ ! -f "$sln" ]]; then
+            (cd "$sln_dir" && dotnet new sln -n "$ASSEMBLY" >/dev/null)
+            [[ -f "$sln" ]] || sln="$sln_dir/$ASSEMBLY.sln"
+        fi
+        dotnet sln "$sln" add "$CSPROJ_PATH" >/dev/null
+        info "added $csproj_name to $sln"
     fi
 
     # Either RenderingDevice renderer makes the export plugin write
