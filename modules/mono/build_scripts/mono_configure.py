@@ -108,6 +108,13 @@ def configure(env, env_mono):
             os.path.join(mono_runtime_path, "src", "pinvoke.c"),
         ]
 
+        # The .NET 10 packs give System.Threading.Lock the same owner ID on
+        # every thread; this links a per-thread one (see the source file).
+        # .NET 9's packs are not affected and keep their own.
+        if env["threads"] and (os.environ.get("GODOT_WASM_TFM") or "net9.0") != "net9.0":
+            wasm_sources.append(os.path.join(this_script_dir, "wasm_thread_id.c"))
+            env.Append(LINKFLAGS=["-Wl,--wrap=SystemNative_TryGetUInt32OSThreadId"])
+
         # Ahead-of-time compiled game code, if a publish made with
         # RunAOTCompilation=true was pointed at with mono_aot_dir. The runtime is
         # embedded in this binary, so the AOT images have to be linked in here
